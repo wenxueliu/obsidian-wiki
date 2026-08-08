@@ -1,34 +1,33 @@
-# V3 Knowledge Base — vault-layout.yaml
+# V3 Software Engineering Knowledge Base — vault-layout
+#
+# This is a PEER layout to the default obsidian-wiki layout (concepts/,
+# entities/, skills/, references/, synthesis/, journal/).  Both share the
+# same infrastructure (system dirs + root files) but differ in how they
+# organise content.
 #
 # Copy to ~/.obsidian-wiki/vault-layout.yaml before running `obsidian-wiki setup`.
 #
-# This layout keeps obsidian-wiki's categories (concepts/ entities/ skills/
-# etc.) alongside a V3 engineering knowledge base (domain/ artifacts/ traces/).
-# The two systems coexist: obsidian-wiki handles general knowledge indexing/
-# querying, V3 handles software engineering artifacts and traceability.
+# What stays the same in every layout:
+#   system:  _raw  _staging  _archives  _meta  _readouts
+#   root:    index.md  log.md  hot.md  .manifest.json
+#   exclude: .obsidian  .git  _archived  _bootstrap  + extra_skip_dirs
 #
-# Zero-conflict design:
-#   - obsidian-wiki categories → general knowledge (concepts, entities, etc.)
-#   - V3 content → domain/ + artifacts/  (visible to wiki-query, searchable)
-#   - V3 operational dirs → extra_skip_dirs (excluded from lint/indexing)
-#   - V3 templates → meta/ (NOT _meta/, which is obsidian-wiki's system dir)
+# What changes between layouts:
+#   categories       — top-level content directories (indexed, searchable)
+#   projects         — where per-project summaries live
+#   project_subdirs  — which sub-dirs to create under each project
+#   extra_skip_dirs  — additional dirs to exclude from indexing/linting
 
 version: 1
 
 categories:
-  - concepts
-  - entities
-  - skills
-  - references
-  - synthesis
-  - journal
+  - domain       # V3 business-domain knowledge (features/scenarios/usecases/functions)
+  - artifacts    # V3 time-archived requirements
 
-projects: projects
+projects: domain
 
 project_subdirs:
-  - concepts
-  - skills
-  - references
+  - features     # each domain/<name>/ holds features/<feat-id>/...
 
 system:
   raw: _raw
@@ -39,6 +38,6 @@ system:
 
 extra_skip_dirs:
   - meta       # V3 governance (templates, conventions, agent-instructions)
-  - scripts    # V3 automation (idgenerator, viewgenerator, archiver)
+  - scripts    # V3 automation (idgenerator, viewgenerator, archiver, ...)
   - .agent     # V3 agent workspace (prompts, context snapshots)
   - traces     # V3 generated views (auto-generated, not manually authored)
