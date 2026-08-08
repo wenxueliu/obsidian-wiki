@@ -271,6 +271,33 @@ Body structure by type:
 
 Every note must link to at least 2 existing wiki pages. Search `index.md` before writing. If fewer than 2 related pages exist, create minimal stubs for the most important concepts referenced.
 
+### Relationship Types (inline @type syntax)
+
+When writing `[[wikilinks]]` in the `## Related` section, use the `@type` syntax inside the wikilink alias to mark semantic relationships. This is the authoring convention from the [Penfield](https://penfield.app) standard 24-type vocabulary:
+
+```markdown
+## Related
+- [[concepts/ml|Machine Learning @parent_of]]
+- [[concepts/cnn|CNN @child_of]]
+- [[references/paper|The Paper @supports]]
+- [[references/old|Old Paper @supersedes]]
+- [[skills/inference|Inference Pipeline @depends_on]]
+```
+
+The `@type` is preceded by a space or appears right after `|`. Use the most specific type from the 24-type vocabulary (see `llm-wiki/SKILL.md` → Allowed relationship types). When unsure, use `depends_on` or omit `@type`.
+
+Also write the same typed relationships into the page's `relationships:` frontmatter block:
+
+```yaml
+relationships:
+  - target: "[[concepts/ml]]"
+    type: parent_of
+  - target: "[[references/paper]]"
+    type: supports
+```
+
+Do NOT invent new types — only use the standard 24. Skip `@type` annotations in quick mode (`--quick`).
+
 ## Step 6: Update Tracking Files
 
 **`index.md`** — Add the new page under its category section.

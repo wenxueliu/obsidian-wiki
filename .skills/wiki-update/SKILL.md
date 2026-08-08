@@ -159,6 +159,8 @@ After creating/updating pages:
 - Add `[[wikilinks]]` from new pages to existing related pages
 - Add `[[wikilinks]]` from existing pages back to the new ones where relevant
 - Link the project overview to all project-specific pages and relevant global pages
+- Use `@type` syntax inside wikilink aliases when the relationship direction is clear (e.g. `[[concepts/ml|ML @parent_of]]`). See `llm-wiki/SKILL.md` → Allowed relationship types for the 24-type vocabulary.
+- Write typed relationships into the page's `relationships:` frontmatter block matching the inline `@type` annotations.
 
 ## Step 6: Update Tracking
 

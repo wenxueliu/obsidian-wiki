@@ -331,17 +331,63 @@ Each entry has two required fields:
 
 ### Allowed relationship types
 
-The table below is the framework default allowlist. A vault's `AGENTS.md` may extend it; consumers must use the effective allowlist and preserve owner semantics without coercion.
+The standard 24-type vocabulary from the [Penfield](https://penfield.app) memory system. A vault's `AGENTS.md` may extend it; consumers must use the effective allowlist and preserve owner semantics without coercion. Pick the most specific type that applies — when in doubt, use `depends_on` or omit.
 
+#### Knowledge Evolution
 | Type | Meaning | Example |
 |---|---|---|
-| `extends` | This page builds on or generalises the target | GPT extends Transformer Architecture |
-| `implements` | This page is a concrete realisation of the target concept | BERT implements Masked Language Modelling |
-| `contradicts` | This page's claims conflict with or refute the target | Evidence A contradicts Evidence B |
-| `derived_from` | This page is based on or adapted from the target | Fine-tuning is derived from Transfer Learning |
-| `uses` | This page depends on or relies on the target | RAG uses Vector Databases |
-| `replaces` | This page supersedes or deprecates the target | GPT-4 replaces GPT-3 |
-| `related_to` | Catch-all: related but no stronger directional type applies | Concept A is related to Concept B |
+| `supersedes` | Replaces an outdated understanding | New research supersedes old paper |
+| `updates` | Adds to or refines existing knowledge | Errata updates the original |
+| `evolution_of` | Shows how thinking changed over time | V3 proposal evolution_of V2 design |
+
+#### Evidence
+| Type | Meaning | Example |
+|---|---|---|
+| `supports` | Provides evidence for another claim | Experiment A supports Hypothesis B |
+| `contradicts` | Challenges another claim | Finding X contradicts theory Y |
+| `disputes` | Questions the reasoning of another | Peer review disputes methodology |
+
+#### Hierarchy
+| Type | Meaning | Example |
+|---|---|---|
+| `parent_of` | Broader topic containing the other | ML parent_of deep-learning |
+| `child_of` | Subtopic of the other | CNN child_of neural-networks |
+| `sibling_of` | Peers under the same parent | BERT sibling_of GPT |
+| `composed_of` | Made up of the other (whole→part) | Car composed_of engine |
+| `part_of` | Component of the other (part→whole) | Engine part_of car |
+
+#### Causation
+| Type | Meaning | Example |
+|---|---|---|
+| `causes` | Leads to or produces the other | Bug causes outage |
+| `influenced_by` | Shaped by the other | Design influenced_by UX research |
+| `prerequisite_for` | Must come before the other | Auth prerequisite_for checkout |
+
+#### Implementation
+| Type | Meaning | Example |
+|---|---|---|
+| `implements` | Concrete realization of a concept | BERT implements masked-LM |
+| `documents` | Describes or records the other | ADR documents architecture decision |
+| `tests` | Validates or verifies the other | Unit test tests login flow |
+| `example_of` | Instance of a general pattern | Redis example_of cache |
+
+#### Conversation
+| Type | Meaning | Example |
+|---|---|---|
+| `responds_to` | Reply or reaction to the other | Critique responds_to proposal |
+| `references` | Cites or points to the other | Article references spec |
+| `inspired_by` | Sparked by the other | New design inspired_by nature |
+
+#### Sequence
+| Type | Meaning | Example |
+|---|---|---|
+| `follows` | Comes after in a process | Step-2 follows step-1 |
+| `precedes` | Comes before in a process | step-1 precedes step-2 |
+
+#### Dependencies
+| Type | Meaning | Example |
+|---|---|---|
+| `depends_on` | Requires the other to function | Service depends_on database |
 
 ### Rules
 

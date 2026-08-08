@@ -167,19 +167,63 @@ If a `## Related` section already exists, append to it. Don't duplicate existing
 
 For every EXTRACTED or INFERRED link added (inline or related section), infer a semantic relationship type from the surrounding sentence context and write it to the page's `relationships:` frontmatter block. Skip AMBIGUOUS links.
 
-**Type inference rules** — scan the sentence containing the mention (or, for related-section links, the page title and shared-tag context):
+**Type inference rules** — scan the sentence containing the mention (or, for related-section links, the page title and shared-tag context). These 24 relationship types are the standard set from the [Penfield](https://penfield.app) memory system. Pick the most specific type that applies. If none fit precisely, don't force it — leave it unlinked.
 
-| Sentence pattern | Inferred type |
-|---|---|
-| "X extends / builds on / generalises Y" | `extends` |
-| "X implements / is an implementation of Y" | `implements` |
-| "X contradicts / opposes / refutes / is at odds with Y" | `contradicts` |
-| "X is derived from / based on / adapted from Y" | `derived_from` |
-| "X uses / relies on / depends on / requires Y" | `uses` |
-| "X replaces / supersedes / deprecates Y" | `replaces` |
-| Shared tags or cross-category inference with no directional cue | `related_to` |
+### Knowledge Evolution
+| Type | Meaning | Signal |
+|---|---|---|
+| `supersedes` | This replaces an outdated understanding | Same subject, different conclusion, later date |
+| `updates` | This adds to or refines existing knowledge | Same subject, additional detail |
+| `evolution_of` | This shows how thinking changed over time | Same subject, shifted framing |
 
-If the surrounding context is ambiguous or the link came from shared-tag matching (no in-body mention), default to `related_to`.
+### Evidence
+| Type | Meaning | Signal |
+|---|---|---|
+| `supports` | This provides evidence for another claim | Shared conclusion from different angle |
+| `contradicts` | This challenges another claim | Opposite conclusion on same subject |
+| `disputes` | This questions the reasoning of another | Methodological or logical disagreement |
+
+### Hierarchy
+| Type | Meaning | Signal |
+|---|---|---|
+| `parent_of` | This is a broader topic containing the other | General → specific |
+| `child_of` | This is a subtopic of the other | Specific → general |
+| `sibling_of` | These are peers under the same parent topic | Same level, same domain |
+| `composed_of` | This is made up of the other | Whole → part |
+| `part_of` | This is a component of the other | Part → whole |
+
+### Causation
+| Type | Meaning | Signal |
+|---|---|---|
+| `causes` | This leads to or produces the other | Action → consequence |
+| `influenced_by` | This was shaped by the other | Consequence ← influence |
+| `prerequisite_for` | This must come before the other | Dependency ordering |
+
+### Implementation
+| Type | Meaning | Signal |
+|---|---|---|
+| `implements` | This is a concrete realization of the other | Concept → code/action |
+| `documents` | This describes or records the other | Description → subject |
+| `tests` | This validates or verifies the other | Test → claim |
+| `example_of` | This is an instance of a general pattern | Instance → pattern |
+
+### Conversation
+| Type | Meaning | Signal |
+|---|---|---|
+| `responds_to` | This is a reply or reaction to the other | Dialogue thread |
+| `references` | This cites or points to the other | Attribution |
+| `inspired_by` | This was sparked by the other | Creative lineage |
+
+### Sequence
+| Type | Meaning | Signal |
+|---|---|---|
+| `follows` | This comes after the other in a process | Step N+1 → Step N |
+| `precedes` | This comes before the other in a process | Step N → Step N+1 |
+
+### Dependencies
+| Type | Meaning | Signal |
+|---|---|---|
+| `depends_on` | This requires the other to function | Runtime dependency |
 
 **Writing the block:**
 
