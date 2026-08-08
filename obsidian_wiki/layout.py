@@ -5,77 +5,87 @@ TRUST_SKIP_DIRS, etc.) with a single lazily-loaded VaultLayout resolved
 from a YAML file.
 
 Resolution order:
-  1. ~/.obsidian-wiki/vault-layout.yaml  (user override)
-  2. Bundled vault-layout.yaml           (package default)
-  3. DEFAULT_LAYOUT constant             (emergency fallback)
+  1. ~/.obsidian-wiki/vault-layout.yaml      (user override)
+  2. ~/.obsidian-wiki/vault-layout/*.yaml    (selected by name)
+  3. <pkg>/_data/vault-layout/*.yaml         (bundled built-ins)
+  4. <repo>/vault-layout/*.yaml              (source checkout)
+  5. DEFAULT_LAYOUT constant                 (emergency fallback)
+
+v2 format: categories may use dot-separated paths for nested dirs.
+  categories:
+    - concepts
+    - concepts.patterns    → creates concepts/patterns/
+    - concepts.models      → creates concepts/models/
+    - skills.how-to        → creates skills/how-to/
 
 The project has no runtime dependencies, so this module ships a minimal
-YAML parser that handles only the subset used by vault-layout.yaml:
-comments, top-level scalars, simple lists, and one level of nested
-key-value blocks.
+YAML parser that handles only the subset used by vault-layout.yaml.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 
 @dataclass(frozen=True)
 class VaultLayout:
-    """Immutable vault directory layout resolved from a config file."""
+    """Immutable vault directory layout resolved from a config file.
+
+    Categories may contain dot-separated paths for nested directories.
+    Use ``flat_categories`` for backward-compatible top-level names only.
+    """
 
     categories: tuple[str, ...]
     projects_dir: str
-    project_subdirs: tuple[str, ...]    # subset of categories created under each project
+    project_subdirs: tuple[str, ...]
     raw_dir: str
     staging_dir: str
     archives_dir: str
     meta_dir: str
     readouts_dir: str
-    extra_skip_dirs: tuple[str, ...]    # user-defined dirs to exclude from indexing
+    extra_skip_dirs: tuple[str, ...]
 
-    # ── Derived: all content + system dirs scaffold_vault() creates ──────
+    @property
+    def flat_categories(self) -> tuple[str, ...]:
+        """Top-level category names only (no subdirectory parts)."""
+        return tuple(sorted({c.split(".")[0] for c in self.categories}))
 
     @property
     def all_dirs(self) -> tuple[str, ...]:
-        """Every directory scaffold_vault() should create (categories + projects + system).
-
-        Project subdirs (concepts/, skills/, references/ under each project) are
-        NOT included — they're created on-demand per project by wiki-update / wiki-ingest.
-        """
-        return self.categories + (
-            self.projects_dir,
-            self.raw_dir,
-            self.staging_dir,
-            self.archives_dir,
-            self.meta_dir,
-            self.readouts_dir,
-        )
-
-    # ── Derived: system dirs excluded from page iteration ─────────────────
+        """Every directory scaffold_vault() should create."""
+        dirs: list[str] = []
+        # Flatten dot-separated paths: "concepts.patterns" → "concepts/patterns"
+        for cat in self.categories:
+            parts = cat.split(".")
+            path = "/".join(parts)
+            dirs.append(path)
+            # Ensure parent dirs are included (concepts.patterns requires concepts/)
+            for i in range(1, len(parts)):
+                dirs.append("/".join(parts[:i]))
+        # Deduplicate while preserving insertion order
+        seen = set()
+        result = []
+        for d in dirs:
+            if d not in seen:
+                seen.add(d)
+                result.append(d)
+        result.append(self.projects_dir)
+        result.extend([
+            self.raw_dir, self.staging_dir, self.archives_dir,
+            self.meta_dir, self.readouts_dir,
+        ])
+        return tuple(result)
 
     @property
     def skip_dirs(self) -> frozenset[str]:
-        """Directories excluded from page iteration, linting, and graph analysis.
-
-        Includes all configurable system dirs, plus implicitly-excluded
-        directories that are not part of the configurable layout, plus
-        user-defined extra_skip_dirs for non-content operational dirs
-        (e.g. V3 governance tools).
-        """
+        """Directories excluded from page iteration, linting, and graph analysis."""
         return frozenset({
-            self.raw_dir,
-            self.staging_dir,
-            self.archives_dir,
-            self.meta_dir,
-            self.readouts_dir,
-            "_archived",       # created ad-hoc within raw_dir
-            "_bootstrap",      # setup-time templates
-            ".obsidian",       # Obsidian's own config
-            ".git",            # version control
+            self.raw_dir, self.staging_dir, self.archives_dir,
+            self.meta_dir, self.readouts_dir,
+            "_archived", "_bootstrap", ".obsidian", ".git",
             *self.extra_skip_dirs,
         })
 
@@ -89,10 +99,17 @@ class VaultLayout:
         return Path(self.meta_dir) / "trust-ledger.json"
 
 
-# ── Default layout — byte-for-byte match with pre-configurable structure ─
+# ── Default layout ──────────────────────────────────────────────────
 
 DEFAULT_LAYOUT = VaultLayout(
-    categories=("concepts", "entities", "skills", "references", "synthesis", "journal"),
+    categories=(
+        "concepts", "concepts.patterns", "concepts.models",
+        "entities",
+        "skills", "skills.how-to", "skills.debugging",
+        "references",
+        "synthesis",
+        "journal",
+    ),
     projects_dir="projects",
     project_subdirs=("concepts", "skills", "references"),
     raw_dir="_raw",
@@ -104,30 +121,24 @@ DEFAULT_LAYOUT = VaultLayout(
 )
 
 
-# ── YAML subset parser — no PyYAML dependency ──────────────────────────
+# ── YAML subset parser ───────────────────────────────────────────────
 
 _YAML_COMMENT_RE = re.compile(r"^\s*#")
 _YAML_SCALAR_RE = re.compile(r'^(\w[\w_-]*):\s*"?(?:([^"#]*?))?"?\s*(?:#.*)?$')
 _YAML_LIST_ITEM_RE = re.compile(r"^\s*-\s+(\.?\w[\w_.-]*)\s*(?:#.*)?$")
 _YAML_NESTED_KEY_RE = re.compile(r'^\s\s(\w[\w_-]*):\s*"?(?:([^"#]*?))?"?\s*(?:#.*)?$')
 
+_LIST_KEYS = {"categories", "project_subdirs", "extra_skip_dirs"}
+_NESTED_KEYS = {"system"}
+
 
 def _parse_simple_yaml(text: str) -> dict:
     """Parse the minimal YAML subset used by vault-layout.yaml.
-
-    Handles: ``#`` comments, top-level ``key: value`` scalars,
-    ``- item`` list entries under a preceding top-level key, and one
-    level of indented ``key: value`` pairs under a preceding top-level
-    key (for the ``system:`` block).
 
     Returns a dict whose values are str, list[str], or dict[str, str].
     """
     result: dict = {}
     lines = text.splitlines()
-
-    list_keys = {"categories", "project_subdirs", "extra_skip_dirs"}  # keys that hold lists
-    nested_keys = {"system"}     # keys that hold nested dicts
-
     current_list_key: Optional[str] = None
     current_nested_key: Optional[str] = None
 
@@ -136,7 +147,6 @@ def _parse_simple_yaml(text: str) -> dict:
         if not stripped or _YAML_COMMENT_RE.match(line):
             continue
 
-        # List item under the last-seen list key
         m = _YAML_LIST_ITEM_RE.match(line)
         if m and current_list_key is not None:
             if not isinstance(result.get(current_list_key), list):
@@ -144,7 +154,6 @@ def _parse_simple_yaml(text: str) -> dict:
             result[current_list_key].append(m.group(1))
             continue
 
-        # Indented key under a nested block (system:)
         m = _YAML_NESTED_KEY_RE.match(line)
         if m and current_nested_key is not None:
             if not isinstance(result.get(current_nested_key), dict):
@@ -152,16 +161,13 @@ def _parse_simple_yaml(text: str) -> dict:
             result[current_nested_key][m.group(1)] = m.group(2).strip()
             continue
 
-        # Top-level scalar
         m = _YAML_SCALAR_RE.match(line)
         if m:
             key = m.group(1)
             val = m.group(2).strip()
             if not val:
-                # Bare key with no value — placeholder, will be populated
-                # by subsequent list items or nested keys
-                current_list_key = key if key in list_keys else current_list_key
-                current_nested_key = key if key in nested_keys else current_nested_key
+                current_list_key = key if key in _LIST_KEYS else current_list_key
+                current_nested_key = key if key in _NESTED_KEYS else current_nested_key
             else:
                 try:
                     result[key] = int(val)
@@ -172,13 +178,70 @@ def _parse_simple_yaml(text: str) -> dict:
     return result
 
 
-# ── Layout loading ─────────────────────────────────────────────────────
+# ── Layout discovery ─────────────────────────────────────────────────
 
-def _resolve_layout_path() -> Optional[Path]:
-    """Return the path to the user's custom layout, or the bundled default."""
-    user_path = Path.home() / ".obsidian-wiki" / "vault-layout.yaml"
-    if user_path.is_file():
-        return user_path
+def _layout_search_paths() -> list[Path]:
+    """Return all directories to scan for .yaml layout files."""
+    paths: list[Path] = []
+    pkg_dir = Path(__file__).resolve().parent
+    # User override dir
+    user_dir = Path.home() / ".obsidian-wiki" / "vault-layout"
+    if user_dir.is_dir():
+        paths.append(user_dir)
+    # Bundled layouts in the package
+    for cand in (pkg_dir / "_data" / "vault-layout", pkg_dir.parent / "vault-layout"):
+        if cand.is_dir():
+            paths.append(cand)
+    return paths
+
+
+def list_layouts() -> dict[str, tuple[str, Path]]:
+    """List available layouts as {key: (description, path)}.
+
+    Scans ~/.obsidian-wiki/vault-layout/ first, then bundled layouts.
+    User layouts shadow bundled ones with the same stem.
+    """
+    layouts: dict[str, tuple[str, Path]] = {}
+    for search_dir in _layout_search_paths():
+        for yaml_file in sorted(search_dir.glob("*.yaml")):
+            stem = yaml_file.stem
+            if stem in layouts:
+                continue  # user layout shadows bundled
+            raw = _parse_simple_yaml(yaml_file.read_text())
+            desc = raw.get("description", stem)
+            layouts[stem] = (str(desc), yaml_file)
+    return layouts
+
+
+def select_layout(name: str) -> VaultLayout:
+    """Load a layout by name from the available layouts.
+
+    Raises FileNotFoundError if *name* doesn't match any layout.
+    """
+    available = list_layouts()
+    if name not in available:
+        raise FileNotFoundError(
+            f"Unknown layout '{name}'. Available: {', '.join(available)}"
+        )
+    return load_layout(path=available[name][1])
+
+
+# ── Layout loading ───────────────────────────────────────────────────
+
+def _resolve_layout_path(name: str | None = None) -> Optional[Path]:
+    """Return the path to a layout file, or None."""
+    # 1. Named layout in user dir or bundled
+    if name:
+        available = list_layouts()
+        if name in available:
+            return available[name][1]
+
+    # 2. ~/.obsidian-wiki/vault-layout.yaml (legacy single-file)
+    legacy = Path.home() / ".obsidian-wiki" / "vault-layout.yaml"
+    if legacy.is_file():
+        return legacy
+
+    # 3. Bundled single file (also legacy)
     pkg_dir = Path(__file__).resolve().parent
     for cand in (
         pkg_dir / "_data" / "vault-layout.yaml",
@@ -186,36 +249,51 @@ def _resolve_layout_path() -> Optional[Path]:
     ):
         if cand.is_file():
             return cand
+
+    # 4. First available layout in vault-layout/ dirs
+    for search_dir in _layout_search_paths():
+        yamls = sorted(search_dir.glob("*.yaml"))
+        if yamls:
+            return yamls[0]
+
     return None
 
 
-def load_layout(path: Optional[Path] = None) -> VaultLayout:
-    """Load a VaultLayout, with fallback chain.
+def load_layout(
+    path: Optional[Path] = None, name: Optional[str] = None
+) -> VaultLayout:
+    """Load a VaultLayout.
 
-    1. Explicit *path* argument (for testing)
-    2. ``~/.obsidian-wiki/vault-layout.yaml`` (user override)
-    3. Bundled ``vault-layout.yaml`` (package default)
-    4. ``DEFAULT_LAYOUT`` constant (emergency fallback)
+    Resolution order:
+    1. Explicit *path* → use that file directly
+    2. Explicit *name* → select from available layouts
+    3. ~/.obsidian-wiki/vault-layout.yaml (legacy single-file)
+    4. Bundled vault-layout.yaml (legacy)
+    5. First layout in vault-layout/ dirs
+    6. DEFAULT_LAYOUT constant (hardcoded fallback)
     """
     if path is not None:
         raw = _parse_simple_yaml(path.read_text())
     else:
-        resolved = _resolve_layout_path()
+        resolved = _resolve_layout_path(name)
         if resolved is not None:
             raw = _parse_simple_yaml(resolved.read_text())
         else:
             return DEFAULT_LAYOUT
 
     def _as_tuple(value, default: tuple[str, ...]) -> tuple[str, ...]:
-        """Coerce a YAML value to a tuple of strings (handles empty [])."""
         if isinstance(value, list):
             return tuple(value)
         return default
 
     categories = _as_tuple(raw.get("categories"), DEFAULT_LAYOUT.categories)
     projects_dir = str(raw.get("projects", DEFAULT_LAYOUT.projects_dir))
-    project_subdirs = _as_tuple(raw.get("project_subdirs"), DEFAULT_LAYOUT.project_subdirs)
-    extra_skip_dirs = _as_tuple(raw.get("extra_skip_dirs"), DEFAULT_LAYOUT.extra_skip_dirs)
+    project_subdirs = _as_tuple(
+        raw.get("project_subdirs"), DEFAULT_LAYOUT.project_subdirs
+    )
+    extra_skip_dirs = _as_tuple(
+        raw.get("extra_skip_dirs"), DEFAULT_LAYOUT.extra_skip_dirs
+    )
     system = raw.get("system", {})
     if not isinstance(system, dict):
         system = {}

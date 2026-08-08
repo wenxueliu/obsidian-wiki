@@ -121,11 +121,33 @@ def run_owiki(*args):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="obsidian-wiki setup")
+    parser.add_argument("--layout", metavar="NAME", help="use a named layout from vault-layout/")
+    parser.add_argument("--list-layouts", action="store_true", help="list available layouts and exit")
+    args = parser.parse_args()
+
+    if args.list_layouts:
+        sys.path.insert(0, str(SCRIPT_DIR))
+        from obsidian_wiki.layout import list_layouts as _list_layouts
+        layouts = _list_layouts()
+        if not layouts:
+            print("No layouts found in vault-layout/ directories.")
+        else:
+            print("\nAvailable vault layouts:\n")
+            for name, (desc, path) in sorted(layouts.items()):
+                marker = " ← built-in" if "site-packages" in str(path) or "_data" in str(path) else ""
+                print(f"  {name:20s}  {desc}{marker}")
+            print(f"\nUse: python3 setup.py --layout <name>")
+        return
+
     print()
     print("╔══════════════════════════════════════════════════╗")
     print("║         obsidian-wiki — Agent Setup              ║")
     print("╚══════════════════════════════════════════════════╝")
     print()
+
+    layout_args = ["--layout", args.layout] if args.layout else []
 
     # ── Step 1: .env ──────────────────────────────────────────────
     env_file = SCRIPT_DIR / ".env"
@@ -170,6 +192,12 @@ def main():
         f'OBSIDIAN_WIKI_REPO="{SCRIPT_DIR}"\n'
     )
     print("✅  Global config written to ~/.obsidian-wiki/config")
+
+    # ── Scaffold vault with selected layout ──────────────────────
+    if vault_path and Path(vault_path).expanduser():
+        run_owiki("setup", "--vault", vault_path, *layout_args)
+    if args.layout:
+        print(f"   Layout: {args.layout}")
 
     # ── Step 1c: Bootstrap AGENTS.md aliases ──────────────────────
     hermes_bootstrap = SCRIPT_DIR / ".hermes.md"

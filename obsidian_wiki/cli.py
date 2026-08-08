@@ -724,6 +724,29 @@ def _maybe_configure_sync(vault_path: Path, remote_arg: str | None) -> bool:
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
+    from obsidian_wiki.layout import list_layouts, select_layout
+
+    if args.list_layouts:
+        layouts = list_layouts()
+        if not layouts:
+            print("No layouts found in vault-layout/ directories.")
+        else:
+            print("\nAvailable vault layouts:\n")
+            for name, (desc, path) in sorted(layouts.items()):
+                marker = " ← built-in" if "site-packages" in str(path) or "_data" in str(path) else ""
+                print(f"  {name:20s}  {desc}{marker}")
+            print(f"\nUse: obsidian-wiki setup --layout <name>")
+        return 0
+
+    if args.layout:
+        try:
+            layout = select_layout(args.layout)
+        except FileNotFoundError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+    else:
+        layout = None  # use default resolution
+
     mode = "symlink" if (not _IS_WINDOWS and not args.copy) else "copy"
     print("\n╔══════════════════════════════════════════════════╗")
     print("║         obsidian-wiki — Agent Setup              ║")
@@ -736,7 +759,9 @@ def cmd_setup(args: argparse.Namespace) -> int:
         print("      or edit OBSIDIAN_VAULT_PATH in ~/.obsidian-wiki/config.")
     else:
         vault_dir = Path(vault_path).expanduser()
-        vault_created = scaffold_vault(vault_dir)
+        vault_created = scaffold_vault(vault_dir, layout=layout)
+        if layout:
+            print(f"   Layout: {args.layout}")
         if vault_created:
             print(f"✅  Vault created at {vault_dir}")
         else:
@@ -1992,6 +2017,16 @@ def _add_setup_args(sp: argparse.ArgumentParser) -> None:
         "--copy",
         action="store_true",
         help="copy skill files instead of symlinking (the default on Windows)",
+    )
+    sp.add_argument(
+        "--layout",
+        metavar="NAME",
+        help="use a named layout from vault-layout/ (run with --list-layouts to see options)",
+    )
+    sp.add_argument(
+        "--list-layouts",
+        action="store_true",
+        help="list available vault layouts and exit",
     )
     sp.add_argument(
         "--remote",
