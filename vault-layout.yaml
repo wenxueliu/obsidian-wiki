@@ -39,3 +39,13 @@ system:
   archives: _archives
   meta: _meta
   readouts: _readouts
+
+# Additional directories to exclude from indexing/linting.
+# Use this for external-framework operational dirs that are not
+# obsidian-wiki content.  Example for a V3 knowledge base:
+#   extra_skip_dirs:
+#     - meta       # V3 governance (distinct from obsidian-wiki's _meta/)
+#     - scripts    # V3 automation tools
+#     - .agent     # V3 agent workspace
+#     - traces     # V3 generated views
+extra_skip_dirs: []

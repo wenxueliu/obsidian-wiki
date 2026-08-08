@@ -35,6 +35,7 @@ class VaultLayout:
     archives_dir: str
     meta_dir: str
     readouts_dir: str
+    extra_skip_dirs: tuple[str, ...]    # user-defined dirs to exclude from indexing
 
     # ── Derived: all content + system dirs scaffold_vault() creates ──────
 
@@ -60,8 +61,10 @@ class VaultLayout:
     def skip_dirs(self) -> frozenset[str]:
         """Directories excluded from page iteration, linting, and graph analysis.
 
-        Includes all configurable system dirs plus implicitly-excluded
-        directories that are NOT part of the configurable layout.
+        Includes all configurable system dirs, plus implicitly-excluded
+        directories that are not part of the configurable layout, plus
+        user-defined extra_skip_dirs for non-content operational dirs
+        (e.g. V3 governance tools).
         """
         return frozenset({
             self.raw_dir,
@@ -73,6 +76,7 @@ class VaultLayout:
             "_bootstrap",      # setup-time templates
             ".obsidian",       # Obsidian's own config
             ".git",            # version control
+            *self.extra_skip_dirs,
         })
 
     @property
@@ -96,6 +100,7 @@ DEFAULT_LAYOUT = VaultLayout(
     archives_dir="_archives",
     meta_dir="_meta",
     readouts_dir="_readouts",
+    extra_skip_dirs=(),
 )
 
 
@@ -103,7 +108,7 @@ DEFAULT_LAYOUT = VaultLayout(
 
 _YAML_COMMENT_RE = re.compile(r"^\s*#")
 _YAML_SCALAR_RE = re.compile(r'^(\w[\w_-]*):\s*"?(?:([^"#]*?))?"?\s*(?:#.*)?$')
-_YAML_LIST_ITEM_RE = re.compile(r"^\s*-\s+(\w[\w_-]*)\s*(?:#.*)?$")
+_YAML_LIST_ITEM_RE = re.compile(r"^\s*-\s+(\.?\w[\w_.-]*)\s*(?:#.*)?$")
 _YAML_NESTED_KEY_RE = re.compile(r'^\s\s(\w[\w_-]*):\s*"?(?:([^"#]*?))?"?\s*(?:#.*)?$')
 
 
@@ -120,7 +125,7 @@ def _parse_simple_yaml(text: str) -> dict:
     result: dict = {}
     lines = text.splitlines()
 
-    list_keys = {"categories"}  # keys that hold lists
+    list_keys = {"categories", "project_subdirs", "extra_skip_dirs"}  # keys that hold lists
     nested_keys = {"system"}     # keys that hold nested dicts
 
     current_list_key: Optional[str] = None
@@ -201,9 +206,16 @@ def load_layout(path: Optional[Path] = None) -> VaultLayout:
         else:
             return DEFAULT_LAYOUT
 
-    categories = tuple(raw.get("categories", DEFAULT_LAYOUT.categories))
+    def _as_tuple(value, default: tuple[str, ...]) -> tuple[str, ...]:
+        """Coerce a YAML value to a tuple of strings (handles empty [])."""
+        if isinstance(value, list):
+            return tuple(value)
+        return default
+
+    categories = _as_tuple(raw.get("categories"), DEFAULT_LAYOUT.categories)
     projects_dir = str(raw.get("projects", DEFAULT_LAYOUT.projects_dir))
-    project_subdirs = tuple(raw.get("project_subdirs", DEFAULT_LAYOUT.project_subdirs))
+    project_subdirs = _as_tuple(raw.get("project_subdirs"), DEFAULT_LAYOUT.project_subdirs)
+    extra_skip_dirs = _as_tuple(raw.get("extra_skip_dirs"), DEFAULT_LAYOUT.extra_skip_dirs)
     system = raw.get("system", {})
     if not isinstance(system, dict):
         system = {}
@@ -212,6 +224,7 @@ def load_layout(path: Optional[Path] = None) -> VaultLayout:
         categories=categories,
         projects_dir=projects_dir,
         project_subdirs=project_subdirs,
+        extra_skip_dirs=extra_skip_dirs,
         raw_dir=str(system.get("raw", DEFAULT_LAYOUT.raw_dir)),
         staging_dir=str(system.get("staging", DEFAULT_LAYOUT.staging_dir)),
         archives_dir=str(system.get("archives", DEFAULT_LAYOUT.archives_dir)),
