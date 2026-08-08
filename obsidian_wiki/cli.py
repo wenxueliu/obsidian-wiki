@@ -839,6 +839,52 @@ def cmd_batch_plan(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_graph(args: argparse.Namespace) -> int:
+    """Delegate to graph.py CLI (networkx-based graph queries)."""
+    from obsidian_wiki.graph import build_graph, load_graph
+    from obsidian_wiki.graph import find_paths, neighbors, centrality, tag_subgraph, communities, stats
+    import networkx as nx  # noqa: F811 — validated by graph.py's import guard
+
+    vault = str(Path(args.vault).expanduser().resolve())
+    if not Path(vault).is_dir():
+        print(f"error: vault not found: {vault}", file=sys.stderr)
+        return 1
+
+    try:
+        if args.no_cache:
+            G = build_graph(vault)
+        else:
+            G = load_graph(vault)
+    except ImportError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    result: Any = None
+    if args.graph_cmd == "paths":
+        result = find_paths(G, args.source, args.target, args.max_len, args.relation)
+    elif args.graph_cmd == "neighbors":
+        result = neighbors(G, args.slug, args.radius)
+    elif args.graph_cmd == "centrality":
+        result = centrality(G, args.method, args.top, args.tag)
+    elif args.graph_cmd == "tag-subgraph":
+        sg = tag_subgraph(G, args.tag, args.min_degree)
+        result = nx.node_link_data(sg)
+        if args.output:
+            Path(args.output).write_text(json.dumps(result, ensure_ascii=False, indent=2))
+            print(f"Saved subgraph to {args.output}")
+            return 0
+    elif args.graph_cmd == "communities":
+        result = communities(G)
+    elif args.graph_cmd == "stats":
+        result = stats(G)
+    else:
+        result = stats(G)
+
+    indent = 2 if args.pretty else None
+    print(json.dumps(result, ensure_ascii=False, indent=indent))
+    return 0
+
+
 def cmd_graph_analyse(args: argparse.Namespace) -> int:
     from obsidian_wiki.graph_analysis import analyse_vault
     vault = Path(args.vault).expanduser().resolve()
@@ -1634,6 +1680,34 @@ def build_parser() -> argparse.ArgumentParser:
     ga.add_argument("--top", type=int, default=20, help="number of top results to return (default: 20)")
     ga.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
     ga.set_defaults(func=cmd_graph_analyse)
+
+    gx = sub.add_parser(
+        "graph",
+        help="networkx graph queries: paths, neighbors, centrality, communities, stats",
+    )
+    gx.add_argument("vault", help="path to the Obsidian vault")
+    gx.add_argument("--no-cache", action="store_true", help="force rebuild graph (skip .obsidian/graph.json cache)")
+    gx.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    gx_sub = gx.add_subparsers(dest="graph_cmd")
+    gx_p = gx_sub.add_parser("paths", help="find shortest paths between two pages")
+    gx_p.add_argument("--from", dest="source", required=True, metavar="SLUG", help="source page slug")
+    gx_p.add_argument("--to", dest="target", required=True, metavar="SLUG", help="target page slug")
+    gx_p.add_argument("--max-len", type=int, default=4, help="max path length (default: 4)")
+    gx_p.add_argument("--relation", help="filter edges by relation type")
+    gx_n = gx_sub.add_parser("neighbors", help="ego-network around a page")
+    gx_n.add_argument("slug", help="page slug")
+    gx_n.add_argument("--radius", type=int, default=1, help="neighborhood radius (default: 1)")
+    gx_c = gx_sub.add_parser("centrality", help="rank pages by centrality metric")
+    gx_c.add_argument("--method", default="pagerank", choices=["pagerank", "betweenness", "degree", "in_degree", "out_degree"])
+    gx_c.add_argument("--top", type=int, default=10, help="number of top results (default: 10)")
+    gx_c.add_argument("--tag", help="filter to pages with this tag")
+    gx_t = gx_sub.add_parser("tag-subgraph", help="extract subgraph of pages with a given tag")
+    gx_t.add_argument("--tag", required=True, help="tag to filter by")
+    gx_t.add_argument("--min-degree", type=int, default=1, help="minimum node degree (default: 1)")
+    gx_t.add_argument("--output", help="save subgraph as node-link JSON file")
+    gx_sub.add_parser("communities", help="detect communities (Louvain or greedy modularity)")
+    gx_sub.add_parser("stats", help="graph statistics (nodes, edges, density, components)")
+    gx.set_defaults(func=cmd_graph)
 
     sb = sub.add_parser(
         "sessions-build",

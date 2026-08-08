@@ -37,7 +37,7 @@ dependencies = []
 # Higher-fidelity AST extraction (tree-sitter parses real ASTs; regex is the default fallback).
 ast = ["tree-sitter>=0.21", "tree-sitter-languages>=1.10"]
 # Higher-fidelity community detection (Leiden algorithm; greedy label propagation is the default fallback).
-graph = ["leidenalg>=0.10", "igraph>=0.11"]
+graph = ["leidenalg>=0.10", "igraph>=0.11", "networkx>=3.0"]
 
 [project.urls]
 Homepage = "https://github.com/Ar9av/obsidian-wiki"

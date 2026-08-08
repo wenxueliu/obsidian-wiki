@@ -191,6 +191,18 @@ Plain retrieval surfaces pages that *mention* the query terms. It cannot answer 
 
 Run this step **only** for path/multi-hop queries (or when a relationship query returns no direct edge between the two pages). It is built entirely from frontmatter — never read page bodies here.
 
+**Fast path:** If networkx is available (`python -c "import networkx"` succeeds), use the CLI graph subcommand for instant typed-edge traversal:
+
+```bash
+obsidian-wiki graph "$OBSIDIAN_VAULT_PATH" paths --from <x-slug> --to <y-slug>
+obsidian-wiki graph "$OBSIDIAN_VAULT_PATH" neighbors <slug> --radius 2
+obsidian-wiki graph "$OBSIDIAN_VAULT_PATH" centrality --method pagerank --top 10
+```
+
+The graph is cached at `.obsidian/graph.json` — subsequent queries are near-instant. This replaces the manual BFS below; the manual path exists as a fallback when networkx is not installed.
+
+**Manual fallback (no networkx):**
+
 1. **Build the typed-edge adjacency (cheap).** Grep every page's `relationships:` block in one pass — `Grep -A 20 "^relationships:" <vault>/**/*.md` (frontmatter only). Each entry yields a directed, typed edge `source —type→ target`. Add the reverse direction as a traversable edge too (mark it `(reverse)`), since "connected to" is symmetric even though the typed assertion is directional. Plain body `[[wikilinks]]` count as untyped `related_to` edges only if you need them to complete a path — prefer typed edges first.
 
 2. **Locate the endpoints.** Resolve X (and Y, if the query names two) to page paths using the registry from Step 2. If an endpoint is ambiguous, pick the `tier: core` candidate and note the assumption.
