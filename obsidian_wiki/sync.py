@@ -1,7 +1,7 @@
 """GitHub sync for an Obsidian vault.
 
 Single implementation of the git-sync flow, shared by `obsidian-wiki setup` /
-`obsidian-wiki sync-setup` (pip/uv installs) and `setup.sh` (source/curl
+`obsidian-wiki sync-setup` (pip/uv installs) and `setup.py` (source/curl
 installs) — see issue #153. Both entrypoints call into this module instead of
 each maintaining their own copy of the git plumbing.
 

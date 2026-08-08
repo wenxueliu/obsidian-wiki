@@ -20,7 +20,7 @@ conversation into a page; the factory turns a body of pages into a reusable skil
 
 ## Hard guardrails (read first)
 
-- **Never write into `.skills/`** and **never run `setup.sh`** or create symlinks into any global
+- **Never write into `.skills/`** and **never run `setup.py`** or create symlinks into any global
   skill directory (`~/.claude/skills`, `~/.codex/skills`, …). Generated skills go to the review
   dir only. Installation is a separate, explicit human decision.
 - **Never auto-install.** End by telling the user where the skill is and how to install it
@@ -119,7 +119,7 @@ Tell the user:
   ```
   ln -s ../../.skills/<name> <repo>/.claude/skills/<name>   # after copying <name>/ into .skills/, sans SKILL_FACTORY.md
   ```
-  Note explicitly: review first; do not run `setup.sh` (it fans skills into global dirs); never global-install without explicit agreement.
+  Note explicitly: review first; do not run `python3 setup.py` (it fans skills into global dirs); never global-install without explicit agreement.
 
 Do **not** install it yourself. Do not write to `.skills/`. Done.
 

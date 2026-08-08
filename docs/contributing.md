@@ -6,7 +6,7 @@ This is early. The skills work, but there's room to make the brain smarter: bett
 
 1. Create a folder in `.skills/your-skill-name/`
 2. Add a `SKILL.md` with YAML frontmatter (`name`, `description`) and markdown instructions
-3. Run `bash setup.sh` to symlink it into every agent directory
+3. Run `python3 setup.py` to install it into every agent directory
 4. Test by saying something to your agent that matches the description
 
 The `description` is load-bearing — it's the only thing an agent sees when deciding whether your skill is relevant. Write it as a list of the phrases a user would actually say, and state what the skill is *not* for when it's easily confused with a neighbour.

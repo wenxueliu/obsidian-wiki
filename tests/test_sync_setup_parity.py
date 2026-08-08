@@ -1,11 +1,9 @@
 """Regression guard for issue #153.
 
-setup.sh (source/curl installs) used to hand-roll its own git-sync logic while
-`obsidian-wiki setup` (the pip/uv CLI) had none at all — the two entrypoints
-had diverged, and the one most users actually run (pip/uv) silently skipped
-GitHub sync. Both now delegate to obsidian_wiki/sync.py. These tests pin that
-setup.sh calls into the CLI instead of re-implementing git plumbing, and that
-the CLI exposes the subcommands setup.sh (and agents, via wiki-setup) depend on.
+Both `setup.py` (source/curl installs) and `obsidian-wiki setup` (pip/uv CLI)
+delegate to obsidian_wiki/sync.py. These tests pin that setup.py calls into the
+CLI instead of re-implementing git plumbing, and that the CLI exposes the
+subcommands setup.py (and agents, via wiki-setup) depend on.
 """
 from __future__ import annotations
 
@@ -15,25 +13,21 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class SetupShDelegatesToCliTest(unittest.TestCase):
+class SetupPyDelegatesToCliTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.setup_sh = (ROOT / "setup.sh").read_text()
+        self.setup_py = (ROOT / "setup.py").read_text()
 
     def test_calls_sync_setup_subcommand(self) -> None:
-        self.assertIn("sync-setup", self.setup_sh)
+        self.assertIn("sync-setup", self.setup_py)
 
     def test_calls_cli_module_not_a_standalone_git_flow(self) -> None:
-        self.assertIn("obsidian_wiki.cli", self.setup_sh)
+        self.assertIn("obsidian_wiki.cli", self.setup_py)
 
     def test_does_not_hand_roll_git_init(self) -> None:
-        # The old setup.sh ran `git -C "$VAULT_PATH" init` directly; that logic
-        # must now live only in obsidian_wiki/sync.py.
-        self.assertNotIn('git -C "$VAULT_PATH" init', self.setup_sh)
+        self.assertNotIn('git -C "$VAULT_PATH" init', self.setup_py)
 
     def test_does_not_generate_a_standalone_sync_script(self) -> None:
-        # The old setup.sh wrote a hand-rolled ~/.obsidian-wiki/sync.sh with its
-        # own git add/commit/push logic — that's now `obsidian-wiki sync`.
-        self.assertNotIn("Wrote ~/.obsidian-wiki/sync.sh", self.setup_sh)
+        self.assertNotIn("Wrote ~/.obsidian-wiki/sync.sh", self.setup_py)
 
 
 class EnvExampleDoesNotOverclaimTest(unittest.TestCase):
@@ -54,6 +48,12 @@ class CliExposesSyncSubcommandsTest(unittest.TestCase):
 
     def test_setup_command_offers_sync(self) -> None:
         self.assertIn("_maybe_configure_sync", self.cli)
+
+
+class SetupShRemovedTest(unittest.TestCase):
+    def test_setup_sh_no_longer_exists(self) -> None:
+        self.assertFalse((ROOT / "setup.sh").exists(),
+                         "setup.sh has been replaced by setup.py — remove stale references")
 
 
 if __name__ == "__main__":

@@ -1,8 +1,9 @@
 """Tests for GitHub vault sync (obsidian_wiki/sync.py).
 
-Regression coverage for issue #153: setup.sh had a git-sync flow the pip/uv
-CLI (`obsidian-wiki setup`) never got, so pip/uv installs silently skipped it.
-sync.py is now the single implementation both entrypoints call into.
+Regression coverage for issue #153: the original bash setup had a git-sync
+flow the pip/uv CLI (`obsidian-wiki setup`) never got, so pip/uv installs
+silently skipped it. sync.py is now the single implementation both entrypoints
+(``python3 setup.py`` and ``obsidian-wiki setup``) call into.
 """
 from __future__ import annotations
 

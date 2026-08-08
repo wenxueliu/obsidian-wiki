@@ -1,8 +1,7 @@
 name: setup
 
-# Guards setup.sh against the regression where it rewrites committed
-# relative symlinks with absolute paths (or any other modification to
-# tracked files). See #52 for the original bug.
+# Guards setup.py against the regression where it modifies tracked
+# files. See #52 for the original bug.
 
 on:
   push:
@@ -14,16 +13,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run setup.sh
+      - name: Run setup.py
         # stdin closed so the vault-path prompt returns empty rather than hang
-        run: bash setup.sh < /dev/null
+        run: python3 setup.py < /dev/null
       - name: Working tree must be unchanged
         run: |
           if ! git diff --exit-code; then
-            echo "::error::setup.sh modified tracked files. Likely cause: an" \
+            echo "::error::setup.py modified tracked files. Likely cause: an" \
                  "in-repo symlink mirror is being written with an absolute" \
-                 "target instead of a relative one. See install_skills() in setup.sh."
+                 "target instead of a relative one."
             exit 1
           fi
       - name: Re-run is idempotent
-        run: bash setup.sh < /dev/null && git diff --exit-code
+        run: python3 setup.py < /dev/null && git diff --exit-code

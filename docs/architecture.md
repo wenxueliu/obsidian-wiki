@@ -152,7 +152,7 @@ obsidian-wiki/
 ├── .pi/skills/       → symlinks to .skills/*
 ├── .kiro/skills/     → symlinks to .skills/*
 │
-├── setup.sh                             # One-command agent setup
+├── setup.py                             # One-command agent setup (cross-platform)
 ├── .env.example                         # Configuration template
 └── docs/                                # You are here
 ```

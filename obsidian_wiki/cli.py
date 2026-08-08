@@ -1,6 +1,6 @@
 """obsidian-wiki installer CLI.
 
-Python port of ``setup.sh`` for the pip-installed package. The skill content
+Python CLI for the pip-installed package. The standalone ``setup.py`` covers source checkouts. Skill content
 lives inside the installed package (``obsidian_wiki/_data/skills``) instead of a
 cloned repo, so this wires the bundled skills into every supported AI agent's
 skills directory and writes ``~/.obsidian-wiki/config`` so the skills resolve
@@ -148,7 +148,7 @@ def install_global_skills(mode: str) -> None:
 
 
 def _install_hermes_profiles(mode: str) -> None:
-    """Mirror setup.sh: install into the active and all named Hermes profiles."""
+    """Install into the active and all named Hermes profiles."""
     hermes_home = os.environ.get("HERMES_HOME")
     handled: set[Path] = set()
     if hermes_home:
@@ -686,7 +686,7 @@ def _maybe_configure_sync(vault_path: Path, remote_arg: str | None) -> bool:
 
     Non-interactive (`--remote` passed, or no TTY and no remote given): only
     acts when a remote was explicitly supplied. Interactive: prompts, mirroring
-    setup.sh's flow, so pip/uv installs get the same offer shell/curl installs
+    setup, so pip/uv installs get the same offer shell/curl installs
     always had (see #153).
     """
     from obsidian_wiki.sync import configure_sync, get_remote

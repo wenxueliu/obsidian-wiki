@@ -168,7 +168,7 @@ awk -F= '/^OBSIDIAN_VAULT_PATH=/{print $2 "/_raw"; exit}' "$(git rev-parse --sho
 
 ## Syncing your vault to GitHub
 
-Your vault is a directory of plain markdown files — push it to a private GitHub repo and you get version history, backup, and cross-device sync for free. `obsidian-wiki setup` and `setup.sh` both offer to configure this during install; they share one implementation (`obsidian_wiki/sync.py`), so pip and source installs get an identical flow.
+Your vault is a directory of plain markdown files — push it to a private GitHub repo and you get version history, backup, and cross-device sync for free. `obsidian-wiki setup` and `python3 setup.py` both offer to configure this during install; they share one implementation (`obsidian_wiki/sync.py`), so pip and source installs get an identical flow.
 
 **What setup does:**
 

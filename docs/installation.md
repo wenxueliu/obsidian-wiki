@@ -6,7 +6,7 @@ Four ways in. Pick one — they all end at the same place: your vault path in `~
 |---|---|---|---|
 | [pip](#install-via-pip-recommended) | Most people | ✅ | ✅ |
 | [Let your agent do it](#let-your-agent-set-it-up) | No terminal required | ✅ | ✅ |
-| [git clone + `setup.sh`](#install-via-git-clone) | Contributors, hackers | ✅ | ✅ |
+| [git clone + `python3 setup.py`](#install-via-git-clone) | Contributors, hackers | ✅ | ✅ |
 | [Skills CLI](#install-via-skills-cli-deprecated) | Deprecated — partial install | ❌ | ❌ (current agent only) |
 
 ## Install via pip (recommended)
@@ -48,16 +48,16 @@ This works in any agent that can read files (Claude Code, Cursor, Windsurf, Code
 ```bash
 git clone https://github.com/Ar9av/obsidian-wiki.git
 cd obsidian-wiki
-bash setup.sh
+python3 setup.py
 ```
 
-`setup.sh` asks for your vault path, writes the config to `~/.obsidian-wiki/config`, symlinks skills into all your agents, and installs `wiki-update`, `wiki-query`, and `wiki-context-pack` globally so you can use them from any project.
+`python3 setup.py` asks for your vault path, writes the config to `~/.obsidian-wiki/config`, installs skills into all your agents (copy mode on Windows, symlinks on Unix), and installs `wiki-update`, `wiki-query`, and `wiki-context-pack` globally so you can use them from any project.
 
 Open the project in your agent and say **"set up my wiki"**.
 
 For local-only config, copy `.env.example` to `.env` and set `OBSIDIAN_VAULT_PATH` — a `.env` in the working directory (or any parent up to `$HOME`) takes precedence over the global config. See [Configuration](configuration.md).
 
-### What `setup.sh` wires up
+### What `python3 setup.py` wires up
 
 1. **Global config** at `~/.obsidian-wiki/config` with your vault path and the repo location. This is how skills know where to read and write.
 2. **Portable skills** — `wiki-update`, `wiki-query`, and `wiki-context-pack` symlinked into `~/.claude/skills/` so they're available from any project in Claude Code.
@@ -76,7 +76,7 @@ For local-only config, copy `.env.example` to `.env` and set `OBSIDIAN_VAULT_PAT
 5. **Always-on rule files** — `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, `.hermes.md`, `.cursor/rules/…`, `.windsurf/rules/…`, `.kiro/steering/…`, `.agent/rules/…`, `.agent/workflows/…`, `.github/copilot-instructions.md`
 6. **GitHub sync** (optional) — see [Configuration → Syncing your vault to GitHub](configuration.md#syncing-your-vault-to-github)
 
-`obsidian-wiki setup` and `setup.sh` share one implementation, so pip and source installs produce the identical result.
+`obsidian-wiki setup` and `python3 setup.py` share one implementation, so pip and source installs produce the identical result.
 
 ## Install via Skills CLI (deprecated)
 
@@ -84,7 +84,7 @@ For local-only config, copy `.env.example` to `.env` and set `OBSIDIAN_VAULT_PAT
 npx skills add Ar9av/obsidian-wiki
 ```
 
-This only installs the markdown skills into the current agent. It does **not** write `~/.obsidian-wiki/config`, configure GitHub sync, or wire the global multi-agent bootstrap that `obsidian-wiki setup` / `setup.sh` performs.
+This only installs the markdown skills into the current agent. It does **not** write `~/.obsidian-wiki/config`, configure GitHub sync, or wire the global multi-agent bootstrap that `obsidian-wiki setup` / `python3 setup.py` performs.
 
 Use this path only if you intentionally want a partial, agent-local install and are prepared to manage config yourself. For a complete setup, use pip or git clone instead.
 
@@ -108,7 +108,7 @@ wiki-query @personal what do I know about MCP security
 
 The `@name` override applies **only to that request** and never changes your default vault. To change the default, use `/wiki-switch <name>` — it re-points the active symlink.
 
-All supported agents can use this syntax after `obsidian-wiki setup` or `setup.sh`, because the shared skills and always-on bootstrap files all point back to the same Config Resolution Protocol. Claude Code, Cursor, Windsurf, Codex, Gemini, Kiro, Hermes, OpenClaw, Copilot CLI, Pi, and the generic `AGENTS.md` agents all pick it up from the same instructions.
+All supported agents can use this syntax after `obsidian-wiki setup` or `python3 setup.py`, because the shared skills and always-on bootstrap files all point back to the same Config Resolution Protocol. Claude Code, Cursor, Windsurf, Codex, Gemini, Kiro, Hermes, OpenClaw, Copilot CLI, Pi, and the generic `AGENTS.md` agents all pick it up from the same instructions.
 
 The routing token works with write skills (`@work update wiki`, `@research save this`) and read skills (`wiki-query @personal what do I know about X`).
 

@@ -330,7 +330,7 @@ If yes:
 1. Ask for the repo URL (e.g. `https://github.com/you/my-wiki.git`). Recommend it be **private**
    if the vault holds personal notes.
 2. Run the CLI, which handles `git init`, a default `.gitignore`, and wiring the `origin` remote —
-   this is the same code path `obsidian-wiki setup`'s interactive prompt and `setup.sh` use, so
+   this is the same code path `obsidian-wiki setup`'s interactive prompt and `python3 setup.py` use, so
    there's one implementation to keep correct (see issue #153 for why that matters):
    ```bash
    obsidian-wiki sync-setup "<repo-url>" --vault "$OBSIDIAN_VAULT_PATH"
