@@ -48,9 +48,9 @@ _MD_LINK_RE = re.compile(r"\[.*?\]\(([^)]+\.md[^)]*)\)")
 # following indented lines, not on this line.
 _BLOCK_SCALAR_RE = re.compile(r"^[>|][+-]?\d*$")
 
-SKIP_DIRS = frozenset(
-    "_raw _archived _staging _archives .obsidian".split()
-)
+from obsidian_wiki.layout import load_layout
+
+SKIP_DIRS = load_layout().skip_dirs
 
 
 def _slug(s: str) -> str:

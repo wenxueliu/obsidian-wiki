@@ -21,12 +21,12 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-TRUST_LEDGER_RELATIVE_PATH = Path("_meta/trust-ledger.json")
+from obsidian_wiki.layout import load_layout
+
+TRUST_LEDGER_RELATIVE_PATH = load_layout().trust_ledger_path()
 TRUST_LEDGER_SCHEMA_VERSION = 1
 TRUST_REVIEW_METHOD = "manual-lineage-and-claim-coverage-v1"
-TRUST_SKIP_DIRS = frozenset(
-    "_raw _archived _staging _archives _bootstrap .obsidian .git".split()
-)
+TRUST_SKIP_DIRS = load_layout().skip_dirs
 TRUST_RESERVED_STEMS = frozenset({"index", "log", "hot", "_insights"})
 ALLOWED_LIFECYCLES = frozenset({"draft", "reviewed", "verified", "disputed", "archived"})
 TRUST_REQUIRED_FIELD_ALLOWLIST = frozenset(

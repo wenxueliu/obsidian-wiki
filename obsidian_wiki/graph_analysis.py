@@ -32,6 +32,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from obsidian_wiki.layout import load_layout
+
 
 # ---------------------------------------------------------------------------
 # Wikilink / frontmatter parsing
@@ -60,7 +62,7 @@ def parse_vault_graph(vault: Path) -> tuple[dict[str, list[str]], dict[str, list
     """
     outgoing: dict[str, list[str]] = defaultdict(list)
     tags_map: dict[str, list[str]] = {}
-    skip_dirs = {"_raw", "_archived", "_staging", "_archives", ".obsidian"}
+    skip_dirs = load_layout().skip_dirs
 
     pages: list[Path] = []
     for p in vault.rglob("*.md"):

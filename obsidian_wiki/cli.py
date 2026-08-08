@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import TypedDict
 
 from obsidian_wiki import __version__
+from obsidian_wiki.layout import VaultLayout, load_layout
 
 HOME = Path.home()
 GLOBAL_CONFIG_DIR = HOME / ".obsidian-wiki"
@@ -301,48 +302,35 @@ def write_config(vault_path: str) -> None:
     print(f"✅  Global config written to {GLOBAL_CONFIG}")
 
 
-VAULT_SUBDIRS = (
-    "concepts",
-    "entities",
-    "skills",
-    "references",
-    "synthesis",
-    "journal",
-    "projects",
-    "_archives",
-    "_raw",
-    "_staging",
-    ".obsidian",
-)
-
-
-def scaffold_vault(vault_path: Path) -> bool:
+def scaffold_vault(vault_path: Path, layout: VaultLayout | None = None) -> bool:
     """Create the vault directory structure and special files if they don't exist yet.
 
     Idempotent: existing files/dirs are left untouched. Returns True if the vault
     directory itself had to be created (i.e. this is a brand new vault).
     """
+    if layout is None:
+        layout = load_layout()
+
     created = not vault_path.is_dir()
-    for name in VAULT_SUBDIRS:
+    for name in layout.all_dirs:
         (vault_path / name).mkdir(parents=True, exist_ok=True)
+    # .obsidian is Obsidian's own config dir — always created, not configurable
+    (vault_path / ".obsidian").mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     index_md = vault_path / "index.md"
     if not index_md.exists():
+        sections = "\n\n".join(
+            f"## {cat.title().replace('-', ' ')}" for cat in layout.categories
+        )
         index_md.write_text(
             "---\n"
             "title: Wiki Index\n"
             "---\n\n"
             "# Wiki Index\n\n"
             f"*This index is automatically maintained. Last updated: {timestamp}*\n\n"
-            "## Concepts\n\n"
-            "*No pages yet. Use `wiki-ingest` to add your first source.*\n\n"
-            "## Entities\n\n"
-            "## Skills\n\n"
-            "## References\n\n"
-            "## Synthesis\n\n"
-            "## Journal\n"
+            f"{sections}\n"
         )
 
     log_md = vault_path / "log.md"
@@ -353,7 +341,7 @@ def scaffold_vault(vault_path: Path) -> bool:
             "---\n\n"
             "# Wiki Log\n\n"
             f'- [{timestamp}] INIT vault_path="{vault_path}" '
-            "categories=concepts,entities,skills,references,synthesis,journal\n"
+            f"categories={','.join(layout.categories)}\n"
         )
 
     hot_md = vault_path / "hot.md"

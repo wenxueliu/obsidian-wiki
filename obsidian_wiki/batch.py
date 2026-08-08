@@ -37,6 +37,8 @@ import mimetypes
 import os
 import subprocess
 from pathlib import Path
+
+from obsidian_wiki.layout import load_layout
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -60,11 +62,11 @@ SKIP_EXTENSIONS = frozenset(
     ".zip .tar .gz .bz2 .whl .lock .mp4 .mov .mp3 .wav .ttf .woff .eot".split()
 )
 
-SKIP_DIRS = frozenset(
+_GENERAL_SKIP_DIRS = frozenset(
     "node_modules .git __pycache__ .pytest_cache dist build target "
-    ".venv venv env .mypy_cache .ruff_cache coverage .tox .obsidian "
-    "_raw _archived _staging _archives".split()
+    ".venv venv env .mypy_cache .ruff_cache coverage .tox".split()
 )
+SKIP_DIRS = _GENERAL_SKIP_DIRS | load_layout().skip_dirs
 
 
 def _classify(path: Path) -> str:

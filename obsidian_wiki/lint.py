@@ -8,6 +8,7 @@ from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
+from obsidian_wiki.layout import load_layout
 from obsidian_wiki.trust import (
     ALLOWED_LIFECYCLES,
     TRUST_LEDGER_RELATIVE_PATH,
@@ -15,7 +16,7 @@ from obsidian_wiki.trust import (
     validate_trust_metadata,
 )
 
-SKIP_DIRS = frozenset("_raw _archived _staging _archives _bootstrap .obsidian .git".split())
+SKIP_DIRS = load_layout().skip_dirs
 REQUIRED_FRONTMATTER = (
     "title",
     "category",

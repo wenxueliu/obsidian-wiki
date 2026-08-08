@@ -73,7 +73,7 @@ The heuristic: **if reading the codebase answers the question, don't wiki it. If
 
 ### Project-specific knowledge
 
-Goes under `$VAULT/projects/<project-name>/`:
+Goes under `$VAULT/projects/<project-name>/`. Subdirectories under each project are defined by `project_subdirs` in `vault-layout.yaml` (default shown below):
 
 ```
 projects/<project-name>/
@@ -82,6 +82,8 @@ projects/<project-name>/
 ├── skills/                    ← project-specific how-tos, patterns
 └── references/                ← project-specific source summaries
 ```
+
+**Custom layouts:** Run `python3 -c "from obsidian_wiki.layout import load_layout; print(load_layout().project_subdirs)"` for the actual subdirectory list. Create each subdirectory under the project path if it doesn't exist.
 
 The overview page (`<project-name>.md`) should have:
 - What the project is (one paragraph)

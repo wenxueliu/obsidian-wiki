@@ -13,7 +13,9 @@ from typing import Any, Iterable
 DEFAULT_BUDGET = 8_000
 MIN_BUDGET = 256
 MAX_BUDGET = 100_000
-SKIP_DIRS = frozenset({"_raw", "_staging", "_archives", "_archived", "_readouts", ".obsidian", ".git"})
+from obsidian_wiki.layout import load_layout
+
+SKIP_DIRS = load_layout().skip_dirs
 SKIP_FILES = frozenset({"AGENTS.md", "CLAUDE.md", "GEMINI.md", "hot.md", "index.md", "log.md", "_insights.md"})
 BLOCKED_PUBLIC_TAGS = frozenset({"visibility/internal", "visibility/pii"})
 TIER_ORDER = {"core": 0, "supporting": 1, "peripheral": 2}

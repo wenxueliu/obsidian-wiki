@@ -1,0 +1,41 @@
+# obsidian-wiki vault directory layout
+#
+# This is the built-in default. To customize, copy to:
+#   ~/.obsidian-wiki/vault-layout.yaml
+# Then edit to rename, add, or remove directories.
+#
+# Categories are the content subdirectories wiki pages are written into.
+# They appear as sections in index.md and drive page routing in skills.
+#
+# System directories are operational — they are excluded from indexing,
+# linting, and graph analysis, and are never treated as content.
+#
+# The project key is the single directory name for per-project knowledge.
+# Each project gets a subdirectory under it (e.g. projects/my-project/).
+
+version: 1
+
+categories:
+  - concepts
+  - entities
+  - skills
+  - references
+  - synthesis
+  - journal
+
+projects: projects
+
+# Subdirectories created under each project directory.
+# Must be a subset of categories — not every global category makes sense
+# at the project level (e.g. synthesis, journal are typically cross-project).
+project_subdirs:
+  - concepts
+  - skills
+  - references
+
+system:
+  raw: _raw
+  staging: _staging
+  archives: _archives
+  meta: _meta
+  readouts: _readouts

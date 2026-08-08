@@ -64,15 +64,30 @@ If `.env` doesn't exist, create it from `.env.example`. Ask the user for:
 
 ## Step 2: Create Vault Directory Structure
 
+Before creating directories, read the vault layout to get the current directory set:
+
 ```bash
-mkdir -p "$OBSIDIAN_VAULT_PATH"/{concepts,entities,skills,references,synthesis,journal,projects,_archives,_raw,_staging,.obsidian}
+python3 -c "from obsidian_wiki.layout import load_layout; print(' '.join(load_layout().all_dirs))"
 ```
 
+Create all directories listed by the above command, plus `.obsidian/` (Obsidian's own config directory):
+
+```bash
+DIRS=$(python3 -c "from obsidian_wiki.layout import load_layout; print(' '.join(load_layout().all_dirs))")
+for d in $DIRS; do mkdir -p "$OBSIDIAN_VAULT_PATH/$d"; done
+mkdir -p "$OBSIDIAN_VAULT_PATH/.obsidian"
+```
+
+If the layout module is not available (e.g. source checkout without the package installed), fall back to the default layout documented in `vault-layout.yaml` at the repo root.
+
+**Directory purposes:**
 - `.obsidian/` — Obsidian's own config. Creates vault recognition.
 - `projects/` — Per-project knowledge (populated during ingest).
 - `_archives/` — Stores wiki snapshots for rebuild/restore operations.
 - `_raw/` — Staging area for unprocessed drafts. Drop rough notes here; `wiki-ingest` will promote them to proper wiki pages and move the originals into `_raw/_archived/` (created on first use).
 - `_staging/` — Review queue for LLM-written pages when `WIKI_STAGED_WRITES=true`. Pages here are not visible in Obsidian's graph until promoted via `/wiki-stage-commit`.
+- `_meta/` — Trust ledger, taxonomy, dashboard definitions.
+- `_readouts/` — Narrative readouts saved by wiki-narrate.
 
 ## Step 3: Create Special Files
 
@@ -186,7 +201,7 @@ Tell the user about these recommended community plugins (they install manually):
 ## Step 6: Verify Setup
 
 Run a quick sanity check:
-- [ ] Vault directory exists with: `concepts/`, `entities/`, `skills/`, `references/`, `synthesis/`, `journal/`, `projects/`, `_archives/`, `_raw/`
+- [ ] Vault directory exists with all directories from `vault-layout.yaml` (default: `concepts/`, `entities/`, `skills/`, `references/`, `synthesis/`, `journal/`, `projects/`, plus system dirs `_archives/`, `_raw/`, `_meta/`, `_readouts/`)
 - [ ] `index.md` exists at vault root
 - [ ] `log.md` exists at vault root
 - [ ] `hot.md` exists at vault root

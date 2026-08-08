@@ -43,7 +43,7 @@ The vault has two levels of structure: **categories** (what kind of knowledge) a
 
 ### Categories
 
-Organize pages into these default categories (customizable in `.env`):
+Organize pages into category directories as defined in `vault-layout.yaml` (or the built-in default):
 
 | Category | Purpose | Example |
 |---|---|---|
@@ -53,6 +53,8 @@ Organize pages into these default categories (customizable in `.env`):
 | `references/` | Summaries of specific sources; academic papers use the Paper Deep-Dive Template (below) | `references/attention-is-all-you-need.md` |
 | `synthesis/` | Cross-cutting analysis across sources | `synthesis/scaling-laws-debate.md` |
 | `journal/` | Timestamped observations, session logs | `journal/2024-03-15.md` |
+
+**Custom layouts:** Read `vault-layout.yaml` (or run `python3 -c "from obsidian_wiki.layout import load_layout; print(load_layout().categories)"`) for the actual category names. The table above shows the built-in defaults.
 
 ### Projects
 
@@ -65,6 +67,7 @@ $OBSIDIAN_VAULT_PATH/
 │   │   ├── my-project.md      ← project overview (named after project)
 │   │   ├── concepts/          ← project-scoped category pages
 │   │   ├── skills/
+│   │   ├── references/
 │   │   └── ...
 │   ├── another-project/
 │   │   └── ...
@@ -75,6 +78,8 @@ $OBSIDIAN_VAULT_PATH/
 ├── skills/
 └── ...
 ```
+
+**Custom layouts:** The subdirectories under each project are defined by `project_subdirs` in `vault-layout.yaml` (default: `concepts`, `skills`, `references`). Check with `python3 -c "from obsidian_wiki.layout import load_layout; print(load_layout().project_subdirs)"` for the actual list.
 
 **When knowledge is project-specific** (a debugging technique that only applies to one codebase, a project-specific architecture decision), put it under `projects/<project-name>/<category>/`.
 
