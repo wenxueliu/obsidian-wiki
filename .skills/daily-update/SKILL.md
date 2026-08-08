@@ -104,16 +104,26 @@ Walk the user through first-time setup:
 
 Check that `$OBSIDIAN_WIKI_REPO/scripts/daily-update.sh` exists and is executable. If not, point the user to it.
 
-**Step 2: Install launchd plist**
+**Step 2: Install scheduling**
 
+**macOS (launchd):**
 ```bash
-# Replace placeholder in plist
 sed "s|OBSIDIAN_WIKI_REPO|$OBSIDIAN_WIKI_REPO|g" \
   "$OBSIDIAN_WIKI_REPO/scripts/com.obsidian-wiki.daily-update.plist" \
   > "$HOME/Library/LaunchAgents/com.obsidian-wiki.daily-update.plist"
-
-# Load it
 launchctl load "$HOME/Library/LaunchAgents/com.obsidian-wiki.daily-update.plist"
+```
+
+**Windows (Task Scheduler):**
+```powershell
+$repo = python -c "from pathlib import Path; print(Path.home() / '.obsidian-wiki' / 'config')"
+schtasks /create /sc daily /st 09:00 /tn "ObsidianWikiDailyUpdate" `
+  /tr "python -m obsidian_wiki.cli daily-update" /f
+```
+
+**Linux (cron):**
+```bash
+(crontab -l 2>/dev/null; echo "0 9 * * * $OBSIDIAN_WIKI_REPO/scripts/daily-update.sh >> /tmp/obsidian-wiki-daily.log 2>&1") | sort -u | crontab -
 ```
 
 **Step 3: Install terminal notification (optional)**
@@ -122,35 +132,30 @@ Ask the user: "Do you want a terminal reminder when your wiki is stale? (y/n)" â
 
 If yes, detect the user's shell and target the right rc file:
 
+**Unix (bash/zsh/fish):**
 ```bash
-SHELL_NAME=$(basename "$SHELL")   # zsh, bash, fish, etc.
+SHELL_NAME=$(basename "$SHELL")
 case "$SHELL_NAME" in
   zsh)  RC_FILE="$HOME/.zshrc" ;;
   bash) RC_FILE="$HOME/.bashrc" ;;
-  *)    echo "Shell '$SHELL_NAME' not auto-detected. Add the source line manually to your shell rc file." ; return ;;
+  *)    echo "Shell not auto-detected. Add manually." ; return ;;
 esac
-```
-
-Check if `wiki-notify.sh` is already sourced in that rc file. If not, append:
-
-```bash
 echo "" >> "$RC_FILE"
 echo "# obsidian-wiki terminal notification" >> "$RC_FILE"
 echo "source $OBSIDIAN_WIKI_REPO/scripts/wiki-notify.sh" >> "$RC_FILE"
 ```
 
-For Fish shell, source syntax is different â€” provide the manual instruction:
-```fish
-# Add to ~/.config/fish/config.fish:
-bass source $OBSIDIAN_WIKI_REPO/scripts/wiki-notify.sh
-# (requires bass plugin, or copy the logic natively)
+**Windows (PowerShell):**
+```powershell
+$script = Join-Path $env:LOCALAPPDATA ".obsidian-wiki\scripts\wiki-notify.ps1"
+$profile_path = if (Test-Path $PROFILE) { $PROFILE } else { New-Item -Type File $PROFILE -Force }
+Add-Content $PROFILE "# obsidian-wiki terminal notification`npython $script"
 ```
 
-**Step 4: Run the script once**
+**Step 4: Run the update once**
 
-```bash
-bash "$OBSIDIAN_WIKI_REPO/scripts/daily-update.sh"
-```
+**Unix:** `bash "$OBSIDIAN_WIKI_REPO/scripts/daily-update.sh"`
+**Windows:** `python "$env:LOCALAPPDATA\.obsidian-wiki\scripts\daily-update.py"`
 
 This initializes `$STATE_DIR/.last_update` so the terminal notification works immediately.
 

@@ -20,7 +20,8 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILLS_DIR = SCRIPT_DIR / ".skills"
-GLOBAL_CONFIG_DIR = Path.home() / ".obsidian-wiki"
+_IS_WINDOWS = os.name == "nt"
+GLOBAL_CONFIG_DIR = (Path(os.environ.get("LOCALAPPDATA", "")) if _IS_WINDOWS else Path.home()) / ".obsidian-wiki"
 GLOBAL_CONFIG = GLOBAL_CONFIG_DIR / "config"
 
 
@@ -77,16 +78,23 @@ def install_skills(target_dir, label, mode="absolute", subset=None):
         if link_path.is_symlink():
             link_path.unlink()
         elif link_path.is_dir():
-            print(f"⚠️   {link_path} is a real directory, skipping symlink")
-            continue
+            if (link_path / "SKILL.md").exists():
+                shutil.rmtree(link_path)
+            else:
+                print(f"⚠️   {link_path} is not a managed skill, skipping")
+                continue
         elif link_path.is_file():
             link_path.unlink()
 
-        link_path.symlink_to(link_target)
+        if _IS_WINDOWS:
+            # Windows: copy instead of symlink (requires admin/Developer Mode)
+            shutil.copytree(skill_path, link_path)
+        else:
+            link_path.symlink_to(link_target)
 
         # Sanity check: every skill ships a SKILL.md
         if not (link_path / "SKILL.md").exists():
-            print(f"install_skills: broken link {link_path} -> {link_target}", file=sys.stderr)
+            print(f"install_skills: broken install {link_path} -> {link_target}", file=sys.stderr)
             sys.exit(1)
 
     print(f"✅  Installed skills → {label}")
@@ -163,14 +171,16 @@ def main():
     )
     print("✅  Global config written to ~/.obsidian-wiki/config")
 
-    # ── Step 1c: Bootstrap symlinks ──────────────────────────────
+    # ── Step 1c: Bootstrap AGENTS.md aliases ──────────────────────
     hermes_bootstrap = SCRIPT_DIR / ".hermes.md"
     if hermes_bootstrap.is_symlink():
         hermes_bootstrap.unlink()
     elif hermes_bootstrap.is_file():
-        print("⚠️   .hermes.md is a regular file, replacing with symlink")
         hermes_bootstrap.unlink()
-    hermes_bootstrap.symlink_to("AGENTS.md")
+    if _IS_WINDOWS:
+        shutil.copyfile(SCRIPT_DIR / "AGENTS.md", hermes_bootstrap)
+    else:
+        hermes_bootstrap.symlink_to("AGENTS.md")
     print("✅  .hermes.md → AGENTS.md")
 
     # ── Step 2: Symlink skills into agent directories ─────────────
@@ -264,65 +274,89 @@ def main():
                 except (EOFError, KeyboardInterrupt):
                     add_alias = "n"
                 if add_alias.lower() != "n":
-                    shell_rc = ""
-                    for rc in [".zshrc", ".bashrc"]:
-                        rc_path = Path.home() / rc
-                        if rc_path.is_file():
-                            shell_rc = str(rc_path)
-                            break
-                    if shell_rc:
-                        rc_content = Path(shell_rc).read_text()
-                        if "wiki-sync" not in rc_content:
-                            with open(shell_rc, "a") as f:
-                                f.write(
-                                    "\n# wiki-sync — push Obsidian vault to GitHub\n"
-                                    "alias wiki-sync='obsidian-wiki sync'\n"
-                                )
-                            print(f"✅  Added wiki-sync alias to {shell_rc}")
-                            print(f"    → Run: source {shell_rc}  (or open a new terminal)")
+                    if _IS_WINDOWS:
+                        # PowerShell profile
+                        pwsh_profile = Path(os.environ.get("PROFILE", Path.home() / "Documents" / "PowerShell" / "Microsoft.PowerShell_profile.ps1"))
+                        pwsh_profile.parent.mkdir(parents=True, exist_ok=True)
+                        alias_line = "function wiki-sync { obsidian-wiki sync --vault " + vault_path + " }\n"
+                        content = pwsh_profile.read_text() if pwsh_profile.is_file() else ""
+                        if "wiki-sync" not in content:
+                            pwsh_profile.write_text(content + alias_line)
+                            shell_rc = str(pwsh_profile)
+                            print(f"✅  Added wiki-sync to PowerShell profile: {shell_rc}")
+                            print("    → Restart PowerShell or run: . $PROFILE")
                         else:
-                            print(f"    ℹ️  wiki-sync alias already in {shell_rc}")
+                            print(f"    ℹ️  wiki-sync already in PowerShell profile")
+                    else:
+                        shell_rc = ""
+                        for rc in [".zshrc", ".bashrc"]:
+                            rc_path = Path.home() / rc
+                            if rc_path.is_file():
+                                shell_rc = str(rc_path)
+                                break
+                        if shell_rc:
+                            rc_content = Path(shell_rc).read_text()
+                            if "wiki-sync" not in rc_content:
+                                with open(shell_rc, "a") as f:
+                                    f.write(
+                                        "\n# wiki-sync — push Obsidian vault to GitHub\n"
+                                        "alias wiki-sync='obsidian-wiki sync'\n"
+                                    )
+                                print(f"✅  Added wiki-sync alias to {shell_rc}")
+                                print(f"    → Run: source {shell_rc}  (or open a new terminal)")
+                            else:
+                                print(f"    ℹ️  wiki-sync alias already in {shell_rc}")
 
-                # Offer hourly cron
+                # Offer hourly auto-sync
                 print()
                 try:
-                    add_cron = input("  Enable hourly auto-sync (cron)? [y/N]: ").strip()
+                    add_cron = input("  Enable hourly auto-sync? [y/N]: ").strip()
                 except (EOFError, KeyboardInterrupt):
                     add_cron = ""
 
                 if add_cron.lower() == "y":
                     if shutil.which("python3"):
-                        sync_cmd = (
-                            f"env PYTHONPATH={SCRIPT_DIR} python3 -m obsidian_wiki.cli sync"
-                        )
+                        sync_cmd = f"{sys.executable} -m obsidian_wiki.cli sync --vault {vault_path}"
                     else:
-                        sync_cmd = "obsidian-wiki sync"
-                    cron_line = (
-                        f"0 * * * * {sync_cmd} --vault {vault_path} "
-                        f">> {GLOBAL_CONFIG_DIR}/sync.log 2>&1"
-                    )
+                        sync_cmd = f"obsidian-wiki sync --vault {vault_path}"
 
-                    try:
-                        existing = subprocess.run(
-                            ["crontab", "-l"], capture_output=True, text=True
+                    if _IS_WINDOWS:
+                        # Windows Task Scheduler
+                        log_path = GLOBAL_CONFIG_DIR / "sync.log"
+                        task_name = "ObsidianWikiHourlySync"
+                        result = subprocess.run(
+                            [
+                                "schtasks", "/create", "/sc", "hourly",
+                                "/tn", task_name,
+                                "/tr", f'cmd /c "{sync_cmd} >> {log_path} 2>&1"',
+                                "/f",
+                            ],
+                            capture_output=True, text=True,
                         )
-                        if existing.returncode == 0:
-                            lines = existing.stdout.strip().split("\n") if existing.stdout.strip() else []
+                        if result.returncode == 0:
+                            print(f"✅  Hourly sync scheduled via Task Scheduler")
+                            print(f"    Logs: {log_path}")
                         else:
+                            print(f"⚠️  Failed to create scheduled task. Run manually or use Task Scheduler GUI.")
+                            print(f"    Command: {sync_cmd}")
+                    else:
+                        cron_line = f"0 * * * * {sync_cmd} >> {GLOBAL_CONFIG_DIR}/sync.log 2>&1"
+                        try:
+                            existing = subprocess.run(
+                                ["crontab", "-l"], capture_output=True, text=True
+                            )
+                            lines = existing.stdout.strip().split("\n") if existing.stdout.strip() else []
+                        except Exception:
                             lines = []
-                    except Exception:
-                        lines = []
-
-                    if cron_line not in lines:
-                        lines.append(cron_line)
-                        # Remove empty lines and deduplicate
-                        lines = [l for l in lines if l.strip()]
-                        subprocess.run(
-                            ["crontab", "-"],
-                            input="\n".join(lines) + "\n",
-                            text=True,
-                        )
-                    print(f"✅  Hourly cron installed  (logs: ~/.obsidian-wiki/sync.log)")
+                        if cron_line not in lines:
+                            lines.append(cron_line)
+                            lines = [l for l in lines if l.strip()]
+                            subprocess.run(
+                                ["crontab", "-"],
+                                input="\n".join(lines) + "\n",
+                                text=True,
+                            )
+                        print(f"✅  Hourly cron installed  (logs: ~/.obsidian-wiki/sync.log)")
 
     # ── Step 5: Summary ──────────────────────────────────────────
     skill_count = sum(1 for p in SKILLS_DIR.iterdir() if p.is_dir())

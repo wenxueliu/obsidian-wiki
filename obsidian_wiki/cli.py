@@ -23,7 +23,8 @@ from obsidian_wiki import __version__
 from obsidian_wiki.layout import VaultLayout, load_layout
 
 HOME = Path.home()
-GLOBAL_CONFIG_DIR = HOME / ".obsidian-wiki"
+_IS_WINDOWS = os.name == "nt"
+GLOBAL_CONFIG_DIR = (Path(os.environ.get("LOCALAPPDATA", "")) if _IS_WINDOWS else HOME) / ".obsidian-wiki"
 GLOBAL_CONFIG = GLOBAL_CONFIG_DIR / "config"
 
 # Skills usable from any project (no vault context needed beyond the global
@@ -723,7 +724,7 @@ def _maybe_configure_sync(vault_path: Path, remote_arg: str | None) -> bool:
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
-    mode = "copy" if args.copy else "symlink"
+    mode = "symlink" if (not _IS_WINDOWS and not args.copy) else "copy"
     print("\n╔══════════════════════════════════════════════════╗")
     print("║         obsidian-wiki — Agent Setup              ║")
     print("╚══════════════════════════════════════════════════╝\n")
@@ -1990,7 +1991,7 @@ def _add_setup_args(sp: argparse.ArgumentParser) -> None:
     sp.add_argument(
         "--copy",
         action="store_true",
-        help="copy skill files instead of symlinking to the installed package",
+        help="copy skill files instead of symlinking (the default on Windows)",
     )
     sp.add_argument(
         "--remote",

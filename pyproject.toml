@@ -73,6 +73,7 @@ exclude = [
 ".skills" = "obsidian_wiki/_data/skills"
 "scripts" = "obsidian_wiki/_data/scripts"
 ".claude/hooks/wiki-stop-capture.sh" = "obsidian_wiki/_data/hooks/wiki-stop-capture.sh"
+".claude/hooks/wiki-stop-capture.ps1" = "obsidian_wiki/_data/hooks/wiki-stop-capture.ps1"
 "vault-layout.yaml" = "obsidian_wiki/_data/vault-layout.yaml"
 ".env.example" = "obsidian_wiki/_data/.env.example"
 "AGENTS.md" = "obsidian_wiki/_data/bootstrap/AGENTS.md"

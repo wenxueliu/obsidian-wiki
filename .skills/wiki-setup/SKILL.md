@@ -237,27 +237,33 @@ inconclusive sessions are skipped automatically.
    Otherwise, check common locations: `~/Documents/projects/obsidian-wiki`, `~/obsidian-wiki`,
    or ask the user.
 
-2. Locate the `wiki-stop-capture.sh` script. Its path differs between a pip/uv install and a
-   source checkout, so check both layouts under `<REPO_PATH>` and use the first that exists:
+2. Locate the hook script. **Windows users:** use `wiki-stop-capture.ps1` (PowerShell)
+   instead of `.sh`. The path differs between install types:
 
-   - `<REPO_PATH>/hooks/wiki-stop-capture.sh` — packaged install (`OBSIDIAN_WIKI_REPO`
-     points at the bundled `_data/` dir, which ships the hook under `hooks/`).
-   - `<REPO_PATH>/.claude/hooks/wiki-stop-capture.sh` — source checkout.
+   - `<REPO_PATH>/hooks/wiki-stop-capture.sh` — packaged install (Unix).
+   - `<REPO_PATH>/.claude/hooks/wiki-stop-capture.sh` — source checkout (Unix).
+   - `<REPO_PATH>/.claude/hooks/wiki-stop-capture.ps1` — **Windows** source checkout.
 
-   If neither exists (e.g. an older wheel that predates bundling the hook), fetch the canonical
-   copy to a stable location and point at that instead:
-
+   If none exist, fetch the canonical copy:
+   **Unix:**
    ```bash
    mkdir -p ~/.obsidian-wiki/hooks
    curl -fsSL https://raw.githubusercontent.com/Ar9av/obsidian-wiki/main/.claude/hooks/wiki-stop-capture.sh \
      -o ~/.obsidian-wiki/hooks/wiki-stop-capture.sh
    chmod +x ~/.obsidian-wiki/hooks/wiki-stop-capture.sh
    ```
+   **Windows (PowerShell):**
+   ```powershell
+   New-Item -ItemType Directory -Force $env:LOCALAPPDATA\.obsidian-wiki\hooks
+   Invoke-WebRequest -Uri https://raw.githubusercontent.com/Ar9av/obsidian-wiki/main/.claude/hooks/wiki-stop-capture.ps1 `
+     -OutFile $env:LOCALAPPDATA\.obsidian-wiki\hooks\wiki-stop-capture.ps1
+   ```
 
    Use the resolved absolute path as `<HOOK_PATH>` below.
 
 3. Merge the hook entry into `~/.claude/settings.json`:
 
+**Unix:**
 ```json
 {
   "hooks": {
@@ -268,6 +274,25 @@ inconclusive sessions are skipped automatically.
           {
             "type": "command",
             "command": "bash <HOOK_PATH>"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Windows:**
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -File <HOOK_PATH>"
           }
         ]
       }
