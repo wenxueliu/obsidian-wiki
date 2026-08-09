@@ -341,7 +341,7 @@ You'll apply markers in Step 5. Don't conflate these — the wiki's value depend
 
 If the source belongs to a specific project:
 - Place project-specific knowledge under `projects/<project-name>/<category>/`
-- Which categories are available under each project is defined by `project_subdirs` in `vault-layout.yaml` (default: `concepts`, `skills`, `references`). Check with: `python3 -c "from obsidian_wiki.layout import load_layout; print(load_layout().project_subdirs)"`
+- Which categories are available under each project is defined by the active vault layout. Check with: `python3 -c "from obsidian_wiki.layout import load_layout; print(load_layout().project_subdirs)"`. Default: `concepts`, `skills`, `references`.
 - Place general knowledge in global category directories
 - Create or update the project overview at `projects/<name>/<name>.md` (named after the project — never `_project.md`, as Obsidian uses filenames as graph node labels)
 

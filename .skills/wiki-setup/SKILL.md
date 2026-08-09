@@ -64,13 +64,23 @@ If `.env` doesn't exist, create it from `.env.example`. Ask the user for:
 
 ## Step 2: Create Vault Directory Structure
 
-Before creating directories, read the vault layout to get the current directory set:
+Before creating directories, determine which layout to use:
+
+```bash
+# List available layouts
+obsidian-wiki setup --list-layouts
+
+# Or from Python:
+python3 -c "from obsidian_wiki.layout import list_layouts; [print(f'{k}: {v[0]}') for k,v in list_layouts().items()]"
+```
+
+Ask the user which layout they prefer (or use the default). Then get the directory list for the chosen layout:
 
 ```bash
 python3 -c "from obsidian_wiki.layout import load_layout; print(' '.join(load_layout().all_dirs))"
 ```
 
-Create all directories listed by the above command, plus `.obsidian/` (Obsidian's own config directory):
+Create all directories (the layout already includes nested subdirectories like `concepts/patterns/`):
 
 ```bash
 DIRS=$(python3 -c "from obsidian_wiki.layout import load_layout; print(' '.join(load_layout().all_dirs))")
@@ -78,7 +88,7 @@ for d in $DIRS; do mkdir -p "$OBSIDIAN_VAULT_PATH/$d"; done
 mkdir -p "$OBSIDIAN_VAULT_PATH/.obsidian"
 ```
 
-If the layout module is not available (e.g. source checkout without the package installed), fall back to the default layout documented in `vault-layout.yaml` at the repo root.
+If the layout module is unavailable, fall back to the default listed in `vault-layout/default.yaml` at the repo root. The CLI `obsidian-wiki setup --layout <name>` automates all of this.
 
 **Directory purposes:**
 - `.obsidian/` — Obsidian's own config. Creates vault recognition.

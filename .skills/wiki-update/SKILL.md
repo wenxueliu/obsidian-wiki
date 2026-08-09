@@ -73,7 +73,7 @@ The heuristic: **if reading the codebase answers the question, don't wiki it. If
 
 ### Project-specific knowledge
 
-Goes under `$VAULT/projects/<project-name>/`. Subdirectories under each project are defined by `project_subdirs` in `vault-layout.yaml` (default shown below):
+Goes under `$VAULT/projects/<project-name>/`. Subdirectories under each project are defined by the active vault layout (run `python3 -c "from obsidian_wiki.layout import load_layout; print(load_layout().project_subdirs)"`). Default shown below:
 
 ```
 projects/<project-name>/

@@ -136,7 +136,7 @@ Assign one of five types — this determines the target folder and tone:
 | `decision` | A strategic, architectural, or design choice and its rationale | `synthesis/` |
 | `session` | A complete discussion summary when the conversation spans multiple topics | `journal/` |
 
-**Custom layouts:** The folder names above are the built-in defaults. If a custom `vault-layout.yaml` renames categories, use the names from the layout. Check with: `python3 -c "from obsidian_wiki.layout import load_layout; [print(c) for c in load_layout().categories]"`.
+**Custom layouts:** The folder names above are the built-in defaults. If the vault uses a custom layout, resolve the active categories with `python3 -c "from obsidian_wiki.layout import load_layout; print(load_layout().flat_categories)"`. Nested subdirectories (e.g. `skills/how-to/`) appear as dot-separated paths in the full `categories` list; write pages to the most specific matching directory.
 
 If the content clearly belongs to a specific project (detected from context or user mention), place it under `projects/<project-name>/<category>/` instead.
 

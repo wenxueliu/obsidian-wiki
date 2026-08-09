@@ -54,7 +54,7 @@ Organize pages into category directories as defined in `vault-layout.yaml` (or t
 | `synthesis/` | Cross-cutting analysis across sources | `synthesis/scaling-laws-debate.md` |
 | `journal/` | Timestamped observations, session logs | `journal/2024-03-15.md` |
 
-**Custom layouts:** Read `vault-layout.yaml` (or run `python3 -c "from obsidian_wiki.layout import load_layout; print(load_layout().categories)"`) for the actual category names. The table above shows the built-in defaults.
+**Custom layouts:** Run `python3 -c "from obsidian_wiki.layout import load_layout; print(load_layout().categories)"` for the actual category names. Nested subdirectories use dot-separated paths (e.g. `concepts.patterns` → `concepts/patterns/`). Browse available layouts with `obsidian-wiki setup --list-layouts`. The table above shows the built-in defaults.
 
 ### Projects
 
@@ -79,7 +79,7 @@ $OBSIDIAN_VAULT_PATH/
 └── ...
 ```
 
-**Custom layouts:** The subdirectories under each project are defined by `project_subdirs` in `vault-layout.yaml` (default: `concepts`, `skills`, `references`). Check with `python3 -c "from obsidian_wiki.layout import load_layout; print(load_layout().project_subdirs)"` for the actual list.
+**Custom layouts:** The subdirectories under each project are defined by `project_subdirs` in the vault layout. Check the active layout with `python3 -c "from obsidian_wiki.layout import load_layout; print(load_layout().project_subdirs)"`. Defaults: `concepts`, `skills`, `references`.
 
 **When knowledge is project-specific** (a debugging technique that only applies to one codebase, a project-specific architecture decision), put it under `projects/<project-name>/<category>/`.
 
