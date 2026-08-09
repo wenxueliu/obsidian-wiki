@@ -108,3 +108,4 @@ exclude = [
 [tool.hatch.build.targets.sdist.force-include]
 ".skills" = ".skills"
 ".claude/hooks/wiki-stop-capture.sh" = ".claude/hooks/wiki-stop-capture.sh"
+".claude/hooks/wiki-stop-capture.ps1" = ".claude/hooks/wiki-stop-capture.ps1"
