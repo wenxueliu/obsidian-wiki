@@ -202,16 +202,18 @@ Vision is interpretive by nature, so image-derived pages will skew heavily towar
 
 For PDFs that are mostly images (scanned docs, slide decks exported to PDF), use `Read pages: "N"` to pull specific pages and treat each page as an image source.
 
-### Long-PDF preprocessing — PageIndex (optional — requires `PAGEINDEX_REPO` in `.env`)
+### Large-document preprocessing (optional — requires `PAGEINDEX_REPO` in `.env`)
 
-When the source is a **text PDF with ≥ `PAGEINDEX_MIN_PAGES` pages** (default 30) and
-`PAGEINDEX_REPO` is set, don't read the whole document linearly. Build a structure-aware
-table-of-contents tree first, reason over it, and read only the relevant page ranges —
-**read `references/pageindex.md` and follow it.** It yields section titles, summaries, and
-page ranges, giving precise page-cited provenance at a fraction of the context cost.
+When the source is **any file ≥ `PAGEINDEX_MIN_SIZE_KB` KB** (default **50**,
+configurable in `.env`) and `PAGEINDEX_REPO` is set, don't read the whole document
+linearly. Build a structure map first, reason over it, and read only the relevant
+sections — **read `references/pageindex.md` and follow it.** It covers PDFs (PageIndex
+TOC tree), markdown (heading grep), plain text/logs (head/tail sampling), and chat
+exports (title extraction). Yields section-level provenance at a fraction of the
+context cost.
 
-If `PAGEINDEX_REPO` is unset, the repo is missing, or PageIndex errors, **fall back** to
-reading the PDF directly with page ranges. Never block an ingest on PageIndex.
+If `PAGEINDEX_REPO` is unset, the repo is missing, or any step errors, **fall back**
+to reading the document directly. Never block an ingest on this step.
 
 ### Academic papers
 
@@ -451,6 +453,30 @@ When **updating** an existing page, recompute `base_confidence` only if sources 
 - Extracted claims need no marker
 - After writing the page, count rough fractions and write them to a `provenance:` frontmatter block (extracted/inferred/ambiguous summing to ~1.0). When updating an existing page, recompute and update the block.
 
+### Step 5b: Validate Frontmatter
+
+After writing all pages for this ingest batch, validate every new and updated page has complete frontmatter before proceeding to cross-references and manifest updates:
+
+```bash
+obsidian-wiki validate "$OBSIDIAN_VAULT_PATH" --pages \
+  concepts/new-page.md \
+  entities/another-page.md \
+  references/updated-page.md
+```
+
+Or pipe the page list from stdin:
+
+```bash
+printf '%s\n' "concepts/foo.md" "entities/bar.md" | obsidian-wiki validate "$OBSIDIAN_VAULT_PATH" --from-stdin
+```
+
+**What it checks:**
+- Required fields present: `title`, `category`, `tags`, `sources`, `summary`, `base_confidence`, `lifecycle`, `lifecycle_changed`, `tier`, `created`, `updated`
+- `provenance` block with sub-keys (`extracted`/`inferred`/`ambiguous`)
+- `summary` length ≤ 200 characters (warning only)
+
+If validation fails (missing fields), fix those pages and re-validate before continuing. Do not update `index.md`, `log.md`, or `.manifest.json` until validation passes.
+
 ### Step 6: Update Cross-References
 
 After writing pages, check that wikilinks work in both directions. If page A links to page B, consider whether page B should also link back to page A.
@@ -541,6 +567,7 @@ When ingesting a directory, process sources one at a time but maintain a running
 ## Quality Checklist
 
 After ingesting, verify:
+- [ ] `obsidian-wiki validate` passed for all new and updated pages (Step 5b)
 - [ ] Every new page has frontmatter with title, category, tags, sources
 - [ ] Every new page has at least 2 wikilinks to existing pages
 - [ ] No orphaned pages (pages with zero incoming links)

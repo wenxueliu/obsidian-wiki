@@ -21,6 +21,7 @@ from typing import TypedDict
 
 from obsidian_wiki import __version__
 from obsidian_wiki.layout import VaultLayout, load_layout
+from obsidian_wiki.validate import validate_vault_pages, print_report
 
 HOME = Path.home()
 _IS_WINDOWS = os.name == "nt"
@@ -1891,6 +1892,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     lt.set_defaults(func=cmd_lint)
 
+    vl = sub.add_parser(
+        "validate",
+        help="validate frontmatter completeness for pages after an ingest",
+    )
+    vl.add_argument("vault", nargs="?", help="vault path or @name (defaults via CWD .env, then global config)")
+    pages_src = vl.add_mutually_exclusive_group(required=True)
+    pages_src.add_argument(
+        "--pages", nargs="+", metavar="PAGE",
+        help="vault-relative page paths to validate (e.g. concepts/foo.md)",
+    )
+    pages_src.add_argument(
+        "--from-stdin", action="store_true",
+        help="read page paths from stdin (JSON array or newline-separated)",
+    )
+    vl.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    vl.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    vl.set_defaults(func=cmd_validate)
+
     tr = sub.add_parser(
         "trust-record",
         help="record explicitly approved manual confidence reviews in the vault trust ledger",
@@ -1995,6 +2014,39 @@ def build_parser() -> argparse.ArgumentParser:
     cp.set_defaults(func=cmd_context_pack)
 
     return p
+
+
+def cmd_validate(args: argparse.Namespace) -> int:
+    """Validate frontmatter completeness for recently written wiki pages."""
+    context = _resolve_schema_command_context(args.vault)
+    if context is None:
+        return 1
+    vault, _config, _config_source = context
+
+    if args.pages:
+        page_paths = args.pages
+    elif args.from_stdin:
+        raw = sys.stdin.read()
+        try:
+            page_paths = json.loads(raw)
+        except json.JSONDecodeError:
+            page_paths = [line.strip() for line in raw.splitlines() if line.strip()]
+    else:
+        print("error: pass --pages or --from-stdin", file=sys.stderr)
+        return 1
+
+    report = validate_vault_pages(vault, page_paths)
+    if args.json:
+        if args.pretty:
+            print(json.dumps(report, indent=2))
+        else:
+            print(json.dumps(report))
+    else:
+        print_report(report)
+
+    if report["status"] == "fail":
+        return 1
+    return 0
 
 
 def _add_setup_args(sp: argparse.ArgumentParser) -> None:

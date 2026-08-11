@@ -36,7 +36,26 @@ TRUST_REQUIRED_FRONTMATTER = (
 )
 RESERVED_PAGE_STEMS = frozenset({"index", "log", "hot", "_insights"})
 ALLOWED_RELATIONSHIP_TYPES = frozenset(
-    {"extends", "implements", "contradicts", "derived_from", "uses", "replaces", "related_to"}
+    {
+        # Knowledge Evolution
+        "supersedes", "updates", "evolution_of",
+        # Evidence
+        "supports", "contradicts", "disputes",
+        # Hierarchy
+        "parent_of", "child_of", "sibling_of", "composed_of", "part_of",
+        # Causation
+        "causes", "influenced_by", "prerequisite_for",
+        # Implementation
+        "implements", "documents", "tests", "example_of",
+        # Conversation
+        "responds_to", "references", "inspired_by",
+        # Sequence
+        "follows", "precedes",
+        # Dependencies
+        "depends_on",
+        # Legacy (retained for backward compatibility)
+        "extends", "derived_from", "uses", "replaces", "related_to",
+    }
 )
 
 _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---", re.DOTALL)
