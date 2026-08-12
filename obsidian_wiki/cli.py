@@ -22,6 +22,12 @@ from typing import TypedDict
 from obsidian_wiki import __version__
 from obsidian_wiki.layout import VaultLayout, load_layout
 from obsidian_wiki.validate import validate_vault_pages, print_report
+from obsidian_wiki.verify import (
+    verify_completeness,
+    verify_sections,
+    print_report as print_verify_report,
+    print_sections_report,
+)
 
 HOME = Path.home()
 _IS_WINDOWS = os.name == "nt"
@@ -1910,6 +1916,34 @@ def build_parser() -> argparse.ArgumentParser:
     vl.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
     vl.set_defaults(func=cmd_validate)
 
+    vf = sub.add_parser(
+        "verify",
+        help="audit source-to-page completeness against the manifest (detect ingest omissions)",
+    )
+    vf.add_argument("vault", nargs="?", help="vault path or @name (defaults via CWD .env, then global config)")
+    vf_src = vf.add_mutually_exclusive_group()
+    vf_src.add_argument(
+        "--sources", nargs="+", metavar="SOURCE",
+        help="source paths from this ingest batch to verify",
+    )
+    vf_src.add_argument(
+        "--from-stdin", action="store_true",
+        help="read source paths from stdin (JSON array or newline-separated)",
+    )
+    vf.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    vf.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    vf.set_defaults(func=cmd_verify)
+
+    vs = sub.add_parser(
+        "verify-sections",
+        help="emit a section-coverage checklist from a PageIndex _structure.json",
+    )
+    vs.add_argument("structure", help="path to a PageIndex _structure.json file")
+    vs.add_argument("--pages", nargs="*", metavar="PAGE", help="produced page paths (vault-relative) for a coverage hint")
+    vs.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    vs.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    vs.set_defaults(func=cmd_verify_sections)
+
     tr = sub.add_parser(
         "trust-record",
         help="record explicitly approved manual confidence reviews in the vault trust ledger",
@@ -2045,6 +2079,51 @@ def cmd_validate(args: argparse.Namespace) -> int:
         print_report(report)
 
     if report["status"] == "fail":
+        return 1
+    return 0
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
+    """Audit source→page completeness against the manifest."""
+    context = _resolve_schema_command_context(args.vault)
+    if context is None:
+        return 1
+    vault, _config, _config_source = context
+
+    source_paths = args.sources if args.sources else None
+    if source_paths is None and args.from_stdin:
+        raw = sys.stdin.read()
+        try:
+            source_paths = json.loads(raw)
+        except json.JSONDecodeError:
+            source_paths = [line.strip() for line in raw.splitlines() if line.strip()]
+
+    report = verify_completeness(vault, source_paths=source_paths)
+    if args.json:
+        if args.pretty:
+            print(json.dumps(report, indent=2))
+        else:
+            print(json.dumps(report))
+    else:
+        print_verify_report(report)
+
+    if report["status"] == "fail":
+        return 1
+    return 0
+
+
+def cmd_verify_sections(args: argparse.Namespace) -> int:
+    """Emit a section-coverage checklist from a PageIndex structure JSON."""
+    report = verify_sections(args.structure, produced_pages=args.pages)
+    if args.json:
+        if args.pretty:
+            print(json.dumps(report, indent=2))
+        else:
+            print(json.dumps(report))
+    else:
+        print_sections_report(report)
+
+    if report.get("status") == "fail":
         return 1
     return 0
 

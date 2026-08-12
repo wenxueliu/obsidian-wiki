@@ -542,6 +542,42 @@ updated: TIMESTAMP
 ## Flagged Contradictions
 ```
 
+### Step 7b: Verify Completeness
+
+After Step 7 (manifest written), confirm every source in the batch was actually processed and its pages landed:
+
+```bash
+obsidian-wiki verify "$OBSIDIAN_VAULT_PATH" --sources <source1> <source2> ...
+```
+
+Or pipe the source list from stdin:
+
+```bash
+printf '%s\n' "<source1>" "<source2>" | obsidian-wiki verify "$OBSIDIAN_VAULT_PATH" --from-stdin
+```
+
+**What it checks:**
+- `missing_entry` — a source in the batch has no manifest entry (was never recorded)
+- `empty_pages` — a manifest entry has empty/missing `pages_produced` (ingested but produced nothing)
+- `phantom_pages` — a `pages_produced` path no longer exists on disk
+
+If verification fails, go back and re-ingest the flagged sources before declaring the batch complete. This is the source-level "no omission" guarantee — it does **not** judge whether extraction covered all of a document's *content*; for large docs, use Step 7c.
+
+### Step 7c: Section Coverage (optional — PageIndex documents only)
+
+**GUARD: Run only for sources processed through PageIndex large-document preprocessing (Step 1).** For those, the `_structure.json` holds the full section list — use it as a coverage checklist to catch content-level omissions:
+
+```bash
+obsidian-wiki verify-sections "$PAGEINDEX_REPO/results/<docname>_structure.json" \
+  --pages concepts/foo.md references/bar.md
+```
+
+This flattens the section tree and prints each section with its page range. Eyeball the list against the pages you wrote for this document — any section that carries important content but produced no page is a coverage gap. Re-distill those sections.
+
+The `--pages` argument adds a heuristic hint: if the section count far exceeds the produced-page count (or zero pages were produced), it flags the document as likely under-covered. The hint is a signal, not a verdict — a single page can legitimately cover many small sections.
+
+If you recorded the `_structure.json` path in the manifest (see `references/pageindex.md` Notes), fetch it from there instead of reconstructing the path.
+
 ### Step 8: Refresh QMD Wiki Index (optional — requires `QMD_WIKI_COLLECTION`)
 
 **GUARD: If `$QMD_WIKI_COLLECTION` is empty or unset, skip this step.** The markdown vault is still the source of truth; QMD is a search index.
@@ -588,6 +624,7 @@ When ingesting a directory, process sources one at a time but maintain a running
 
 After ingesting, verify:
 - [ ] `obsidian-wiki validate` passed for all new and updated pages (Step 5b)
+- [ ] `obsidian-wiki verify` passed — no missing_entry / empty_pages / phantom_pages (Step 7b)
 - [ ] Every new page has frontmatter with title, category, tags, sources
 - [ ] Every new page has at least 2 wikilinks to existing pages
 - [ ] No orphaned pages (pages with zero incoming links)
