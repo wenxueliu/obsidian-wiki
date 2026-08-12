@@ -64,30 +64,30 @@ def simple_vault(vault):
 
 class TestParseVaultGraph:
     def test_reads_wikilinks(self, simple_vault):
-        outgoing, _ = parse_vault_graph(simple_vault)
+        outgoing, *_ = parse_vault_graph(simple_vault)
         assert "b" in outgoing["a"]
         assert "c" in outgoing["a"]
 
     def test_all_pages_present_as_keys(self, simple_vault):
-        outgoing, _ = parse_vault_graph(simple_vault)
+        outgoing, *_ = parse_vault_graph(simple_vault)
         assert set(outgoing.keys()) == {"a", "b", "c", "d", "e", "f"}
 
     def test_reads_tags(self, simple_vault):
-        _, tags = parse_vault_graph(simple_vault)
+        _, tags, _ = parse_vault_graph(simple_vault)
         assert "concepts" in tags.get("a", [])
 
     def test_empty_vault(self, vault):
-        outgoing, tags = parse_vault_graph(vault)
+        outgoing, tags, _ = parse_vault_graph(vault)
         assert outgoing == {}
 
     def test_self_links_ignored(self, vault):
         _page(vault, "selfref", ["selfref"])
-        outgoing, _ = parse_vault_graph(vault)
+        outgoing, *_ = parse_vault_graph(vault)
         assert "selfref" not in outgoing.get("selfref", [])
 
     def test_links_to_nonexistent_pages_excluded(self, vault):
         _page(vault, "orphan", ["doesnotexist"])
-        outgoing, _ = parse_vault_graph(vault)
+        outgoing, *_ = parse_vault_graph(vault)
         assert outgoing["orphan"] == []
 
 
@@ -97,20 +97,20 @@ class TestParseVaultGraph:
 
 class TestGodNodes:
     def test_c_is_top_hub(self, simple_vault):
-        outgoing, _ = parse_vault_graph(simple_vault)
+        outgoing, *_ = parse_vault_graph(simple_vault)
         result = god_nodes(outgoing, top_n=3)
         # c has 2 in-links (from a and b), so should be in top 3
         top_pages = {r["page"] for r in result}
         assert "c" in top_pages
 
     def test_degree_sum(self, simple_vault):
-        outgoing, _ = parse_vault_graph(simple_vault)
+        outgoing, *_ = parse_vault_graph(simple_vault)
         result = god_nodes(outgoing)
         for node in result:
             assert node["degree"] == node["in_degree"] + node["out_degree"]
 
     def test_respects_top_n(self, simple_vault):
-        outgoing, _ = parse_vault_graph(simple_vault)
+        outgoing, *_ = parse_vault_graph(simple_vault)
         result = god_nodes(outgoing, top_n=2)
         assert len(result) <= 2
 
@@ -121,14 +121,14 @@ class TestGodNodes:
 
 class TestDeadEndsIsolated:
     def test_dead_ends(self, simple_vault):
-        outgoing, _ = parse_vault_graph(simple_vault)
+        outgoing, *_ = parse_vault_graph(simple_vault)
         de = dead_ends(outgoing)
         assert "c" in de
         assert "f" in de
         assert "a" not in de
 
     def test_isolated(self, simple_vault):
-        outgoing, _ = parse_vault_graph(simple_vault)
+        outgoing, *_ = parse_vault_graph(simple_vault)
         iso = isolated(outgoing)
         assert "d" in iso
         assert "a" not in iso
@@ -141,14 +141,14 @@ class TestDeadEndsIsolated:
 
 class TestCommunityDetection:
     def test_returns_list_of_sets(self, simple_vault):
-        outgoing, _ = parse_vault_graph(simple_vault)
+        outgoing, *_ = parse_vault_graph(simple_vault)
         comms = detect_communities_greedy(outgoing)
         assert isinstance(comms, list)
         for c in comms:
             assert isinstance(c, set)
 
     def test_all_nodes_assigned(self, simple_vault):
-        outgoing, _ = parse_vault_graph(simple_vault)
+        outgoing, *_ = parse_vault_graph(simple_vault)
         comms = detect_communities_greedy(outgoing)
         all_nodes = set(outgoing.keys())
         assigned = set()
@@ -157,7 +157,7 @@ class TestCommunityDetection:
         assert assigned == all_nodes
 
     def test_no_overlap(self, simple_vault):
-        outgoing, _ = parse_vault_graph(simple_vault)
+        outgoing, *_ = parse_vault_graph(simple_vault)
         comms = detect_communities_greedy(outgoing)
         seen = set()
         for c in comms:
@@ -172,13 +172,13 @@ class TestCommunityDetection:
         _page(vault, "x", ["y", "z"])
         _page(vault, "y", ["x", "z"])
         _page(vault, "z", ["x", "y"])
-        outgoing, _ = parse_vault_graph(vault)
+        outgoing, *_ = parse_vault_graph(vault)
         comms = detect_communities_greedy(outgoing)
         # At least 2 communities
         assert len(comms) >= 2
 
     def test_empty_graph(self, vault):
-        outgoing, _ = parse_vault_graph(vault)
+        outgoing, *_ = parse_vault_graph(vault)
         comms = detect_communities_greedy(outgoing)
         assert comms == []
 
@@ -196,7 +196,7 @@ class TestSurprisingConnections:
         _page(vault, "x", ["y", "z"])
         _page(vault, "y", ["x", "z"])
         _page(vault, "z", ["x", "y"])
-        outgoing, _ = parse_vault_graph(vault)
+        outgoing, *_ = parse_vault_graph(vault)
         comms = detect_communities_greedy(outgoing)
         sc = surprising_connections(outgoing, comms)
         sources = {s["source"] for s in sc}
@@ -206,7 +206,7 @@ class TestSurprisingConnections:
     def test_no_intra_community_edges(self, vault):
         _page(vault, "a", ["b"])
         _page(vault, "b", ["a"])
-        outgoing, _ = parse_vault_graph(vault)
+        outgoing, *_ = parse_vault_graph(vault)
         comms = [{"a", "b"}]  # one community
         sc = surprising_connections(outgoing, comms)
         assert sc == []
@@ -216,7 +216,7 @@ class TestSurprisingConnections:
         _page(vault, "b", ["a"])
         _page(vault, "x", ["y"])
         _page(vault, "y", ["x"])
-        outgoing, _ = parse_vault_graph(vault)
+        outgoing, *_ = parse_vault_graph(vault)
         comms = detect_communities_greedy(outgoing)
         sc = surprising_connections(outgoing, comms)
         for item in sc:

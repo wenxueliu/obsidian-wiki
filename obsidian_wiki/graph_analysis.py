@@ -39,10 +39,14 @@ from obsidian_wiki.layout import load_layout
 # Wikilink / frontmatter parsing
 # ---------------------------------------------------------------------------
 
+_FRONT_RE = re.compile(r"^---\r?\n(.*?)\r?\n---(?:\r?\n|$)", re.DOTALL)
 _WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:[|#][^\]]*?)?\]\]")
 _MD_LINK_RE = re.compile(r"\[.*?\]\(([^)]+\.md[^)]*)\)")
 _TAGS_RE = re.compile(r"^tags:\s*\[([^\]]+)\]", re.MULTILINE)
 _TAGS_LIST_RE = re.compile(r"^tags:\s*\n((?:\s+-\s+\S+\n)+)", re.MULTILINE)
+_RELATIONSHIPS_RE = re.compile(
+    r"^relationships:\s*\n((?:\s+-\s+\S.*\n)+)", re.MULTILINE
+)
 
 
 def _slug(page_name: str) -> str:
@@ -54,13 +58,15 @@ def _page_slug(path: Path, root: Path) -> str:
     return _slug(path.stem)
 
 
-def parse_vault_graph(vault: Path) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
-    """Parse all .md pages and return (outgoing_edges, page_tags).
+def parse_vault_graph(vault: Path) -> tuple[dict[str, list[str]], dict[str, list[str]], dict[tuple[str, str], str]]:
+    """Parse all .md pages and return (outgoing_edges, page_tags, edge_types).
 
     outgoing_edges: {source_slug: [target_slug, ...]}
     page_tags:      {slug: [tag, ...]}
+    edge_types:     {(source_slug, target_slug): relation_type}  — from frontmatter relationships:
     """
     outgoing: dict[str, list[str]] = defaultdict(list)
+    edge_types: dict[tuple[str, str], str] = {}
     tags_map: dict[str, list[str]] = {}
     skip_dirs = load_layout().skip_dirs
 
@@ -100,6 +106,22 @@ def parse_vault_graph(vault: Path) -> tuple[dict[str, list[str]], dict[str, list
             if target and target != src and target in known_slugs:
                 outgoing[src].append(target)
 
+        # Typed relationships from frontmatter
+        front_m = _FRONT_RE.match(text)
+        front = front_m.group(1) if front_m else ""
+        rel_m = _RELATIONSHIPS_RE.search(front)
+        if rel_m:
+            for line in rel_m.group(1).splitlines():
+                line = line.strip().lstrip("- ")
+                target_m = re.search(r'target:\s*"?\[\[([^\]]+)\]\]"?', line)
+                type_m = re.search(r'type:\s*(\S+)', line)
+                if target_m:
+                    target = _slug(target_m.group(1).split("/")[-1])
+                    if target and target != src and target in known_slugs:
+                        outgoing[src].append(target)
+                        rtype = type_m.group(1).strip() if type_m else "related_to"
+                        edge_types[(src, target)] = rtype
+
         if src not in outgoing:
             outgoing[src] = []
 
@@ -108,7 +130,7 @@ def parse_vault_graph(vault: Path) -> tuple[dict[str, list[str]], dict[str, list
         s = _page_slug(p, vault)
         outgoing.setdefault(s, [])
 
-    return dict(outgoing), tags_map
+    return dict(outgoing), tags_map, edge_types
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +272,7 @@ def detect_communities(outgoing: dict[str, list[str]]) -> list[set[str]]:
 def surprising_connections(
     outgoing: dict[str, list[str]],
     communities: list[set[str]],
+    edge_types: dict[tuple[str, str], str] | None = None,
     top_n: int = 20,
 ) -> list[dict]:
     """Edges that cross community boundaries, ranked by unexpectedness.
@@ -281,7 +304,8 @@ def surprising_connections(
                 cd_s = cross_deg.get(src, 1)
                 cd_t = cross_deg.get(t, 1)
                 score = 1.0 / math.sqrt(cd_s * cd_t)
-                results.append({"source": src, "target": t, "score": round(score, 4)})
+                rtype = (edge_types or {}).get((src, t)) or (edge_types or {}).get((t, src)) or "link"
+                results.append({"source": src, "target": t, "relation": rtype, "score": round(score, 4)})
                 seen.add(pair)
 
     results.sort(key=lambda x: -x["score"])
@@ -317,7 +341,7 @@ def _label_community(pages: list[str], tags_map: dict[str, list[str]]) -> str:
 # ---------------------------------------------------------------------------
 
 def analyse_vault(vault: Path, top_n: int = 20) -> dict[str, Any]:
-    outgoing, tags_map = parse_vault_graph(vault)
+    outgoing, tags_map, edge_types = parse_vault_graph(vault)
 
     if not outgoing:
         return {
@@ -343,7 +367,7 @@ def analyse_vault(vault: Path, top_n: int = 20) -> dict[str, Any]:
             }
             for i, comm in enumerate(communities_raw)
         ],
-        "surprising_connections": surprising_connections(outgoing, communities_raw, top_n),
+        "surprising_connections": surprising_connections(outgoing, communities_raw, edge_types, top_n),
         "dead_ends": dead_ends(outgoing),
         "isolated": isolated(outgoing),
         "stats": {

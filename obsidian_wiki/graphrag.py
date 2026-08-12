@@ -42,6 +42,9 @@ _CATEGORY_RE = re.compile(r"^category:\s*(\w+)", re.MULTILINE)
 _TIER_RE = re.compile(r"^tier:\s*(\w+)", re.MULTILINE)
 _WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:[|#][^\]]*?)?\]\]")
 _MD_LINK_RE = re.compile(r"\[.*?\]\(([^)]+\.md[^)]*)\)")
+_RELATIONSHIPS_RE = re.compile(
+    r"^relationships:\s*\n((?:\s+-\s+\S.*\n)+)", re.MULTILINE
+)
 
 # A bare `>`, `>-`, `>+`, `|`, `|-`, `|+` (optionally followed by an indent
 # indicator digit) marks a YAML block scalar — the real value lives on the
@@ -145,9 +148,10 @@ def build_index(vault: Path) -> dict[str, dict]:
             "path": str(page.relative_to(vault)),
             "out_links": [],
             "in_links": [],
+            "out_edges": {},   # target_slug -> relation_type from relationships: block
         }
 
-    # Second pass: extract wikilinks
+    # Second pass: extract wikilinks and typed relationships
     known = set(pages.keys())
     for page in md_files:
         slug = _slug(page.stem)
@@ -169,6 +173,23 @@ def build_index(vault: Path) -> dict[str, dict]:
             if target and target != slug and target in known:
                 pages[slug]["out_links"].append(target)
                 pages[target]["in_links"].append(slug)
+
+        # Typed relationships from frontmatter
+        front_m = _FRONT_RE.match(text)
+        front = front_m.group(1) if front_m else ""
+        rel_m = _RELATIONSHIPS_RE.search(front)
+        if rel_m:
+            for line in rel_m.group(1).splitlines():
+                line = line.strip().lstrip("- ")
+                target_m = re.search(r'target:\s*"?\[\[([^\]]+)\]\]"?', line)
+                type_m = re.search(r'type:\s*(\S+)', line)
+                if target_m:
+                    target = _slug(target_m.group(1).split("/")[-1])
+                    if target and target != slug and target in known:
+                        pages[slug]["out_links"].append(target)
+                        pages[target]["in_links"].append(slug)
+                        rtype = type_m.group(1).strip() if type_m else "related_to"
+                        pages[slug]["out_edges"][target] = rtype
 
     return pages
 
