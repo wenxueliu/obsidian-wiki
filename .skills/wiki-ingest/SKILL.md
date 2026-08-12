@@ -40,6 +40,17 @@ Source documents (PDFs, text files, web clippings, images, `_raw/` drafts) are *
 
 This applies to all ingest modes and all source formats.
 
+## Performance
+
+Ingest is dominated by LLM calls, not file I/O. The levers, in order of impact:
+
+1. **Parallel dispatch** — directories use Step 0's `batch-plan` and parallel subagents. Never process batches sequentially.
+2. **Skip unchanged** — append mode + `cache-check` avoids re-ingesting already-processed files (Step 0 step 1).
+3. **Free extraction** — code files go through `ast-extract` (Step 1c), not the LLM.
+4. **Model layering** — mechanical extraction (Step 2) can run on a fast/cheap model; reserve a stronger model for synthesis and cross-referencing decisions where judgment matters. If you can control the model, use a cheaper one for the bulk extraction pass.
+
+Do not "optimise" by skipping frontmatter validation (Step 5b) or the manifest/log updates (Step 7) — those are cheap and keep the vault consistent. (In a parallel batch ingest, Step 7 is *deferred* to the coordinator, not skipped.)
+
 ## Ingest Modes
 
 This skill supports three modes. Ask the user or infer from context:
@@ -94,32 +105,39 @@ This keeps faith with the "immutable raw layer" principle in `llm-wiki/SKILL.md`
 
 ## The Ingest Process
 
-### Step 0: Batch Planning for Large Folders
+### Step 0: Batch Planning for Directories
 
-**GUARD: Only run this step when the source is a directory with more than 20 files.** For single files, small folders, or `_raw/` mode, skip directly to Step 1.
-
-When the source is a large directory of docs, plan the parallel dispatch first:
+**GUARD: Run this step whenever the source is a directory with 2+ files.** It does two things — cache-check (skip unchanged) and parallel batch planning. For a single file or `_raw/` mode, skip directly to Step 1.
 
 ```bash
-obsidian-wiki batch-plan "$OBSIDIAN_VAULT_PATH" <source-dir> --pretty
+obsidian-wiki batch-plan "$OBSIDIAN_VAULT_PATH" <source-dir> --max-files 8 --pretty
 ```
 
-This outputs a JSON plan with `batches` (each a list of files + total_bytes + kind counts) and `stats` (total, to_ingest, skipped_unchanged).
+This outputs a JSON plan with `batches` (each a list of files + total_bytes + kind counts) and `stats` (total, to_ingest, skipped_unchanged). `--max-files 8` forces smaller batches so parallelism actually kicks in for modest directories.
 
 **What to do with the plan:**
 
 1. **Check `stats.skipped_unchanged`** — report to the user how many files are being skipped (already ingested, hash unchanged).
 2. **If `batch_count == 0`** — all files are unchanged. Tell the user and stop.
 3. **If `batch_count == 1`** — proceed with the single batch as a normal Step 1 ingest.
-4. **If `batch_count > 1`** — dispatch each batch as a **parallel subagent** (multiple Agent tool calls in a single message). Each subagent receives a message like:
+4. **If `batch_count > 1`** — **dispatch each batch as a parallel subagent (mandatory — do not process batches sequentially).** Send multiple Agent tool calls in a single message, one per batch. Each subagent receives a message like:
    ```
-   Ingest these files into the wiki at $OBSIDIAN_VAULT_PATH using wiki-ingest Step 1 onward:
+   Ingest these files into the wiki at $OBSIDIAN_VAULT_PATH using wiki-ingest Step 1 through Step 6 ONLY:
    <list of file paths from this batch>
    Skip batch-plan — these files are already partitioned.
+   Do NOT run Step 7 (manifest/index/log/hot) — the coordinator handles shared files.
+   When done, report back a list of:
+     - sources you ingested (absolute paths)
+     - pages you created or updated (vault-relative paths)
    ```
-   Wait for all subagents to complete, then run `/cross-linker` once to wire cross-references across all batches.
+   Wait for all subagents to complete, then as the coordinator:
+   1. **Aggregate** every subagent's `sources` + `pages_created`/`pages_updated` lists.
+   2. Run **Step 7 once** (manifest / index.md / log.md / hot.md) using the aggregated lists.
+   3. Run `/cross-linker` once to wire cross-references across all batches.
 
-**Fallback** (if `obsidian-wiki` is not installed): process files sequentially in groups of 15.
+   **Why:** Step 7 writes shared files (`.manifest.json`, `index.md`, `log.md`, `hot.md`). If subagents ran it in parallel, they'd clobber each other's entries. Shared files are written exactly once by the coordinator after the parallel phase.
+
+**Fallback** (if `obsidian-wiki` is not installed): process files sequentially in groups of 8.
 
 ### Ingesting Git Repositories
 
@@ -482,6 +500,8 @@ If validation fails (missing fields), fix those pages and re-validate before con
 After writing pages, check that wikilinks work in both directions. If page A links to page B, consider whether page B should also link back to page A.
 
 ### Step 7: Update Manifest and Special Files
+
+**GUARD: This step writes shared vault files — run it only from the coordinator, never inside a parallel subagent.** In a parallel batch ingest, subagents stop at Step 6 and report their source/page lists; the coordinator runs Step 7 once with the aggregated lists.
 
 **`.manifest.json`** — For each source file ingested, add or update its entry:
 ```json
