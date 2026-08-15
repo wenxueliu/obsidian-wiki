@@ -25,37 +25,12 @@ Output JSON:
 
 from __future__ import annotations
 
-import json
 import math
-import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from obsidian_wiki.layout import load_layout
-
-
-# ---------------------------------------------------------------------------
-# Wikilink / frontmatter parsing
-# ---------------------------------------------------------------------------
-
-_FRONT_RE = re.compile(r"^---\r?\n(.*?)\r?\n---(?:\r?\n|$)", re.DOTALL)
-_WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:[|#][^\]]*?)?\]\]")
-_MD_LINK_RE = re.compile(r"\[.*?\]\(([^)]+\.md[^)]*)\)")
-_TAGS_RE = re.compile(r"^tags:\s*\[([^\]]+)\]", re.MULTILINE)
-_TAGS_LIST_RE = re.compile(r"^tags:\s*\n((?:\s+-\s+\S+\n)+)", re.MULTILINE)
-_RELATIONSHIPS_RE = re.compile(
-    r"^relationships:\s*\n((?:\s+-\s+\S.*\n)+)", re.MULTILINE
-)
-
-
-def _slug(page_name: str) -> str:
-    """Normalise a wikilink target to a page slug."""
-    return page_name.strip().lower().replace(" ", "-")
-
-
-def _page_slug(path: Path, root: Path) -> str:
-    return _slug(path.stem)
+from obsidian_wiki.index import load_index
 
 
 def parse_vault_graph(vault: Path) -> tuple[dict[str, list[str]], dict[str, list[str]], dict[tuple[str, str], str]]:
@@ -66,69 +41,16 @@ def parse_vault_graph(vault: Path) -> tuple[dict[str, list[str]], dict[str, list
     edge_types:     {(source_slug, target_slug): relation_type}  — from frontmatter relationships:
     """
     outgoing: dict[str, list[str]] = defaultdict(list)
-    edge_types: dict[tuple[str, str], str] = {}
     tags_map: dict[str, list[str]] = {}
-    skip_dirs = load_layout().skip_dirs
+    edge_types: dict[tuple[str, str], str] = {}
 
-    pages: list[Path] = []
-    for p in vault.rglob("*.md"):
-        if any(part in skip_dirs for part in p.parts):
-            continue
-        pages.append(p)
-
-    known_slugs = {_page_slug(p, vault) for p in pages}
-
-    for page in pages:
-        src = _page_slug(page, vault)
-        try:
-            text = page.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-
-        # Tags
-        m = _TAGS_RE.search(text)
-        if m:
-            tags_map[src] = [t.strip().strip("'\"") for t in m.group(1).split(",")]
-        else:
-            m2 = _TAGS_LIST_RE.search(text)
-            if m2:
-                tags_map[src] = [ln.strip().lstrip("- ") for ln in m2.group(1).splitlines() if ln.strip()]
-
-        # Wikilinks
-        for link in _WIKILINK_RE.findall(text):
-            target = _slug(link.split("/")[-1])
-            if target and target != src and target in known_slugs:
-                outgoing[src].append(target)
-
-        # Markdown links (when OBSIDIAN_LINK_FORMAT=markdown)
-        for href in _MD_LINK_RE.findall(text):
-            target = _slug(Path(href).stem)
-            if target and target != src and target in known_slugs:
-                outgoing[src].append(target)
-
-        # Typed relationships from frontmatter
-        front_m = _FRONT_RE.match(text)
-        front = front_m.group(1) if front_m else ""
-        rel_m = _RELATIONSHIPS_RE.search(front)
-        if rel_m:
-            for line in rel_m.group(1).splitlines():
-                line = line.strip().lstrip("- ")
-                target_m = re.search(r'target:\s*"?\[\[([^\]]+)\]\]"?', line)
-                type_m = re.search(r'type:\s*(\S+)', line)
-                if target_m:
-                    target = _slug(target_m.group(1).split("/")[-1])
-                    if target and target != src and target in known_slugs:
-                        outgoing[src].append(target)
-                        rtype = type_m.group(1).strip() if type_m else "related_to"
-                        edge_types[(src, target)] = rtype
-
-        if src not in outgoing:
-            outgoing[src] = []
-
-    # Ensure every known page appears as a key
-    for p in pages:
-        s = _page_slug(p, vault)
-        outgoing.setdefault(s, [])
+    for entry in load_index(vault).values():
+        src = entry["slug"]
+        tags_map[src] = list(entry["tags"])
+        # Plain links + typed relationships (both are edges).
+        outgoing[src] = list(entry["out_links"]) + list(entry["out_edges"].keys())
+        for target, rtype in entry["out_edges"].items():
+            edge_types[(src, target)] = rtype
 
     return dict(outgoing), tags_map, edge_types
 

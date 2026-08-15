@@ -24,72 +24,10 @@ Requires: networkx (pip install networkx). Falls back to a warning if missing.
 from __future__ import annotations
 
 import json
-import re
-from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from obsidian_wiki.layout import load_layout
-
-# ── Wikilink / frontmatter parsing (shared with graphrag.py) ──────────
-
-_FRONT_RE = re.compile(r"^---\r?\n(.*?)\r?\n---(?:\r?\n|$)", re.DOTALL)
-_WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:[|#][^\]]*?)?\]\]")
-_MD_LINK_RE = re.compile(r"\[.*?\]\(([^)]+\.md[^)]*)\)")
-_TAGS_RE = re.compile(r"^tags:\s*\[([^\]]+)\]", re.MULTILINE)
-_TAGS_LIST_RE = re.compile(r"^tags:\s*\n((?:\s+-\s+\S+\n)+)", re.MULTILINE)
-_CATEGORY_RE = re.compile(r"^category:\s*(\w+)", re.MULTILINE)
-_TIER_RE = re.compile(r"^tier:\s*(\w+)", re.MULTILINE)
-_RELATIONSHIPS_RE = re.compile(
-    r"^relationships:\s*\n((?:\s+-\s+\S.*\n)+)", re.MULTILINE
-)
-_BLOCK_SCALAR_RE = re.compile(r"^[>|][+-]?\d*$")
-
-
-def _slug(s: str) -> str:
-    return s.strip().lower().replace(" ", "-")
-
-
-def _extract_scalar(front: str, key: str) -> str:
-    lines = front.splitlines()
-    pattern = re.compile(rf"^{re.escape(key)}:\s*(.*)$")
-    for i, line in enumerate(lines):
-        m = pattern.match(line)
-        if not m:
-            continue
-        rest = m.group(1).strip()
-        if not rest or _BLOCK_SCALAR_RE.match(rest):
-            block_lines = []
-            for cont in lines[i + 1 :]:
-                if cont.strip() == "":
-                    continue
-                if re.match(r"^\s+\S", cont):
-                    block_lines.append(cont.strip())
-                else:
-                    break
-            return " ".join(block_lines).strip()
-        return rest.strip("\"'")
-    return ""
-
-
-def _parse_relationships(front: str) -> list[dict[str, str]]:
-    """Parse the relationships: frontmatter block into typed edges."""
-    edges: list[dict[str, str]] = []
-    m = _RELATIONSHIPS_RE.search(front)
-    if not m:
-        return edges
-    block = m.group(1)
-    for line in block.splitlines():
-        line = line.strip().lstrip("- ")
-        # Expected: target: "[[path/to/page]]"  with optional type:
-        target_m = re.search(r'target:\s*"?\[\[([^\]]+)\]\]"?', line)
-        type_m = re.search(r'type:\s*(\S+)', line)
-        if target_m:
-            target_slug = _slug(target_m.group(1).split("/")[-1])
-            rtype = type_m.group(1).strip() if type_m else "related_to"
-            edges.append({"target": target_slug, "type": rtype})
-    return edges
-
+from obsidian_wiki.index import load_index
 
 # ── Graph building ────────────────────────────────────────────────────
 
@@ -110,79 +48,29 @@ def build_graph(vault: str | Path) -> "nx.DiGraph":
         ) from None
 
     vault = Path(vault)
-    layout = load_layout()
-    skip_dirs = layout.skip_dirs
+    raw = load_index(vault)
 
     G = nx.DiGraph()
 
-    # First pass: add nodes
-    md_files = [
-        p for p in vault.rglob("*.md")
-        if not any(
-            part in skip_dirs for part in p.relative_to(vault).parts
-        )
-    ]
-
-    slug_to_path: dict[str, Path] = {}
-    for page in md_files:
-        slug = _slug(page.stem)
-        slug_to_path[slug] = page
-        try:
-            text = page.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-
-        front_m = _FRONT_RE.match(text)
-        front = front_m.group(1) if front_m else ""
-
-        title = _extract_scalar(front, "title") or page.stem
-        tags: list[str] = []
-        m = _TAGS_RE.search(front)
-        if m:
-            tags = [t.strip().strip("'\"") for t in m.group(1).split(",")]
-        else:
-            m2 = _TAGS_LIST_RE.search(front)
-            if m2:
-                tags = [
-                    ln.strip().lstrip("- ")
-                    for ln in m2.group(1).splitlines()
-                    if ln.strip()
-                ]
-
-        summary = _extract_scalar(front, "summary") or ""
-        category = str(page.relative_to(vault).parent)
-        cm = _CATEGORY_RE.search(front)
-        if cm:
-            category = cm.group(1).strip()
-        tier = "supporting"
-        tm = _TIER_RE.search(front)
-        if tm:
-            tier = tm.group(1).strip()
-
+    # Nodes
+    for entry in raw.values():
         G.add_node(
-            slug,
-            title=title,
-            tags=tags,
-            category=category,
-            tier=tier,
-            summary=summary,
-            path=str(page.relative_to(vault)),
+            entry["slug"],
+            title=entry["title"],
+            tags=entry["tags"],
+            category=entry["category"],
+            tier=entry["tier"],
+            summary=entry["summary"],
+            path=entry["path"],
         )
 
-    # Second pass: add edges
+    # Edges
     known = set(G.nodes())
-    for slug, page in slug_to_path.items():
-        try:
-            text = page.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
+    for entry in raw.values():
+        slug = entry["slug"]
 
-        front_m = _FRONT_RE.match(text)
-        front = front_m.group(1) if front_m else ""
-
-        # Wikilinks
-        for link in _WIKILINK_RE.findall(text):
-            target = _slug(link.split("/")[-1])
+        # Plain links (wikilinks + markdown), weight = multiplicity
+        for target in entry["out_links"]:
             if target and target != slug and target in known:
                 if G.has_edge(slug, target):
                     G[slug][target]["weight"] = G[slug][target].get("weight", 1) + 1
@@ -191,39 +79,19 @@ def build_graph(vault: str | Path) -> "nx.DiGraph":
                     if "link" not in G[slug][target]["types"]:
                         G[slug][target]["types"].append("link")
                 else:
-                    G.add_edge(
-                        slug, target, weight=1, types=["link"], relation="link"
-                    )
-
-        # Markdown links
-        for href in _MD_LINK_RE.findall(text):
-            target = _slug(Path(href).stem)
-            if target and target != slug and target in known:
-                if G.has_edge(slug, target):
-                    G[slug][target]["weight"] = G[slug][target].get("weight", 1) + 1
-                    if "types" not in G[slug][target]:
-                        G[slug][target]["types"] = []
-                    if "link" not in G[slug][target]["types"]:
-                        G[slug][target]["types"].append("link")
-                else:
-                    G.add_edge(
-                        slug, target, weight=1, types=["link"], relation="link"
-                    )
+                    G.add_edge(slug, target, weight=1, types=["link"], relation="link")
 
         # Typed relationships from frontmatter
-        for rel in _parse_relationships(front):
-            target = rel["target"]
+        for target, rtype in entry["out_edges"].items():
             if target and target != slug and target in known:
                 if G.has_edge(slug, target):
                     G[slug][target]["weight"] = G[slug][target].get("weight", 1) + 1
                     if "types" not in G[slug][target]:
                         G[slug][target]["types"] = []
-                    G[slug][target]["types"].append(rel["type"])
-                    G[slug][target]["relation"] = rel["type"]
+                    G[slug][target]["types"].append(rtype)
+                    G[slug][target]["relation"] = rtype
                 else:
-                    G.add_edge(
-                        slug, target, weight=1, types=[rel["type"]], relation=rel["type"]
-                    )
+                    G.add_edge(slug, target, weight=1, types=[rtype], relation=rtype)
 
     return G
 

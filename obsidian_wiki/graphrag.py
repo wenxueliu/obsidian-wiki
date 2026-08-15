@@ -35,162 +35,36 @@ from typing import Any
 # Index building
 # ---------------------------------------------------------------------------
 
-_FRONT_RE = re.compile(r"^---\n(.*?)\n---", re.DOTALL)
-_TAGS_RE = re.compile(r"^tags:\s*\[([^\]]+)\]", re.MULTILINE)
-_TAGS_LIST_RE = re.compile(r"^tags:\s*\n((?:\s+-\s+\S+\n)+)", re.MULTILINE)
-_CATEGORY_RE = re.compile(r"^category:\s*(\w+)", re.MULTILINE)
-_TIER_RE = re.compile(r"^tier:\s*(\w+)", re.MULTILINE)
-_WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:[|#][^\]]*?)?\]\]")
-_MD_LINK_RE = re.compile(r"\[.*?\]\(([^)]+\.md[^)]*)\)")
-_RELATIONSHIPS_RE = re.compile(
-    r"^relationships:\s*\n((?:\s+-\s+\S.*\n)+)", re.MULTILINE
-)
-
-# A bare `>`, `>-`, `>+`, `|`, `|-`, `|+` (optionally followed by an indent
-# indicator digit) marks a YAML block scalar — the real value lives on the
-# following indented lines, not on this line.
-_BLOCK_SCALAR_RE = re.compile(r"^[>|][+-]?\d*$")
-
-from obsidian_wiki.layout import load_layout
-
-SKIP_DIRS = load_layout().skip_dirs
-
-
-def _slug(s: str) -> str:
-    return s.strip().lower().replace(" ", "-")
-
-
-def _extract_scalar(front: str, key: str) -> str:
-    """Extract a YAML scalar frontmatter value, folding block scalars (>, |).
-
-    Handles both `key: value` and the block-scalar form:
-        key: >-
-          wrapped
-          text
-    where the real value lives on subsequent indented lines, not on the
-    `key:` line itself (see issue #156 — a naive same-line regex captures
-    the `>-` indicator instead of the text).
-    """
-    lines = front.splitlines()
-    pattern = re.compile(rf"^{re.escape(key)}:\s*(.*)$")
-    for i, line in enumerate(lines):
-        m = pattern.match(line)
-        if not m:
-            continue
-        rest = m.group(1).strip()
-        if not rest or _BLOCK_SCALAR_RE.match(rest):
-            block_lines = []
-            for cont in lines[i + 1:]:
-                if cont.strip() == "":
-                    continue
-                if re.match(r"^\s+\S", cont):
-                    block_lines.append(cont.strip())
-                else:
-                    break
-            return " ".join(block_lines).strip()
-        return rest.strip("\"'")
-    return ""
+from obsidian_wiki.index import _slug, load_index
 
 
 def build_index(vault: Path) -> dict[str, dict]:
     """Build a lightweight index dict from vault frontmatter and wikilinks.
 
     Returns:
-        {slug: {title, tags, summary, category, tier, out_links, in_links, path}}
+        {slug: {title, tags, summary, category, tier, out_links, in_links, path, out_edges}}
     """
+    raw = load_index(vault)
     pages: dict[str, dict] = {}
-
-    md_files = [
-        p for p in vault.rglob("*.md")
-        if not any(part in SKIP_DIRS for part in p.relative_to(vault).parts)
-    ]
-
-    # First pass: collect all slugs and frontmatter
-    for page in md_files:
-        slug = _slug(page.stem)
-        try:
-            text = page.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-
-        front_m = _FRONT_RE.match(text)
-        front = front_m.group(1) if front_m else ""
-
-        title = _extract_scalar(front, "title")
-
-        tags: list[str] = []
-        m = _TAGS_RE.search(front)
-        if m:
-            tags = [t.strip().strip("'\"") for t in m.group(1).split(",")]
-        else:
-            m2 = _TAGS_LIST_RE.search(front)
-            if m2:
-                tags = [ln.strip().lstrip("- ") for ln in m2.group(1).splitlines() if ln.strip()]
-
-        summary = _extract_scalar(front, "summary")
-
-        category = str(page.relative_to(vault).parent)
-        m = _CATEGORY_RE.search(front)
-        if m:
-            category = m.group(1).strip()
-
-        tier = "supporting"
-        m = _TIER_RE.search(front)
-        if m:
-            tier = m.group(1).strip()
-
-        pages[slug] = {
-            "title": title or page.stem,
-            "tags": tags,
-            "summary": summary,
-            "category": category,
-            "tier": tier,
-            "path": str(page.relative_to(vault)),
-            "out_links": [],
+    for entry in raw.values():
+        pages[entry["slug"]] = {
+            "title": entry["title"],
+            "tags": list(entry["tags"]),
+            "summary": entry["summary"],
+            "category": entry["category"],
+            "tier": entry["tier"],
+            "path": entry["path"],
+            # Plain links + typed relationships (both are edges for degree/path).
+            "out_links": list(entry["out_links"]) + list(entry["out_edges"].keys()),
             "in_links": [],
-            "out_edges": {},   # target_slug -> relation_type from relationships: block
+            "out_edges": dict(entry["out_edges"]),
         }
 
-    # Second pass: extract wikilinks and typed relationships
-    known = set(pages.keys())
-    for page in md_files:
-        slug = _slug(page.stem)
-        if slug not in pages:
-            continue
-        try:
-            text = page.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-
-        for link in _WIKILINK_RE.findall(text):
-            target = _slug(link.split("/")[-1])
-            if target and target != slug and target in known:
-                pages[slug]["out_links"].append(target)
+    # Reverse pass: compute in_links.
+    for slug, e in pages.items():
+        for target in e["out_links"]:
+            if target in pages:
                 pages[target]["in_links"].append(slug)
-
-        for href in _MD_LINK_RE.findall(text):
-            target = _slug(Path(href).stem)
-            if target and target != slug and target in known:
-                pages[slug]["out_links"].append(target)
-                pages[target]["in_links"].append(slug)
-
-        # Typed relationships from frontmatter
-        front_m = _FRONT_RE.match(text)
-        front = front_m.group(1) if front_m else ""
-        rel_m = _RELATIONSHIPS_RE.search(front)
-        if rel_m:
-            for line in rel_m.group(1).splitlines():
-                line = line.strip().lstrip("- ")
-                target_m = re.search(r'target:\s*"?\[\[([^\]]+)\]\]"?', line)
-                type_m = re.search(r'type:\s*(\S+)', line)
-                if target_m:
-                    target = _slug(target_m.group(1).split("/")[-1])
-                    if target and target != slug and target in known:
-                        pages[slug]["out_links"].append(target)
-                        pages[target]["in_links"].append(slug)
-                        rtype = type_m.group(1).strip() if type_m else "related_to"
-                        pages[slug]["out_edges"][target] = rtype
-
     return pages
 
 
