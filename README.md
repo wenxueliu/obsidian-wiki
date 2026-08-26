@@ -30,7 +30,7 @@ This fixes that. Point it at a folder, tell your agent what to remember, and it 
 
 **Your second brain. Your AI agent is how you grow it.**
 
-Every skill here is a markdown file that any agent — Claude Code, Cursor, Codex, Windsurf, Gemini CLI, and [a dozen more](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/agents.md) — reads and runs. No runtime, no API keys, no vendor.
+Every skill here is a markdown file that any agent — Claude Code, Cursor, Codex, Windsurf, Gemini CLI, and [a dozen more](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/agents.md) — reads and runs. Deterministic local helpers handle hashing and bounded text ranges; there is no hosted runtime, API key, or vendor lock-in.
 
 ## 60 seconds
 
@@ -51,7 +51,8 @@ Other paths — `git clone`, Skills CLI, multiple vaults → **[Installation](ht
 
 ## What you actually do
 
-**Feed it.** Anything text-shaped: docs, PDFs, chat exports, meeting transcripts, screenshots, URLs.
+**Feed it.** Local Markdown, plain-text, and reStructuredText documents are ingested through a
+resumable, context-bounded pipeline. Agent histories and web research use their dedicated skills.
 
 ```text
 /wiki-ingest ~/research
@@ -84,7 +85,7 @@ obsidian-wiki sessions-query "the auth bug with the weird retry loop"
 /wiki-status          # what's ingested, what's pending, where the hubs are
 ```
 
-All 39 skills → **[Skills Reference](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/skills.md)**
+All 42 skills → **[Skills Reference](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/skills.md)**
 
 ## See it
 
@@ -112,7 +113,7 @@ More → **[Architecture](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/
 | | |
 |---|---|
 | **[Installation](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/installation.md)** | pip, clone, agent-driven setup, multiple vaults |
-| **[Skills Reference](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/skills.md)** | All 39 skills and their slash commands |
+| **[Skills Reference](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/skills.md)** | All 42 skills and their slash commands |
 | **[Agent Compatibility](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/agents.md)** | The full matrix + per-agent manual setup |
 | **[CLI Reference](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/cli.md)** | Every `obsidian-wiki` subcommand |
 | **[Configuration](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/configuration.md)** | Config vars, QMD semantic search, `_raw/` staging, GitHub sync |

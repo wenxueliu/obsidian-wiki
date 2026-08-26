@@ -2,7 +2,9 @@
 
 The wiki is the artifact. The agent is the maintainer. Obsidian is the viewer.
 
-No scripts run your knowledge pipeline — the skills are markdown files that tell an AI agent *how* to operate on your vault. The agent uses the same read/write/search tools it already has.
+Skills tell an AI agent how to operate on the vault. Small dependency-free Python helpers handle
+the parts that must be deterministic, including hashing, text range planning, and exact range
+materialization; extraction and knowledge integration remain agent work.
 
 ## The four stages
 
@@ -10,23 +12,31 @@ Every time you feed the brain, it runs through these:
 
 ### 1. Ingest
 
-The agent reads your source material directly — markdown, PDFs (with page ranges), JSONL conversation exports, plain text logs, chat exports, meeting transcripts, and images (screenshots, whiteboard photos, diagrams; vision-capable model required). No preprocessing step, no pipeline to run. The agent reads the file the same way it reads code.
+Text ingest V1 discovers local UTF-8 Markdown, plain-text, and reStructuredText files. The folder
+coordinator classifies and hashes files but never receives their bodies. A deterministic streaming
+chunker plans exhaustive line/byte ranges so even a large document never enters one agent context.
+Unsupported formats remain visible in the Job report and are never silently decoded as text.
 
 ### 2. Pull information
 
-From the raw source, the agent pulls out concepts, entities, claims, relationships, and open questions. A conversation about debugging a React hook yields a "stale closure" pattern. A research paper yields the key idea and its caveats. A work log yields decisions and their rationale. Noise gets dropped, signal gets kept.
+An isolated `wiki-source-text` worker materializes exactly one hash-verified range and pulls out
+concepts, entities, claims, relationships, and open questions into one bounded Packet. It never
+reads neighboring ranges or writes wiki pages.
 
 Each page also gets a 1–2 sentence `summary:` in its frontmatter at write time — later queries use this to preview pages without opening them.
 
 ### 3. Merge
 
-New knowledge merges against what's already there. If a concept page exists, the agent updates it: merging new information, noting contradictions, strengthening cross-references. If it's genuinely new, a page gets created. Nothing is duplicated. Sources are tracked in frontmatter so every claim stays attributable.
+`wiki-ingest` validates and integrates Packets serially in source order. New knowledge merges
+against what's already there; contradictions and exact source locators are retained. Packet
+boundaries never become page boundaries.
 
 ### 4. Schema
 
 The schema isn't fixed upfront. It emerges from your sources and evolves as you add more. The agent maintains coherence: categories stay consistent, wikilinks point to real pages, the index reflects what's actually there. When you add a new domain, the schema expands without breaking what exists.
 
-A `.manifest.json` tracks every source that's been ingested — path, timestamps, which pages it produced. On the next run, the agent computes the delta and only processes what's new or changed.
+A durable Job under `_meta/ingest-jobs/` tracks pending ranges and Packets for interruption-safe
+resume. `.manifest.json` advances only after every unit for one exact source version integrates.
 
 ## The loop
 
@@ -34,8 +44,9 @@ A `.manifest.json` tracks every source that's been ingested — path, timestamps
 2. Agent reads `.manifest.json` to know what's already been done
 3. Agent reads the relevant skill for instructions
 4. Agent uses its built-in tools to do the work
-5. Agent updates `.manifest.json`, `index.md`, `log.md`, and `hot.md`
-6. Output is standard Obsidian-compatible markdown with frontmatter and `[[wikilinks]]`
+5. Range workers produce bounded Packets; integration consumes them serially
+6. Agent updates `.manifest.json`, `index.md`, `log.md`, and `hot.md` only at source completion
+7. Output is standard Obsidian-compatible markdown with frontmatter and `[[wikilinks]]`
 
 ## Vault structure
 
@@ -47,6 +58,7 @@ $OBSIDIAN_VAULT_PATH/
 ├── .manifest.json          # Ingest ledger: path, timestamps, pages produced
 ├── _meta/
 │   ├── taxonomy.md         # Controlled tag vocabulary
+│   ├── ingest-jobs/        # Durable text-ingest Jobs and bounded Packets
 │   └── *.base              # Obsidian Bases dashboard definitions
 ├── _insights.md            # Graph analysis: hubs, bridges, dead ends
 ├── _raw/                   # Staging — drop rough notes, next ingest promotes them
@@ -87,7 +99,9 @@ The [original gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519
 
 - **Archive and rebuild.** When the wiki drifts too far from its sources, archive the whole thing (timestamped snapshot, nothing lost) and rebuild. Or restore any previous archive.
 
-- **Multi-agent ingest.** Documents, PDFs, Claude Code history, Codex sessions, Hermes memories, OpenClaw `MEMORY.md`, Pi sessions, Copilot CLI history, Windsurf data, ChatGPT exports, Slack logs, meeting transcripts, raw text. Dedicated skills for each agent, plus a catch-all for arbitrary exports.
+- **Context-bounded text ingest.** Markdown, text, and reStructuredText sources are deterministically
+  partitioned into exact byte ranges. Agent histories retain dedicated ingest skills; other formats
+  wait for explicit structure providers instead of unsafe generic fallbacks.
 
 - **Cross-agent targeted search.** `/wiki-codex "rust ownership"` from inside Claude Code finds your Codex sessions on that topic, extracts the relevant blobs, distills them into pages, and returns a synthesized answer. Topic-first, not session-first. Each agent has its own extraction strategy. Pair with `/memory-bridge diff` to see what each tool uniquely contributed.
 
@@ -103,7 +117,8 @@ The [original gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519
 
 - **Trust ledger.** `obsidian-wiki trust-record` / `trust-check` record and validate human-approved confidence reviews against material fingerprints, so CI can gate on "a person actually checked this."
 
-- **Multimodal sources.** Screenshots, whiteboard photos, slide captures, and diagrams ingest like text — visible text transcribed verbatim, interpreted content tagged as inferred.
+- **Explicit extension points.** PDF structure providers and multimodal/structured-data pipelines
+  are deferred; unsupported inputs are reported with their detected kind and reason.
 
 - **Wiki insights.** `wiki-status` can analyze the shape of the vault itself: top hubs, bridge pages (nodes whose removal would partition the graph), tag cluster cohesion, scored surprising connections, a graph delta since last run, and questions the structure is uniquely positioned to answer. Output goes to `_insights.md`.
 
@@ -128,7 +143,7 @@ The OKF round-trip is lossless. The `graph.json` round-trip is not — it carrie
 ```
 obsidian-wiki/
 ├── .skills/                             # ← Canonical skill definitions (source of truth)
-│   └── <skill-name>/SKILL.md            #   39 skills — see docs/skills.md
+│   └── <skill-name>/SKILL.md            #   42 skills — see docs/skills.md
 │
 ├── obsidian_wiki/                       # Python package — CLI, setup, sync, session brain
 ├── extensions/brain-capture/            # Zero-build Chrome capture extension

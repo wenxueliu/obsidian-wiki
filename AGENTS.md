@@ -36,6 +36,7 @@ $OBSIDIAN_VAULT_PATH/
 ├── .manifest.json          # Tracks every ingested source: path, timestamps, pages produced
 ├── _meta/
 │   ├── taxonomy.md         # Controlled tag vocabulary
+│   ├── ingest-jobs/        # Durable V1 text-ingest Jobs and Packets
 │   └── *.base              # Obsidian Bases dashboard definitions (wiki-dashboard skill)
 ├── _insights.md            # Graph analysis output (hubs, bridges, dead ends)
 ├── _raw/                   # Staging area — drop rough notes here, next ingest promotes them
@@ -60,7 +61,10 @@ Skills live in `.skills/<name>/SKILL.md`. Match the user's intent to the right s
 |---|---|
 | "set up my wiki" / "initialize" | `wiki-setup` |
 | "/wiki-history-ingest claude" / "/wiki-history-ingest codex" / "/wiki-history-ingest hermes" / "/wiki-history-ingest pi" | `wiki-history-ingest` |
-| "ingest" / "add this to the wiki" / "process these docs" / "process this export" / "ingest this data" / logs, transcripts / "/ingest-url <url>" / "add this URL" / "ingest this link" / "save this page" | `wiki-ingest` |
+| "ingest this folder" / "process these text docs" / a local `.md`, `.markdown`, `.mdx`, `.txt`, or `.rst` source | `wiki-folder-ingest` (compatibility calls through `wiki-ingest` route here) |
+| One planned text range assigned by an ingest Job | `wiki-source-text` |
+| Integrate one validated Packet into wiki pages | `wiki-ingest` |
+| PDF, Office, structured data, logs/transcripts, HTML/URLs, media, archives, or source code | Explicitly unsupported by text ingest V1; use a dedicated skill when one exists |
 | "import my Claude history" / "mine my conversations" | `claude-history-ingest` |
 | "import my Codex history" / "mine my Codex sessions" | `codex-history-ingest` |
 | "import my Hermes history" / "mine my Hermes memories" / "ingest ~/.hermes" | `hermes-history-ingest` |

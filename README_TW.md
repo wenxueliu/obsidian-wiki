@@ -28,9 +28,9 @@
 
 這個專案解決那個問題。指定一個資料夾，告訴你的 agent 要記住什麼，它就會把你學到的東西編譯成彼此連結、而且屬於你自己的 markdown。這個模式來自 Andrej Karpathy 的 [LLM Wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)：把知識編譯一次並持續維護，而不是每次都問 LLM 同樣的問題，或每次都重新跑 RAG。
 
-**Obsidian 是你觀看這個大腦的方式；AI agent 是你讓它成長的方式。**
+**你的第二大腦。你的 AI agent 讓它持續成長。**
 
-這裡每個 skill 都是一個 markdown 檔案，任何 agent 都能讀取並執行，包括 Claude Code、Cursor、Codex、Windsurf、Gemini CLI，以及[另外十幾種](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/agents.md)。沒有 runtime、沒有 API key、不綁任何廠商。
+這裡每個 skill 都是一個 markdown 檔案，任何 agent 都能讀取並執行，包括 Claude Code、Cursor、Codex、Windsurf、Gemini CLI，以及[另外十幾種](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/agents.md)。確定性的本機工具負責雜湊與受限文字區段；不需要託管 runtime、API key，也不綁任何廠商。
 
 ## 60 秒上手
 
@@ -51,7 +51,8 @@ https://github.com/Ar9av/obsidian-wiki — set up my wiki
 
 ## 你實際會做的事
 
-**餵養它。** 任何文字形式的東西：文件、PDF、聊天匯出、會議逐字稿、截圖、網址。
+**餵養它。** 本機 Markdown、純文字與 reStructuredText 文件會透過可續傳、受上下文限制的
+管線匯入。Agent 歷史與網路研究則使用各自的專用 skill。
 
 ```text
 /wiki-ingest ~/research
@@ -84,7 +85,7 @@ obsidian-wiki sessions-query "the auth bug with the weird retry loop"
 /wiki-status          # 已匯入什麼、還有什麼待處理、樞紐頁面在哪
 ```
 
-全部 39 個 skill 請見 **[Skills Reference](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/skills.md)**（英文）
+全部 42 個 skill 請見 **[Skills Reference](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/skills.md)**（英文）
 
 ## 看見它
 
@@ -114,7 +115,7 @@ obsidian-wiki sessions-query "the auth bug with the weird retry loop"
 | | |
 |---|---|
 | **[Installation](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/installation.md)** | pip、clone、由 agent 設定、多個 vault |
-| **[Skills Reference](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/skills.md)** | 全部 39 個 skill 與其 slash command |
+| **[Skills Reference](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/skills.md)** | 全部 42 個 skill 與其 slash command |
 | **[Agent Compatibility](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/agents.md)** | 完整相容性表格與各 agent 手動設定 |
 | **[CLI Reference](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/cli.md)** | 每一個 `obsidian-wiki` 子命令 |
 | **[Configuration](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/configuration.md)** | 設定變數、QMD 語意搜尋、`_raw/` 暫存區、GitHub 同步 |

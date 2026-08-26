@@ -1104,6 +1104,43 @@ def cmd_cache_hash(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_text_chunk_plan(args: argparse.Namespace) -> int:
+    from obsidian_wiki.text_chunker import TextChunkError, plan_text_chunks
+
+    try:
+        plan = plan_text_chunks(
+            Path(args.source),
+            target_budget=args.target_budget,
+            hard_budget=args.hard_budget,
+            allow_unsafe_hard_budget=args.allow_unsafe_hard_budget,
+        )
+    except (OSError, TextChunkError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(plan.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))
+    return 0
+
+
+def cmd_text_chunk_read(args: argparse.Namespace) -> int:
+    from obsidian_wiki.text_chunker import TextChunkError, read_text_chunk, unit_for_range
+
+    try:
+        unit = unit_for_range(
+            start_byte=args.start_byte,
+            end_byte=args.end_byte,
+            expected_hash=args.expect_hash,
+            allow_unsafe_hard_budget=args.allow_unsafe_hard_budget,
+        )
+        content = read_text_chunk(Path(args.source), unit)
+    except (OSError, TextChunkError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    # Binary stdout avoids both an appended newline and platform newline
+    # translation, preserving the exact UTF-8 bytes of the requested range.
+    sys.stdout.buffer.write(content.encode("utf-8"))
+    return 0
+
+
 def cmd_ast_extract(args: argparse.Namespace) -> int:
     from pathlib import Path
     from obsidian_wiki.ast_extractor import extract
@@ -1837,6 +1874,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ch.add_argument("path", help="file or directory to hash")
     ch.set_defaults(func=cmd_cache_hash)
+
+    tcp = sub.add_parser(
+        "text-chunk-plan",
+        help="plan deterministic UTF-8 byte ranges for a supported text source",
+    )
+    tcp.add_argument("source", help=".md, .markdown, .mdx, .txt, or .rst source")
+    tcp.add_argument("--target-budget", type=int, default=48_000,
+                     help="preferred UTF-8 byte size per unit (default: 48000)")
+    tcp.add_argument("--hard-budget", type=int, default=64_000,
+                     help="absolute UTF-8 byte cap per unit (default: 64000)")
+    tcp.add_argument("--allow-unsafe-hard-budget", action="store_true",
+                     help="explicitly allow a hard cap above the documented 64000-byte maximum")
+    tcp.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    tcp.set_defaults(func=cmd_text_chunk_plan)
+
+    tcr = sub.add_parser(
+        "text-chunk-read",
+        help="verify a source hash and write exactly one planned UTF-8 byte range",
+    )
+    tcr.add_argument("source", help="planned text source")
+    tcr.add_argument("--start-byte", type=int, required=True, help="zero-based inclusive byte offset")
+    tcr.add_argument("--end-byte", type=int, required=True, help="exclusive byte offset")
+    tcr.add_argument("--expect-hash", required=True, metavar="sha256:HEX",
+                     help="source hash recorded by text-chunk-plan")
+    tcr.add_argument("--allow-unsafe-hard-budget", action="store_true",
+                     help="explicitly allow reading a planned range above 64000 bytes")
+    tcr.set_defaults(func=cmd_text_chunk_read)
 
     ap = sub.add_parser(
         "ast-extract",

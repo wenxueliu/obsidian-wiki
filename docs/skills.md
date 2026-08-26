@@ -16,7 +16,9 @@ Slash commands (`/skill-name`) work in Claude Code, Cursor, Windsurf, and most C
 
 | Skill | What it does | Slash command |
 |---|---|---|
-| `wiki-ingest` | The catch-all. Distills documents, PDFs, chat exports, logs, transcripts, images, and URLs into wiki pages | `/wiki-ingest` |
+| `wiki-folder-ingest` | Coordinate resumable ingestion for supported local text files/folders; report unsupported inputs | `/wiki-folder-ingest` |
+| `wiki-source-text` | Extract exactly one planned source range into one bounded Packet | worker-only |
+| `wiki-ingest` | Validate and serially integrate one Packet; local text compatibility requests route to `wiki-folder-ingest` | `/wiki-ingest` |
 | `wiki-capture` | Save the current conversation as a wiki note; `--quick` stages findings to `_raw/` in under 60 seconds | `/wiki-capture` |
 | `wiki-update` | Sync the current project's knowledge into the vault — works from any repo | `/wiki-update` |
 | `wiki-research` | Autonomous multi-round web research, filed straight into the vault | `/wiki-research [topic]` |
@@ -28,6 +30,11 @@ Slash commands (`/skill-name`) work in Claude Code, Cursor, Windsurf, and most C
 | `copilot-history-ingest` | Mine `~/.copilot` CLI session history | `/copilot-history-ingest` |
 | `pi-history-ingest` | Mine `~/.pi/agent/sessions` JSONL history | `/pi-history-ingest` |
 | `wiki-agent` | Topic-first ingest from one agent's raw history | `/wiki-claude`, `/wiki-codex`, `/wiki-hermes`, `/wiki-openclaw`, `/wiki-copilot`, `/wiki-pi` |
+
+Text ingest V1 accepts UTF-8 `.md`, `.markdown`, `.mdx`, `.txt`, and `.rst` only. PDFs, Office
+documents, structured data, logs/transcripts, HTML/URLs, media, archives, and source code are
+reported explicitly rather than treated as generic text. Agent histories and web research keep
+their dedicated skills above.
 
 ## Asking the brain
 

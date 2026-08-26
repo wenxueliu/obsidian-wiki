@@ -31,6 +31,7 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, TypedDict
@@ -78,9 +79,27 @@ def _save_manifest(vault: Path, sources) -> None:
     """Write *sources* back into the manifest, preserving other top-level keys."""
     manifest = _load_raw(vault)
     manifest["sources"] = sources
-    _manifest_path(vault).write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    _atomic_write_manifest(vault, manifest)
+
+
+def _atomic_write_manifest(vault: Path, manifest: dict) -> None:
+    """Durably replace the manifest without exposing partial JSON."""
+    vault.mkdir(parents=True, exist_ok=True)
+    target = _manifest_path(vault)
+    fd, temporary = tempfile.mkstemp(prefix=".manifest-", suffix=".tmp", dir=vault)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(manifest, stream, indent=2, ensure_ascii=False)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, target)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def _iter_entries(sources) -> Iterator[tuple[str | None, dict]]:
@@ -168,7 +187,9 @@ def sha256_dir(path: Path) -> str:
     h = hashlib.sha256()
     for fp in sorted(path.rglob("*")):
         if fp.is_file():
-            rel = str(fp.relative_to(path))
+            # Canonical separators keep directory fingerprints identical on
+            # Windows and POSIX systems.
+            rel = fp.relative_to(path).as_posix()
             h.update(rel.encode())
             h.update(sha256_file(fp).encode())
     return h.hexdigest()
@@ -271,9 +292,35 @@ def update_source(
         sources[key] = entry
 
     manifest["sources"] = sources
-    _manifest_path(vault).write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    _atomic_write_manifest(vault, manifest)
+    return current_hash
+
+
+def update_completed_text_source(
+    vault: Path,
+    source_path: Path,
+    *,
+    units_total: int,
+    units_integrated: int,
+    pages_produced: list[str] | None = None,
+    chunker_version: int = 1,
+) -> str:
+    """Commit a text source only after all planned units integrated."""
+    if units_total < 0 or units_integrated != units_total:
+        raise ValueError("text source is incomplete; permanent manifest was not updated")
+    current_hash = update_source(vault, source_path, pages_produced=pages_produced)
+    manifest = _load_raw(vault)
+    for stored_key, entry in _iter_entries(manifest.get("sources", {})):
+        if _same_source(stored_key, source_path, vault):
+            entry.update({
+                "content_hash": f"sha256:{current_hash}",
+                "source_type": "text",
+                "chunker_version": chunker_version,
+                "units_total": units_total,
+                "units_integrated": units_integrated,
+            })
+            break
+    _atomic_write_manifest(vault, manifest)
     return current_hash
 
 

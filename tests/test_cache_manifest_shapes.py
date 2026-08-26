@@ -18,6 +18,7 @@ from obsidian_wiki.cache import (
     check_sources,
     compute_hash,
     update_source,
+    update_completed_text_source,
     _load_raw,
     _manifest_path,
 )
@@ -147,3 +148,21 @@ def test_url_source_key_not_flagged_missing(vault):
     )
     result = check_sources(vault, [])
     assert result["missing"] == []
+
+
+def test_text_source_manifest_advances_only_when_all_units_integrated(vault, raw_file):
+    with pytest.raises(ValueError, match="incomplete"):
+        update_completed_text_source(
+            vault, raw_file, units_total=3, units_integrated=2,
+            pages_produced=["concepts/foo.md"],
+        )
+    assert not _manifest_path(vault).exists()
+
+    update_completed_text_source(
+        vault, raw_file, units_total=3, units_integrated=3,
+        pages_produced=["concepts/foo.md"],
+    )
+    entry = next(iter(_load_raw(vault)["sources"].values()))
+    assert entry["source_type"] == "text"
+    assert entry["chunker_version"] == 1
+    assert entry["units_total"] == entry["units_integrated"] == 3

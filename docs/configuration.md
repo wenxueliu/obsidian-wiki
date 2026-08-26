@@ -69,18 +69,15 @@ Staged pages aren't visible in Obsidian's graph until promoted. `wiki-status` li
 | `SKILL_FACTORY_OUTPUT_DIR` | Where generated skills are written | `<vault>/_generated-skills` |
 | `SKILL_FACTORY_MATURITY` | Which lifecycle states count as mature enough to harvest (pages with `tier: core` also qualify) | `reviewed,verified` |
 
-## PageIndex (optional, long PDFs)
+## Text ingest budgets
 
-For long PDFs — books, reports — PageIndex builds a table-of-contents tree (section titles, summaries, page ranges) before ingest, so the agent reads only the relevant sections. Without it, `wiki-ingest` reads PDFs directly.
+Text ingest V1 uses dependency-free UTF-8 byte budgets rather than a model-specific tokenizer.
+`obsidian-wiki text-chunk-plan` defaults to a 48,000-byte target and a 64,000-byte hard cap. Lower
+them per invocation with `--target-budget` and `--hard-budget`; they are intentionally not global
+configuration because the exact values are recorded in each durable Job.
 
-Install: clone [PageIndex](https://github.com/VectifyAI/PageIndex), create a venv, and put an LLM key in its `.env` (LiteLLM). See `.skills/wiki-ingest/references/pageindex.md`.
-
-| Variable | What it does | Default |
-|---|---|---|
-| `PAGEINDEX_REPO` | Path to the PageIndex repo — setting this enables the long-PDF branch | *(empty — disabled)* |
-| `PAGEINDEX_MODEL` | LiteLLM model id PageIndex uses | `openai/glm-4.6` |
-| `PAGEINDEX_MIN_PAGES` | Only preprocess PDFs with at least this many pages | `30` |
-| `PAGEINDEX_WORKSPACE` | Cache dir for `*_structure.json` | `<PAGEINDEX_REPO>/results` |
+PageIndex is not a V1 dependency. A future PDF pipeline may use it only as a structure provider
+behind the local hard-budget splitter; PDFs remain explicitly unsupported until that pipeline exists.
 
 ## QMD semantic search (optional)
 
@@ -133,7 +130,9 @@ Both degrade gracefully: with the collection names unset, they skip the QMD step
 
 ## `_raw/` staging directory
 
-`_raw/` is a staging area inside your vault for unprocessed captures — rough notes, clipboard pastes, quick voice-memo transcripts. Drop files there and the next `wiki-ingest` run promotes them to proper wiki pages and removes the originals, so nothing is processed twice.
+`_raw/` is a staging area inside your vault for unprocessed UTF-8 text captures. Drop supported text
+files there and the next `wiki-ingest` run routes them through `wiki-folder-ingest`; after complete
+integration, originals move to `_raw/_archived/` so they are preserved without being processed twice.
 
 The fastest way to feed it during a live coding session:
 

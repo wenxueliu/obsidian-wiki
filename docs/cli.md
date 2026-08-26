@@ -158,6 +158,8 @@ Available for automation, scripting, and debugging. Skills call some of these in
 | `cache-check <vault> <sources...>` | Which sources are new / modified / unchanged vs. `.manifest.json` |
 | `cache-update <vault> <source>` | Record a source's SHA-256 in `.manifest.json` after ingest |
 | `cache-hash <path>` | Compute a file or directory hash (no manifest I/O) |
+| `text-chunk-plan <source>` | Plan deterministic, exhaustive UTF-8 byte ranges for one supported text source |
+| `text-chunk-read <source>` | Verify the source hash and materialize exactly one planned byte range |
 | `ast-extract <path>` | Extract classes, functions, and imports from code — no LLM, no API calls |
 
 ```bash
@@ -166,7 +168,16 @@ obsidian-wiki graph-analyse /path/to/vault --top 30 --pretty
 obsidian-wiki batch-plan /path/to/vault ~/research --max-mb 4 --max-files 30
 obsidian-wiki cache-check /path/to/vault ~/research/*.pdf
 obsidian-wiki cache-update /path/to/vault ~/research/paper.pdf --pages concepts/attention.md
+obsidian-wiki text-chunk-plan ~/research/large.md --pretty
+obsidian-wiki text-chunk-read ~/research/large.md \
+  --start-byte 0 --end-byte 47231 --expect-hash sha256:9e9f...
 obsidian-wiki ast-extract ./src --pretty
 ```
+
+`text-chunk-plan` accepts `.md`, `.markdown`, `.mdx`, `.txt`, and `.rst` encoded as UTF-8 or
+UTF-8 with BOM. `--target-budget` defaults to 48,000 bytes and `--hard-budget` to 64,000 bytes;
+the latter is the documented safe maximum and an absolute cap for every planned unit. Raising it
+requires the explicit `--allow-unsafe-hard-budget` override. `text-chunk-read` writes the exact
+range without adding a newline and fails if the source changed after planning.
 
 Most commands accept `--json` and/or `--pretty` for machine-readable output.
