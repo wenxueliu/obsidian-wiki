@@ -467,10 +467,9 @@ def next_pending_unit(job: dict[str, Any]) -> tuple[dict[str, Any], dict[str, An
     return None
 
 
-def mark_unit_integrated(
-    job: dict[str, Any], source_id: str, unit_id: str, packet_path: str
-) -> None:
-    """Advance exactly the next source unit, enforcing serial integration order."""
+def _find_source_and_unit(
+    job: dict[str, Any], source_id: str, unit_id: str
+) -> tuple[dict[str, Any], dict[str, Any], int]:
     source = next(
         (item for item in job.get("sources", []) if item.get("source_id") == source_id), None
     )
@@ -482,9 +481,132 @@ def mark_unit_integrated(
     )
     if target_index is None:
         raise PipelineContractError(f"unknown Job unit: {unit_id}")
+    return source, units[target_index], target_index
+
+
+def mark_unit_staged(
+    job: dict[str, Any], source_id: str, unit_id: str, artifact_paths: list[str]
+) -> None:
+    """Record review artifacts without claiming that the unit is integrated."""
+    if not artifact_paths or any(not isinstance(path, str) or not path for path in artifact_paths):
+        raise PipelineContractError("a staged unit requires non-empty artifact paths")
+    source, target, target_index = _find_source_and_unit(job, source_id, unit_id)
+    units = source.get("units", [])
+    if any(
+        unit.get("status") not in {"staged", "approved_waiting_order", "integrated"}
+        for unit in units[:target_index]
+    ):
+        raise PipelineContractError("Units must be staged serially in source order")
+    if target.get("status") == "integrated":
+        return
+    existing = {
+        artifact.get("path"): artifact
+        for artifact in target.get("staging_artifacts", [])
+        if isinstance(artifact, dict) and isinstance(artifact.get("path"), str)
+    }
+    all_paths = list(existing)
+    all_paths.extend(path for path in artifact_paths if path not in existing)
+    target["staging_artifacts"] = [
+        existing.get(path, {"path": path, "status": "pending"}) for path in all_paths
+    ]
+    target["status"] = "staged"
+    staged = sum(
+        unit.get("status") in {"staged", "approved_waiting_order"} for unit in units
+    )
+    integrated = sum(unit.get("status") == "integrated" for unit in units)
+    pending = next(
+        (unit for unit in units if unit.get("status") in {"pending", "failed"}), None
+    )
+    source["chunk_plan"].update({
+        "units_staged": staged,
+        "units_integrated": integrated,
+        "next_unit": pending.get("unit_id") if pending else None,
+    })
+    if pending is None and integrated < len(units):
+        source["status"] = "awaiting_review"
+    active_statuses = {
+        item.get("status") for item in job.get("sources", [])
+        if item.get("status") not in {"unchanged", "unsupported", "complete"}
+    }
+    if active_statuses and active_statuses <= {"awaiting_review", "ready_to_commit"}:
+        job["status"] = "awaiting_review"
+
+
+def record_staging_decision(
+    job: dict[str, Any], artifact_path: str, *, accepted: bool
+) -> list[tuple[str, str]]:
+    """Record one review decision and advance only contiguous accepted units.
+
+    Returns ``(source_id, unit_id)`` pairs newly promoted to ``integrated``.
+    Page application and validation must succeed before callers record an
+    accepted decision.
+    """
+    matched = False
+    for source in job.get("sources", []):
+        for unit in source.get("units", []):
+            for artifact in unit.get("staging_artifacts", []):
+                if artifact.get("path") == artifact_path:
+                    artifact["status"] = "accepted" if accepted else "rejected"
+                    matched = True
+                    if not accepted:
+                        unit["status"] = "review_rejected"
+                        source["status"] = "incomplete"
+                        job["status"] = "incomplete"
+    if not matched:
+        raise PipelineContractError(f"staged artifact is not present in the Job: {artifact_path}")
+    if not accepted:
+        return []
+
+    advanced: list[tuple[str, str]] = []
+    for source in job.get("sources", []):
+        units = source.get("units", [])
+        prefix_integrated = True
+        for unit in units:
+            if unit.get("status") == "integrated":
+                continue
+            artifacts = unit.get("staging_artifacts", [])
+            all_accepted = bool(artifacts) and all(
+                artifact.get("status") == "accepted" for artifact in artifacts
+            )
+            if all_accepted and prefix_integrated:
+                unit["status"] = "integrated"
+                advanced.append((str(source.get("source_id")), str(unit.get("unit_id"))))
+            elif all_accepted:
+                unit["status"] = "approved_waiting_order"
+                prefix_integrated = False
+            else:
+                prefix_integrated = False
+        integrated = sum(unit.get("status") == "integrated" for unit in units)
+        staged = sum(
+            unit.get("status") in {"staged", "approved_waiting_order"} for unit in units
+        )
+        source.get("chunk_plan", {}).update({
+            "units_integrated": integrated,
+            "units_staged": staged,
+            "next_unit": None,
+        })
+        if units and integrated == len(units):
+            source["status"] = "ready_to_commit"
+        elif source.get("status") != "incomplete":
+            source["status"] = "awaiting_review"
+    if all(
+        source.get("status") in {"unchanged", "unsupported", "ready_to_commit", "complete"}
+        for source in job.get("sources", [])
+    ):
+        job["status"] = "ready_to_commit"
+    elif job.get("status") != "incomplete":
+        job["status"] = "awaiting_review"
+    return advanced
+
+
+def mark_unit_integrated(
+    job: dict[str, Any], source_id: str, unit_id: str, packet_path: str
+) -> None:
+    """Advance exactly the next source unit, enforcing serial integration order."""
+    source, target, target_index = _find_source_and_unit(job, source_id, unit_id)
+    units = source.get("units", [])
     if any(unit.get("status") != "integrated" for unit in units[:target_index]):
         raise PipelineContractError("Packets must integrate serially in source order")
-    target = units[target_index]
     target["status"] = "integrated"
     target["packet_path"] = packet_path
     integrated = sum(unit.get("status") == "integrated" for unit in units)

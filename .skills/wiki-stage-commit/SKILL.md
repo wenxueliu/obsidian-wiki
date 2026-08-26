@@ -10,13 +10,18 @@ description: >
 
 # Wiki Stage Commit — Staged Write Promotion
 
-You are reviewing LLM-written pages that are waiting in `_staging/` for human approval before they land in the live wiki. This skill is only useful when `WIKI_STAGED_WRITES=true` in the vault config.
+You are reviewing LLM-written pages that are waiting in `_staging/` for human approval before they land in the live wiki. This skill is only useful when `WIKI_STAGED_WRITES=true` in the vault config. Text-ingest artifacts may be bound to a durable Job; approval must advance those units without allowing the permanent source manifest to get ahead of live pages.
 
 ## Before You Start
 
 1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md`. This gives `OBSIDIAN_VAULT_PATH` and `WIKI_STAGED_WRITES`.
 2. If `WIKI_STAGED_WRITES` is not set or is `false`, tell the user: "Staged writes mode is not enabled. Set `WIKI_STAGED_WRITES=true` in your `.env` to use this feature." Then stop.
-3. Read the `_staging/` directory inventory.
+3. Read `../wiki-ingest/references/page-write-policy.md` and
+   `../wiki-ingest/references/finalization-policy.md` completely. Accepted artifacts must produce
+   the same live content and source-level commit as direct writes.
+4. Read the `_staging/` directory inventory.
+5. For every artifact with `staged_write.job_id` or `job_id`, resolve that exact Job beneath
+   `_meta/ingest-jobs/`. Refuse metadata-derived paths that escape the vault, Job, or staging roots.
 
 ## Invocation Forms
 
@@ -102,17 +107,22 @@ If `--list` flag is set, stop after printing the inventory (Step 1).
 
 ### Accepting a new page
 
-1. Move `_staging/<category>/page.md` → `<category>/page.md` (the final location)
-2. Update `index.md` with the new page entry
-3. Remove the staged file
+1. Remove the staging-only `staged_write` metadata from the page
+2. Move `_staging/<category>/page.md` → `<category>/page.md` (the final location)
+3. Validate the live page
+4. Record the artifact as accepted for every bound Job unit
+5. Update `index.md` with the new page entry
+6. Remove the staged file
 
 ### Accepting a patch/update
 
 1. Read the current page at the target path
 2. Apply the proposed additions and deletions (merge, don't just overwrite)
 3. Update the `updated` frontmatter timestamp
-4. Update `index.md` if the summary changed
-5. Remove the staged patch file
+4. Validate the changed live page
+5. Record the artifact as accepted for every bound Job unit
+6. Update `index.md` if the summary changed
+7. Remove the staged patch file
 
 ### Rejecting a file
 
@@ -120,6 +130,10 @@ Move it to `$OBSIDIAN_VAULT_PATH/_raw/` for manual editing:
 - `_staging/concepts/page.md` → `_raw/rejected-concepts-page.md`
 - `_staging/concepts/page.patch.md` → `_raw/rejected-patch-concepts-page.md`
 - Prefix with `rejected-` so the user can identify it
+
+For a Job-bound artifact, also mark the artifact `rejected` and its referenced units
+`review_rejected`. Set the source and Job to `incomplete`, retain their Packets, and do not create
+or update the permanent source manifest entry. A later corrected artifact may resume those units.
 
 ### Conflict detection on patch accept
 
@@ -129,10 +143,25 @@ Before applying a patch, check whether the target page's `updated` frontmatter i
 
 ## Step 4: Update Tracking Files
 
-After processing all staged files:
+After processing decisions, reconcile each affected Job in source/unit order:
 
-1. **`hot.md`** — update the Recent Activity section: "Committed N staged pages; rejected M."
-2. **`log.md`** — append:
+1. An accepted artifact may cover several units, and one unit may require several artifacts. Mark a
+   unit integrated only when every artifact recorded on that unit is accepted. Use
+   `record_staging_decision(job, artifact_path, accepted=true|false)` when available, but call it
+   with `accepted=true` only after the live page write and validation succeed.
+2. If a later unit's artifacts were accepted first, leave it `approved_waiting_order` until all
+   preceding units integrate; never bypass serial source order.
+3. When every unit for an exact source hash is integrated, run `wiki-ingest`'s source-completion
+   procedure by applying `../wiki-ingest/references/finalization-policy.md`: validate live pages and
+   special files, update manifest fields and stats, run the completeness audit, and atomically
+   update the permanent manifest last.
+4. Leave skipped artifacts and their units `staged`; the Job remains `awaiting_review`.
+
+Then update shared files:
+
+1. **`index.md`** — add accepted new pages and refresh changed summaries; never list pending pages.
+2. **`hot.md`** — update the Recent Activity section: "Committed N staged pages; rejected M."
+3. **`log.md`** — append:
    ```
    - [TIMESTAMP] STAGE_COMMIT accepted=N rejected=M skipped=K
    ```
@@ -160,5 +189,8 @@ Staging queue: K files remaining
 
 - Staged files use the same page template as live pages — they are ready to land, just awaiting approval
 - Patch files use a human-readable diff format: lines starting with `+` are additions, lines starting with `-` are deletions
-- `index.md` and `log.md` are always updated immediately on ingest (they are low-risk tracking files) — only category pages go through staging
+- `log.md` may record that review is pending, but `index.md` and the permanent source manifest do
+  not advance until the corresponding pages are live
 - The `_staging/` directory is not tracked by Obsidian's graph view — pages only appear in the wiki after promotion
+- After all sources in an ingest Job become live, the coordinator runs `cross-linker` once; it does
+  not run for each accepted artifact

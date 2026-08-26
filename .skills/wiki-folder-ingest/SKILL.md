@@ -72,7 +72,9 @@ For each source in discovery order:
 3. Verify the resulting Packet path is beneath `packets/` and validate it against the Job.
 4. Set the unit to `packet_ready`.
 5. Invoke `wiki-ingest` for that one Packet.
-6. After integration succeeds, atomically mark the unit integrated and advance `next_unit`.
+6. In direct-write mode, atomically mark the unit integrated. With `WIKI_STAGED_WRITES=true`,
+   record its validated review artifacts and mark it staged without increasing `units_integrated`.
+   Advance `next_unit` in either mode.
 7. Continue in source order.
 
 Extraction workers may operate concurrently when the host explicitly supports isolated workers,
@@ -82,6 +84,7 @@ manifest, index, log, hot-cache, or page files.
 ## Completion and recovery
 
 The permanent `.manifest.json` advances only when every unit for an exact source hash has integrated;
+staged units count only after their artifacts become live through `wiki-stage-commit`.
 `wiki-ingest` performs that commit last. Retain successful units and Packets after failures.
 
 - Extraction failure: mark only that unit failed and retain prior successes.
@@ -90,8 +93,9 @@ The permanent `.manifest.json` advances only when every unit for an exact source
 - Interrupted integration: retry the same Packet idempotently.
 - No isolated context: leave the next unit pending for a future run.
 
-After every source is complete/unchanged/unsupported, run `cross-linker` exactly once. Do not run it
-after individual units.
+After every source is live and complete/unchanged/unsupported, run `cross-linker` exactly once. A
+Job in `awaiting_review` is not complete and does not run cross-linking yet. Do not run it after
+individual units or staged artifacts.
 
 ## Report
 

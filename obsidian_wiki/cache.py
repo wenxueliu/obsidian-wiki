@@ -36,6 +36,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, TypedDict
 
+from obsidian_wiki.layout import load_layout
+
 
 class SourceEntry(TypedDict, total=False):
     content_hash: str
@@ -303,23 +305,87 @@ def update_completed_text_source(
     units_total: int,
     units_integrated: int,
     pages_produced: list[str] | None = None,
+    pages_created: list[str] | None = None,
+    pages_updated: list[str] | None = None,
+    project: str | None = None,
     chunker_version: int = 1,
 ) -> str:
-    """Commit a text source only after all planned units integrated."""
+    """Atomically commit a completed text source and compatibility metadata.
+
+    The caller owns page/index/log/hot writes and their validation. This is the
+    final manifest operation, so it performs one atomic replacement and derives
+    counters instead of incrementing them.
+    """
     if units_total < 0 or units_integrated != units_total:
         raise ValueError("text source is incomplete; permanent manifest was not updated")
-    current_hash = update_source(vault, source_path, pages_produced=pages_produced)
+
+    def unique(values: list[str] | None) -> list[str]:
+        return list(dict.fromkeys(values or []))
+
+    created = unique(pages_created)
+    updated = unique(pages_updated)
+    produced = unique((pages_produced or []) + created + updated)
+    current_hash = compute_hash(source_path)
+    now = datetime.now(timezone.utc).isoformat()
     manifest = _load_raw(vault)
-    for stored_key, entry in _iter_entries(manifest.get("sources", {})):
-        if _same_source(stored_key, source_path, vault):
-            entry.update({
-                "content_hash": f"sha256:{current_hash}",
-                "source_type": "text",
-                "chunker_version": chunker_version,
-                "units_total": units_total,
-                "units_integrated": units_integrated,
-            })
-            break
+    manifest.setdefault("version", 1)
+    sources = manifest.get("sources")
+
+    if isinstance(sources, list):
+        target: dict | None = None
+        for entry in sources:
+            if isinstance(entry, dict) and _same_source(
+                entry.get("path") or entry.get("source_id"), source_path, vault
+            ):
+                target = entry
+                break
+        if target is None:
+            target = {"path": str(source_path.expanduser().resolve())}
+            sources.append(target)
+    else:
+        if not isinstance(sources, dict):
+            sources = {}
+        match_key = next(
+            (key for key in sources if _same_source(key, source_path, vault)),
+            None,
+        )
+        key = match_key or str(source_path.expanduser().resolve())
+        target = sources.get(key) if isinstance(sources.get(key), dict) else {}
+        sources[key] = target
+
+    target.update({
+        "content_hash": f"sha256:{current_hash}",
+        "last_ingested": now,
+        "source_type": "text",
+        "chunker_version": chunker_version,
+        "units_total": units_total,
+        "units_integrated": units_integrated,
+        "pages_created": created,
+        "pages_updated": updated,
+        "pages_produced": produced,
+    })
+    if project is not None:
+        target["project"] = project
+
+    manifest["sources"] = sources
+    stats = manifest.get("stats") if isinstance(manifest.get("stats"), dict) else {}
+    stats["total_sources_ingested"] = sum(1 for _ in _iter_entries(sources))
+
+    layout = load_layout()
+    total_pages = 0
+    if vault.exists():
+        for page in vault.rglob("*.md"):
+            relative = page.relative_to(vault)
+            if any(part in layout.skip_dirs for part in relative.parts):
+                continue
+            if len(relative.parts) == 1 and (
+                page.stem in layout.reserved_stems or page.name == "AGENTS.md"
+            ):
+                continue
+            total_pages += 1
+    stats["total_pages"] = total_pages
+    manifest["stats"] = stats
+
     _atomic_write_manifest(vault, manifest)
     return current_hash
 

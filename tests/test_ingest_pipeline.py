@@ -13,8 +13,10 @@ from obsidian_wiki.ingest_pipeline import (
     create_or_resume_job,
     discover_sources,
     mark_unit_integrated,
+    mark_unit_staged,
     next_pending_unit,
     resolve_packet_path,
+    record_staging_decision,
     validate_packet,
     write_packet,
 )
@@ -158,3 +160,45 @@ def test_packet_paths_cannot_escape_job_directory(tmp_path):
     target = write_packet(job_dir, "packets/source-unit.json", packet)
     assert target.parent == (job_dir / "packets").resolve()
     assert json.loads(target.read_text())["packet_id"] == "pkt"
+
+
+def test_staged_units_do_not_integrate_until_artifacts_are_accepted(tmp_path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    source_path = tmp_path / "source.txt"
+    source_path.write_text("para\n\n" * 20, encoding="utf-8")
+    _, job = create_job(source_path, vault, target_budget=20, hard_budget=24)
+    source = job["sources"][0]
+    first, second = source["units"][:2]
+
+    mark_unit_staged(job, source["source_id"], first["unit_id"], ["_staging/a.md"])
+    mark_unit_staged(job, source["source_id"], second["unit_id"], ["_staging/b.md"])
+    assert source["chunk_plan"]["units_integrated"] == 0
+    assert source["chunk_plan"]["units_staged"] == 2
+
+    advanced = record_staging_decision(job, "_staging/b.md", accepted=True)
+    assert advanced == []
+    assert second["status"] == "approved_waiting_order"
+    assert source["chunk_plan"]["units_integrated"] == 0
+
+    advanced = record_staging_decision(job, "_staging/a.md", accepted=True)
+    assert (source["source_id"], first["unit_id"]) in advanced
+    assert (source["source_id"], second["unit_id"]) in advanced
+    assert source["chunk_plan"]["units_integrated"] == 2
+
+
+def test_rejected_staged_artifact_keeps_source_incomplete(tmp_path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    source_path = tmp_path / "source.md"
+    source_path.write_text("# Heading\n\nbody\n", encoding="utf-8")
+    _, job = create_job(source_path, vault)
+    source = job["sources"][0]
+    unit = source["units"][0]
+    mark_unit_staged(job, source["source_id"], unit["unit_id"], ["_staging/page.md"])
+
+    assert record_staging_decision(job, "_staging/page.md", accepted=False) == []
+    assert unit["status"] == "review_rejected"
+    assert source["status"] == "incomplete"
+    assert job["status"] == "incomplete"
+    assert source["chunk_plan"]["units_integrated"] == 0

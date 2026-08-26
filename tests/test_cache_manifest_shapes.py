@@ -160,9 +160,54 @@ def test_text_source_manifest_advances_only_when_all_units_integrated(vault, raw
 
     update_completed_text_source(
         vault, raw_file, units_total=3, units_integrated=3,
-        pages_produced=["concepts/foo.md"],
+        pages_created=["concepts/foo.md"],
+        pages_updated=["skills/bar.md", "concepts/foo.md"],
+        project="example",
     )
-    entry = next(iter(_load_raw(vault)["sources"].values()))
+    manifest = _load_raw(vault)
+    entry = next(iter(manifest["sources"].values()))
+    assert manifest["version"] == 1
     assert entry["source_type"] == "text"
     assert entry["chunker_version"] == 1
     assert entry["units_total"] == entry["units_integrated"] == 3
+    assert entry["pages_created"] == ["concepts/foo.md"]
+    assert entry["pages_updated"] == ["skills/bar.md", "concepts/foo.md"]
+    assert entry["pages_produced"] == ["concepts/foo.md", "skills/bar.md"]
+    assert entry["project"] == "example"
+    assert entry["content_hash"].startswith("sha256:")
+    assert "+00:00" in entry["last_ingested"]
+    assert manifest["stats"] == {"total_sources_ingested": 1, "total_pages": 0}
+
+
+def test_completed_text_source_is_one_idempotent_shape_preserving_commit(vault, raw_file):
+    page = vault / "concepts" / "foo.md"
+    page.parent.mkdir()
+    page.write_text("---\ntitle: Foo\n---\n", encoding="utf-8")
+    _manifest_path(vault).write_text(
+        json.dumps({
+            "custom": {"keep": True},
+            "sources": [
+                {"path": "_raw/foo.md", "content_hash": "sha256:old", "custom": "keep"},
+                {"path": "_raw/foo.md", "content_hash": "sha256:history"},
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    for _ in range(2):
+        update_completed_text_source(
+            vault,
+            raw_file,
+            units_total=1,
+            units_integrated=1,
+            pages_produced=["concepts/foo.md", "concepts/foo.md"],
+        )
+
+    manifest = _load_raw(vault)
+    assert isinstance(manifest["sources"], list)
+    assert len(manifest["sources"]) == 2
+    assert manifest["sources"][0]["custom"] == "keep"
+    assert manifest["sources"][0]["pages_produced"] == ["concepts/foo.md"]
+    assert manifest["sources"][1]["content_hash"] == "sha256:history"
+    assert manifest["custom"] == {"keep": True}
+    assert manifest["stats"] == {"total_sources_ingested": 2, "total_pages": 1}

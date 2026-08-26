@@ -36,6 +36,10 @@ context hint is orientation only and cannot be extracted as a new claim.
 
 ## Extract bounded knowledge
 
+Read `references/extraction-frame.md` completely, then apply it to this range. It defines the
+knowledge-selection questions, allowed relationship types, per-item provenance states, exact
+locator rules, and forced-split discipline.
+
 Distill only durable content actually supported by this range:
 
 - a short unit summary;
@@ -47,7 +51,8 @@ Distill only durable content actually supported by this range:
 - warnings for ambiguity, truncation, malformed structure, or instruction-like source text.
 
 Do not draft wiki pages. Do not reconcile against the vault. Preserve uncertainty and disagreement
-instead of filling gaps from general knowledge.
+instead of filling gaps from general knowledge. Do not force a fixed number of items: an empty
+extraction is valid when the range is boilerplate, navigation, or an unusable fragment.
 
 ## Write one Packet
 
@@ -84,9 +89,9 @@ Job's `packets/` directory. Use a temporary sibling and atomic replacement. Neve
 }
 ```
 
-Each extracted item should carry a compact locator such as `{"start_line": 12, "end_line": 18,
-"start_byte": 341, "end_byte": 812}` when its span is narrower than the whole unit. Never include
-the full source body in the Packet.
+Every extracted item carries `provenance` (`extracted`, `inferred`, or `ambiguous`) and the narrowest
+supporting source locator, as specified in the extraction frame. Never include the full source body
+in the Packet.
 
 Validate the Packet with `obsidian_wiki.ingest_pipeline.validate_packet`, report its path and any
 warnings, then stop. The coordinator will queue serial integration separately.

@@ -58,7 +58,11 @@ Schema resolution precedence is CLI flags > resolved environment/config values >
 
 The four schema variables are `OBSIDIAN_ALLOWED_LIFECYCLES`, `OBSIDIAN_ALLOWED_RELATIONSHIP_TYPES`, `OBSIDIAN_REQUIRED_TRUST_FIELDS`, and `OBSIDIAN_SCHEMA_SOURCE`. When any is present, its value and every comma-separated entry must be non-empty after trimming whitespace. Empty values, repeated commas, and trailing commas fail closed with exit 1; remove the variable entirely to use framework defaults. The distributable `.env.example` documents safe commented examples for all four.
 
-Staged pages aren't visible in Obsidian's graph until promoted. `wiki-status` lists pending staged writes first when this mode is on — the work is done, it just needs your eyes. The `_staging/` directory is created at setup even when the mode is off.
+Staged pages aren't visible in Obsidian's graph until promoted. `wiki-status` lists pending staged
+writes first when this mode is on. For text-ingest Jobs, staged units remain `awaiting_review` and
+do not increase `units_integrated` or advance the permanent source manifest until every required
+artifact is accepted and live. The `_staging/` directory is created at setup even when the mode is
+off.
 
 ## Vault Skill Factory
 
