@@ -71,6 +71,7 @@ exclude = [
 
 [tool.hatch.build.targets.wheel.force-include]
 ".skills" = "obsidian_wiki/_data/skills"
+"workflows" = "obsidian_wiki/_data/workflows"
 "scripts" = "obsidian_wiki/_data/scripts"
 ".claude/hooks/wiki-stop-capture.sh" = "obsidian_wiki/_data/hooks/wiki-stop-capture.sh"
 ".claude/hooks/wiki-stop-capture.ps1" = "obsidian_wiki/_data/hooks/wiki-stop-capture.ps1"

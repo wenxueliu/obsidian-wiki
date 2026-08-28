@@ -157,6 +157,7 @@ def create_job(
     *,
     target_budget: int = DEFAULT_TARGET_BUDGET,
     hard_budget: int = DEFAULT_HARD_BUDGET,
+    write_mode: str = "direct",
     now: datetime | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     """Create and atomically persist one minimal V1 Job.
@@ -166,6 +167,8 @@ def create_job(
     """
     root = Path(source_root).expanduser().resolve()
     vault = Path(vault).expanduser().resolve()
+    if write_mode not in {"direct", "staged"}:
+        raise PipelineContractError("write_mode must be direct or staged")
     timestamp = now or datetime.now(timezone.utc)
     job_id = _job_id(timestamp, root)
     job_dir = vault / JOBS_RELATIVE_DIR / job_id
@@ -231,6 +234,7 @@ def create_job(
         "job_version": JOB_VERSION,
         "job_id": job_id,
         "source_root": str(root),
+        "write_mode": write_mode,
         "status": "incomplete" if active else ("ready_to_commit" if ready else "complete"),
         "created_at": timestamp.isoformat(),
         "sources": sources,
@@ -296,6 +300,7 @@ def find_resumable_job(
     *,
     target_budget: int | None = None,
     hard_budget: int | None = None,
+    write_mode: str | None = None,
 ) -> tuple[Path, dict[str, Any]] | None:
     """Find the newest incomplete, source-compatible Job for one canonical root."""
     root = str(Path(source_root).expanduser().resolve())
@@ -310,6 +315,8 @@ def find_resumable_job(
         if job.get("source_root") != root or job.get("status") not in {
             "incomplete", "ready_to_commit"
         }:
+            continue
+        if write_mode is not None and job.get("write_mode", "direct") != write_mode:
             continue
         planned_sources = [source for source in job.get("sources", []) if source.get("budget")]
         if target_budget is not None and any(
@@ -331,13 +338,17 @@ def create_or_resume_job(
     *,
     target_budget: int = DEFAULT_TARGET_BUDGET,
     hard_budget: int = DEFAULT_HARD_BUDGET,
+    write_mode: str = "direct",
 ) -> tuple[Path, dict[str, Any], bool]:
     """Resume a compatible Job, otherwise create a fresh source-version plan.
 
     The boolean result is true when an existing Job was resumed.
     """
+    if write_mode not in {"direct", "staged"}:
+        raise PipelineContractError("write_mode must be direct or staged")
     resumable = find_resumable_job(
-        source_root, vault, target_budget=target_budget, hard_budget=hard_budget
+        source_root, vault, target_budget=target_budget, hard_budget=hard_budget,
+        write_mode=write_mode,
     )
     if resumable is not None:
         return resumable[0], resumable[1], True
@@ -355,14 +366,72 @@ def create_or_resume_job(
             ):
                 previous["status"] = "invalidated"
                 previous["invalidated_reason"] = (
-                    "source path, content hash, or chunker version changed after planning"
+                    "source path, content hash, chunker version, or write mode changed after planning"
                 )
                 write_job(job_file.parent, previous)
                 break
     job_dir, job = create_job(
-        source_root, vault, target_budget=target_budget, hard_budget=hard_budget
+        source_root, vault, target_budget=target_budget, hard_budget=hard_budget,
+        write_mode=write_mode,
     )
     return job_dir, job, False
+
+
+def summarize_job(job_dir: Path, job: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Return a deterministic coordinator summary without reading source bodies."""
+    directory = Path(job_dir).expanduser().resolve()
+    current = load_job(directory) if job is None else job
+    source_counts: dict[str, int] = {}
+    sources: list[dict[str, Any]] = []
+    units_total = units_integrated = units_staged = 0
+    for source in current.get("sources", []):
+        status = str(source.get("status", "unknown"))
+        source_counts[status] = source_counts.get(status, 0) + 1
+        units = source.get("units", [])
+        units_total += len(units)
+        units_integrated += sum(unit.get("status") == "integrated" for unit in units)
+        units_staged += sum(
+            unit.get("status") in {"staged", "approved_waiting_order"} for unit in units
+        )
+        sources.append({
+            "source_id": source.get("source_id"),
+            "path": source.get("path"),
+            "kind": source.get("kind"),
+            "status": status,
+            "reason": source.get("reason"),
+            "units_total": len(units),
+        })
+
+    pending = next_pending_unit(current)
+    next_unit = None
+    if pending is not None:
+        source, unit = pending
+        next_unit = {
+            "source_id": source.get("source_id"),
+            "source_path": source.get("path"),
+            "unit_id": unit.get("unit_id"),
+            "packet_path": str(resolve_packet_path(directory, unit.get("packet_path", ""))),
+        }
+    complete_statuses = {"complete", "unchanged", "unsupported"}
+    cross_link_allowed = bool(current.get("sources")) and all(
+        source.get("status") in complete_statuses for source in current.get("sources", [])
+    )
+    return {
+        "job_id": current.get("job_id"),
+        "job_dir": str(directory),
+        "job_path": str(directory / "job.json"),
+        "status": current.get("status"),
+        "write_mode": current.get("write_mode", "direct"),
+        "source_counts": source_counts,
+        "sources": sources,
+        "units": {
+            "total": units_total,
+            "integrated": units_integrated,
+            "staged": units_staged,
+        },
+        "next_unit": next_unit,
+        "cross_link_allowed": cross_link_allowed,
+    }
 
 
 def resolve_packet_path(job_dir: Path, relative_path: str | Path) -> Path:

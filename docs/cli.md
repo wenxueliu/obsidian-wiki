@@ -160,6 +160,9 @@ Available for automation, scripting, and debugging. Skills call some of these in
 | `cache-hash <path>` | Compute a file or directory hash (no manifest I/O) |
 | `text-chunk-plan <source>` | Plan deterministic, exhaustive UTF-8 byte ranges for one supported text source |
 | `text-chunk-read <source>` | Verify the source hash and materialize exactly one planned byte range |
+| `text-ingest-plan <source>` | Discover sources and atomically create or resume a metadata-only text-ingest Job |
+| `text-ingest-status <job>` | Report deterministic source/unit counts, next unit, and the cross-link gate |
+| `wiki-context-resolve` | Run the bundled workflow context resolver without depending on the current directory |
 | `ast-extract <path>` | Extract classes, functions, and imports from code — no LLM, no API calls |
 
 ```bash
@@ -171,6 +174,9 @@ obsidian-wiki cache-update /path/to/vault ~/research/paper.pdf --pages concepts/
 obsidian-wiki text-chunk-plan ~/research/large.md --pretty
 obsidian-wiki text-chunk-read ~/research/large.md \
   --start-byte 0 --end-byte 47231 --expect-hash sha256:9e9f...
+obsidian-wiki text-ingest-plan ~/research \
+  --vault ~/brain --write-mode direct --output /tmp/job-plan.json --pretty
+obsidian-wiki text-ingest-status ~/brain/_meta/ingest-jobs/<job-id> --pretty
 obsidian-wiki ast-extract ./src --pretty
 ```
 
@@ -179,5 +185,10 @@ UTF-8 with BOM. `--target-budget` defaults to 48,000 bytes and `--hard-budget` t
 the latter is the documented safe maximum and an absolute cap for every planned unit. Raising it
 requires the explicit `--allow-unsafe-hard-budget` override. `text-chunk-read` writes the exact
 range without adding a newline and fails if the source changed after planning.
+
+`text-ingest-plan` combines metadata-only discovery, streaming hashing, chunk planning, unchanged
+source detection, and atomic Job creation/resume. `text-ingest-status` is read-only. These commands
+let workflows keep deterministic coordination in code while extraction remains isolated per
+document/range and Packet integration remains serial.
 
 Most commands accept `--json` and/or `--pretty` for machine-readable output.

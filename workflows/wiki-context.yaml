@@ -28,12 +28,12 @@ steps:
     max_fail_count: 3
 
   - id: resolve_context
-    desc: 调用 workflow-local 脚本生成 Wiki 共享上下文
+    desc: 调用随包发布的 resolver 生成 Wiki 共享上下文
     do: |
-      运行 `.cac/ralph-flow/workflows/wiki/scripts/resolve_wiki_context.py`，参数来自已批准的 `vault-input.json` 和调用方 inputs：
+      通过 `obsidian-wiki wiki-context-resolve` 运行随包发布的 resolver，参数来自已批准的 `vault-input.json` 和调用方 inputs。不得使用依赖当前工作目录的 `.cac/...` 相对脚本路径：
 
       ```bash
-      python3 .cac/ralph-flow/workflows/wiki/scripts/resolve_wiki_context.py \
+      obsidian-wiki wiki-context-resolve \
         --input "{{artifacts_dir}}/vault-input.json" \
         --source-cwd "<source-cwd>" \
         --requested-keys "<comma-separated requested_keys>" \
@@ -41,6 +41,8 @@ steps:
         --setup-mode "<true-or-false>" \
         --output-dir "{{artifacts_dir}}"
       ```
+
+      若 console script 不在 PATH，可用等价的 `python3 -m obsidian_wiki wiki-context-resolve ...`；两种入口都从已安装 package 或源码 checkout 定位 resolver 和 layouts，不以调用方 CWD 解析 workflow 资源。
 
       vault 始终来自人工确认的输入；脚本不支持 named config 或 `@name`。它只从 source CWD 向 HOME/root 查找包含 requested non-vault key 的最近 `.env`，完全未命中时才读取全局 config，为其他 requested keys 提供默认值。用户 overrides 优先，不混入第二个 config source。当前 keys 均不是秘密值，artifacts 写入 effective values。
 

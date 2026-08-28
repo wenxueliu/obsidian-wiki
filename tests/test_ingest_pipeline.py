@@ -17,6 +17,7 @@ from obsidian_wiki.ingest_pipeline import (
     next_pending_unit,
     resolve_packet_path,
     record_staging_decision,
+    summarize_job,
     validate_packet,
     write_packet,
 )
@@ -139,6 +140,39 @@ def test_resume_matching_job_and_invalidate_changed_source(tmp_path):
     assert resumed is False
     assert new_dir != first_dir
     assert json.loads((first_dir / "job.json").read_text())["status"] == "invalidated"
+
+
+def test_job_resume_is_bound_to_write_mode(tmp_path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    source = tmp_path / "source.md"
+    source.write_text("# Source\n\nbody\n", encoding="utf-8")
+
+    direct_dir, direct_job, resumed = create_or_resume_job(source, vault, write_mode="direct")
+    assert resumed is False
+    assert direct_job["write_mode"] == "direct"
+
+    staged_dir, staged_job, resumed = create_or_resume_job(source, vault, write_mode="staged")
+    assert resumed is False
+    assert staged_dir != direct_dir
+    assert staged_job["write_mode"] == "staged"
+
+
+def test_job_summary_reports_next_unit_without_source_body(tmp_path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    source = tmp_path / "source.txt"
+    secret = "BODY-MUST-NOT-ENTER-SUMMARY"
+    source.write_text(secret + "\n\n" + "next\n", encoding="utf-8")
+    job_dir, job = create_job(source, vault, target_budget=20, hard_budget=24)
+
+    summary = summarize_job(job_dir, job)
+
+    assert summary["job_path"] == str(job_dir / "job.json")
+    assert summary["next_unit"]["source_path"] == str(source)
+    assert summary["next_unit"]["packet_path"].startswith(str(job_dir / "packets"))
+    assert summary["cross_link_allowed"] is False
+    assert secret not in json.dumps(summary)
 
 
 def test_packet_paths_cannot_escape_job_directory(tmp_path):

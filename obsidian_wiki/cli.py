@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -61,6 +62,17 @@ def skills_dir() -> Path:
             return cand
     raise FileNotFoundError(
         "Could not locate bundled skills. Reinstall obsidian-wiki "
+        "(`pip install --force-reinstall obsidian-wiki`)."
+    )
+
+
+def workflows_dir() -> Path:
+    """Return workflow support files without depending on the caller's CWD."""
+    for cand in (_pkg_dir() / "_data" / "workflows", _pkg_dir().parent / "workflows"):
+        if cand.is_dir():
+            return cand
+    raise FileNotFoundError(
+        "Could not locate bundled workflows. Reinstall obsidian-wiki "
         "(`pip install --force-reinstall obsidian-wiki`)."
     )
 
@@ -1154,6 +1166,84 @@ def cmd_text_chunk_read(args: argparse.Namespace) -> int:
     return 0
 
 
+def _emit_workflow_json(value: dict, *, pretty: bool, output: str | None) -> None:
+    rendered = json.dumps(value, ensure_ascii=False, indent=2 if pretty else None) + "\n"
+    if output is None:
+        sys.stdout.write(rendered)
+        return
+    target = Path(output).expanduser().resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.tmp-{os.getpid()}")
+    try:
+        temporary.write_text(rendered, encoding="utf-8")
+        os.replace(temporary, target)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+    print(json.dumps({"output": str(target)}))
+
+
+def cmd_text_ingest_plan(args: argparse.Namespace) -> int:
+    from obsidian_wiki.ingest_pipeline import (
+        PipelineContractError,
+        create_or_resume_job,
+        summarize_job,
+    )
+
+    try:
+        job_dir, job, resumed = create_or_resume_job(
+            Path(args.source), Path(args.vault),
+            target_budget=args.target_budget,
+            hard_budget=args.hard_budget,
+            write_mode=args.write_mode,
+        )
+        result = summarize_job(job_dir, job)
+        result["resumed"] = resumed
+        _emit_workflow_json(result, pretty=args.pretty, output=args.output)
+    except (OSError, ValueError, PipelineContractError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_text_ingest_status(args: argparse.Namespace) -> int:
+    from obsidian_wiki.ingest_pipeline import PipelineContractError, summarize_job
+
+    try:
+        result = summarize_job(Path(args.job))
+        _emit_workflow_json(result, pretty=args.pretty, output=args.output)
+    except (OSError, ValueError, PipelineContractError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_wiki_context_resolve(args: argparse.Namespace) -> int:
+    """Run the bundled context resolver from any working directory."""
+    try:
+        script = workflows_dir() / "scripts" / "resolve_wiki_context.py"
+        if not script.is_file():
+            raise FileNotFoundError(f"bundled context resolver is missing: {script}")
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    command = [
+        sys.executable, str(script),
+        "--input", args.input,
+        "--source-cwd", args.source_cwd,
+        "--requested-keys", args.requested_keys,
+        "--optional-reads", args.optional_reads,
+        "--setup-mode", args.setup_mode,
+        "--output-dir", args.output_dir,
+    ]
+    if args.layouts_dir is not None:
+        command.extend(["--layouts-dir", args.layouts_dir])
+    return subprocess.run(command, check=False).returncode
+
+
 def cmd_ast_extract(args: argparse.Namespace) -> int:
     from pathlib import Path
     from obsidian_wiki.ast_extractor import extract
@@ -1914,6 +2004,41 @@ def build_parser() -> argparse.ArgumentParser:
     tcr.add_argument("--allow-unsafe-hard-budget", action="store_true",
                      help="explicitly allow reading a planned range above 64000 bytes")
     tcr.set_defaults(func=cmd_text_chunk_read)
+
+    tip = sub.add_parser(
+        "text-ingest-plan",
+        help="discover text sources and atomically create or resume a deterministic ingest Job",
+    )
+    tip.add_argument("source", help="supported text file or directory to ingest")
+    tip.add_argument("--vault", required=True, help="resolved Obsidian vault path")
+    tip.add_argument("--write-mode", choices=("direct", "staged"), default="direct")
+    tip.add_argument("--target-budget", type=int, default=48_000)
+    tip.add_argument("--hard-budget", type=int, default=64_000)
+    tip.add_argument("--output", help="atomically write the JSON summary to this artifact path")
+    tip.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    tip.set_defaults(func=cmd_text_ingest_plan)
+
+    tis = sub.add_parser(
+        "text-ingest-status",
+        help="summarize one ingest Job and calculate its next unit and cross-link gate",
+    )
+    tis.add_argument("job", help="ingest Job directory")
+    tis.add_argument("--output", help="atomically write the JSON summary to this artifact path")
+    tis.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    tis.set_defaults(func=cmd_text_ingest_status)
+
+    wcr = sub.add_parser(
+        "wiki-context-resolve",
+        help="run the bundled workflow context resolver independently of the current directory",
+    )
+    wcr.add_argument("--input", required=True, help="approved vault-input.json path")
+    wcr.add_argument("--source-cwd", required=True, help="source project directory used for config lookup")
+    wcr.add_argument("--requested-keys", default="", help="comma-separated configuration keys")
+    wcr.add_argument("--optional-reads", default="", help="comma-separated optional metadata reads")
+    wcr.add_argument("--setup-mode", choices=("true", "false"), default="false")
+    wcr.add_argument("--layouts-dir", default=None, help="override the bundled layouts directory")
+    wcr.add_argument("--output-dir", required=True, help="artifact output directory")
+    wcr.set_defaults(func=cmd_wiki_context_resolve)
 
     ap = sub.add_parser(
         "ast-extract",

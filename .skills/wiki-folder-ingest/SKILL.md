@@ -42,36 +42,41 @@ Before creating a Job, look for the newest incomplete Job with the same canonica
 - completed manifest entry with matching hash and `chunker_version: 1`: mark unchanged;
 - missing source: report potentially stale pages but never delete them.
 
-For a new Job, use `obsidian_wiki.ingest_pipeline.create_job(...)` or reproduce its V1 contract.
-Persist under `_meta/ingest-jobs/<job-id>/job.json` using atomic replacement. The Job may contain
-paths, hashes, kinds, budgets, ranges, statuses, warnings, and Packet paths—never source bodies.
+Use the deterministic package command for discovery, hashing, chunk planning, and atomic Job
+creation or resume:
 
-Use the package's streaming SHA-256 implementation. If the `obsidian-wiki` command is unavailable,
-run the platform-independent helper at the sibling skill path
-`../wiki-ingest/scripts/hash_source.py <source>`; it prints the required `sha256:<hex>` form. Never
-load a whole source into shell variables or coordinator context just to hash it.
+```bash
+obsidian-wiki text-ingest-plan <source-root> \
+  --vault <resolved-vault> --write-mode direct|staged \
+  --output <artifacts-dir>/job-plan.json --pretty
+```
+
+If the console script is unavailable, use `python3 -m obsidian_wiki text-ingest-plan ...`. Never
+invoke a helper through a CWD-relative workflow or sibling-skill path, and never reproduce the
+planner manually. The command uses streaming SHA-256 and persists the Job atomically under
+`_meta/ingest-jobs/<job-id>/job.json`. Jobs contain paths, hashes, kinds, budgets, ranges, statuses,
+warnings, and Packet paths—never source bodies.
 
 ## Plan changed text sources
 
-For each changed supported source invoke:
-
-```bash
-obsidian-wiki text-chunk-plan <source> --pretty
-```
-
-Store its ordered units in the Job. Defaults are a 48,000-byte target and a 64,000-byte absolute
-hard cap. Invalid UTF-8 is a failed source with conversion guidance; do not guess encoding.
+`text-ingest-plan` invokes the same deterministic chunk planner used by `text-chunk-plan`. Defaults
+are a 48,000-byte target and a 64,000-byte absolute hard cap. Invalid UTF-8 is a failed source with
+conversion guidance; do not guess encoding.
 
 ## Process units
 
-For each source in discovery order:
+Create one independent scheduling lane per changed input document and never mix documents in an
+extraction subagent. Use one fresh isolated subagent per planned unit. When the host supports
+concurrency, different document lanes may extract in parallel; units within one document retain
+their planned order. For each source in discovery order:
 
 1. Atomically claim the earliest pending/failed unit in `job.json` as `extracting`.
-2. Invoke `wiki-source-text` in a fresh isolated context with only Job directory, source ID, and
-   unit ID. If isolated workers are unavailable, persist `next_unit` and stop for a later invocation.
+2. Invoke `wiki-source-text` by its bare workflow name in a fresh isolated context with only Job
+   directory, source ID, and unit ID. If isolated workers are
+   unavailable, persist `next_unit` and stop for a later invocation.
 3. Verify the resulting Packet path is beneath `packets/` and validate it against the Job.
 4. Set the unit to `packet_ready`.
-5. Invoke `wiki-ingest` for that one Packet.
+5. Invoke `wiki-ingest` by its bare workflow name for that one Packet.
 6. In direct-write mode, atomically mark the unit integrated. With `WIKI_STAGED_WRITES=true`,
    record its validated review artifacts and mark it staged without increasing `units_integrated`.
    Advance `next_unit` in either mode.
@@ -96,6 +101,10 @@ staged units count only after their artifacts become live through `wiki-stage-co
 After every source is live and complete/unchanged/unsupported, run `cross-linker` exactly once. A
 Job in `awaiting_review` is not complete and does not run cross-linking yet. Do not run it after
 individual units or staged artifacts.
+
+Use `obsidian-wiki text-ingest-status <job-dir> --output <artifact> --pretty` to compute source/unit
+counts, the next pending unit, and the cross-link gate. Do not spend additional agent checks
+recalculating deterministic hashes, chunk ranges, or counters already validated by the CLI.
 
 ## Report
 
