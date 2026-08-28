@@ -62,6 +62,11 @@ If `.env` doesn't exist, create it from `.env.example`. Ask the user for:
    - When enabled: all new/updated pages land in `_staging/` first; run `/wiki-stage-commit` to review and promote them
    - `wiki-status` shows a "Staged writes pending" count when files are waiting
 
+After resolving config, ensure the global writing profile exists at
+`~/.obsidian-wiki/WRITING.md` (`%LOCALAPPDATA%/.obsidian-wiki/WRITING.md` on Windows). Copy it from
+`llm-wiki/references/WRITING.md` only when absent; never overwrite an existing profile and do not
+ask additional writing-style questions. Report the resulting path.
+
 ## Step 2: Create Vault Directory Structure
 
 Before creating directories, determine which layout to use:

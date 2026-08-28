@@ -31,6 +31,11 @@ knowledge uses the global category directories. Packet boundaries never determin
 
 ## Build complete final page content
 
+Apply the resolved Writing Profile to newly drafted or rewritten titles, summaries, headings, and
+body prose. Preserve unaffected existing prose unless the merge genuinely requires rewriting it.
+Writing preferences never override page schema, provenance markers or locators, controlled
+vocabulary, staged patch structure, or exact source claims.
+
 For a new page, use the generic page template from `llm-wiki/SKILL.md`. Text ingest V1 has no
 academic-PDF special case. Include the effective owner schema and at least:
 

@@ -13,6 +13,31 @@ After resolving, skills also read `$OBSIDIAN_VAULT_PATH/AGENTS.md` if it exists.
 
 Both `~/.obsidian-wiki/config` and `.env` use the same `KEY=value` format. Start from [`.env.example`](../.env.example).
 
+## Global wiki writing profile
+
+Setup creates `~/.obsidian-wiki/WRITING.md` on POSIX systems, or
+`%LOCALAPPDATA%/.obsidian-wiki/WRITING.md` on Windows. It never overwrites an existing profile.
+Use it for writing preferences shared across projects, for example:
+
+```markdown
+## Language
+
+Write in Chinese. Keep technical identifiers in their original form.
+
+## Tone and Voice
+
+Be concise, direct, and practical.
+
+## Avoid
+
+Avoid filler, repetition, and unsupported claims.
+```
+
+Precedence is framework invariants and task requirements, then project `AGENTS.md`, vault
+`AGENTS.md`, and finally global `WRITING.md`. The profile affects only newly drafted or rewritten
+natural-language wiki content. It cannot change schema, provenance, JSON, structured logs, patches,
+or pass-through source text. Missing, empty, or unreadable profiles do not block an operation.
+
 The deterministic `lint`, `trust-record`, and `trust-check` commands use the same vault-scoped resolution: an explicit path uses no unrelated config, `@name` reads only `~/.obsidian-wiki/config.<name>`, otherwise the nearest CWD `.env` wins before global config. Schema settings are read from that same resolved config only, so one vault's lifecycle extensions cannot leak into another vault.
 
 ## Core

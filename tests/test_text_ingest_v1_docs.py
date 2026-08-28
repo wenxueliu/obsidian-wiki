@@ -99,6 +99,69 @@ def test_manifest_and_special_file_finalization_is_a_shared_complete_source_poli
     assert "PageIndex section-coverage checks and QMD index refresh are not part" in policy
 
 
+def test_llm_wiki_foundation_matches_text_v1_and_live_commit_boundaries():
+    foundation = (ROOT / ".skills" / "llm-wiki" / "SKILL.md").read_text()
+
+    for suffix in ("`.md`", "`.markdown`", "`.mdx`", "`.txt`", "`.rst`"):
+        assert suffix in foundation
+    assert "require a specialized skill or a future source adapter" in foundation
+    assert "Paper Deep-Dive Template (specialized/future PDF ingest)" in foundation
+    assert "does not make PDF/PageIndex processing part of\ntext V1" in foundation
+    assert "PyMuPDF extraction recipe" not in foundation
+    assert "wiki-ingest` (URL)" not in foundation
+    assert "raw text/chat/log data" not in foundation
+
+    for special_file in ("### `index.md`", "### `log.md`", "### `hot.md`", "### `.manifest.json`"):
+        assert special_file in foundation
+    assert "Pending `_staging/` artifacts never appear in\nthe index" in foundation
+    assert "planned unit, extracted Packet, or staged proposal" in foundation
+    assert "atomically replace the\nmanifest last" in foundation
+    assert "Never refresh for review-pending staged artifacts" in foundation
+
+
+def test_text_ingest_uses_the_effective_relationship_schema_without_legacy_hardcoding():
+    foundation = (ROOT / ".skills" / "llm-wiki" / "SKILL.md").read_text()
+    extraction = (
+        ROOT / ".skills" / "wiki-source-text" / "references" / "extraction-frame.md"
+    ).read_text()
+    prompts = (
+        ROOT / ".skills" / "wiki-ingest" / "references" / "ingest-prompts.md"
+    ).read_text()
+    lint_skill = (ROOT / ".skills" / "wiki-lint" / "SKILL.md").read_text()
+
+    assert "The standard 24-type vocabulary" in foundation
+    assert "Existing legacy values" in foundation
+    assert "effective\n   owner extensions from `llm-wiki/SKILL.md`" in extraction
+    assert "effective allowlist in\n`llm-wiki/SKILL.md`" in prompts
+    assert "standard vocabulary in `llm-wiki/SKILL.md`" in lint_skill
+
+
+def test_writing_profile_is_resolved_for_ingest_without_overriding_structured_contracts():
+    foundation = (ROOT / ".skills" / "llm-wiki" / "SKILL.md").read_text()
+    integrator = (ROOT / ".skills" / "wiki-ingest" / "SKILL.md").read_text()
+    page_policy = (
+        ROOT / ".skills" / "wiki-ingest" / "references" / "page-write-policy.md"
+    ).read_text()
+    setup_skill = (ROOT / ".skills" / "wiki-setup" / "SKILL.md").read_text()
+    configuration = (ROOT / "docs" / "configuration.md").read_text()
+    template = (
+        ROOT / ".skills" / "llm-wiki" / "references" / "WRITING.md"
+    ).read_text()
+
+    assert "## Writing Profile Resolution" in foundation
+    assert "framework invariants such as schema, provenance, safety" in foundation
+    assert "current project `AGENTS.md`" in foundation
+    assert "resolved vault `AGENTS.md`" in foundation
+    assert "global `WRITING.md`" in foundation
+    assert "Packet JSON, structured logs, patches" in foundation
+    assert "`Writing Profile Resolution` section" in integrator
+    assert "preserve structured records and source content" in integrator
+    assert "Apply the resolved Writing Profile" in page_policy
+    assert "never overwrite an existing profile" in setup_skill
+    assert "## Global wiki writing profile" in configuration
+    assert template.startswith("# Wiki Writing Profile")
+
+
 def test_v1_routing_and_cli_are_documented():
     agents = (ROOT / "AGENTS.md").read_text()
     cli = (ROOT / "docs" / "cli.md").read_text()

@@ -25,6 +25,16 @@ GLOBAL_CONFIG_DIR = (Path(os.environ.get("LOCALAPPDATA", "")) if _IS_WINDOWS els
 GLOBAL_CONFIG = GLOBAL_CONFIG_DIR / "config"
 
 
+def ensure_global_writing_profile():
+    """Create the shared writing profile once and preserve user edits."""
+    GLOBAL_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    target = GLOBAL_CONFIG_DIR / "WRITING.md"
+    if not target.exists():
+        template = SKILLS_DIR / "llm-wiki" / "references" / "WRITING.md"
+        shutil.copyfile(template, target)
+    return target
+
+
 def install_skills(target_dir, label, mode="absolute", subset=None):
     """Symlink skills into target_dir.
 
@@ -192,6 +202,7 @@ def main():
         f'OBSIDIAN_WIKI_REPO="{SCRIPT_DIR}"\n'
     )
     print("✅  Global config written to ~/.obsidian-wiki/config")
+    writing_profile = ensure_global_writing_profile()
 
     # ── Scaffold vault with selected layout ──────────────────────
     if vault_path and Path(vault_path).expanduser():
@@ -399,6 +410,7 @@ def main():
     print("                  Trae, Trae CN, Kiro, Pi, GitHub Copilot (CLI + VS Code Chat)")
     if sync_configured:
         print(" GitHub sync:     wiki-sync  (obsidian-wiki sync)")
+    print(f" Writing profile: {writing_profile.resolve()}")
     print()
     print(" Bootstrap files:")
     print("   CLAUDE.md                            → Claude Code")

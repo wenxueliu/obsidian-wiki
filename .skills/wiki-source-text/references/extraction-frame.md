@@ -22,9 +22,9 @@ Ask these questions in order:
    Keep qualifications, scope, and uncertainty; a shorter claim must not become stronger than its
    source sentence.
 5. **What relationships are explicit?**
-   When direction and meaning are clear, use the framework relationship types: `extends`,
-   `implements`, `contradicts`, `derived_from`, `uses`, `replaces`, or `related_to`. Omit a typed
-   relationship when the range only implies a vague association.
+   When direction and meaning are clear, use the standard relationship vocabulary and effective
+   owner extensions from `llm-wiki/SKILL.md`. Prefer current standard types over legacy aliases.
+   Omit a typed relationship when the range only implies a vague association.
 6. **What questions remain open?**
    Capture questions the range raises but does not resolve, including missing evidence or a
    forced-split statement whose conclusion lies outside the range.

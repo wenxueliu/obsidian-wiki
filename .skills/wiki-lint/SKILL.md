@@ -307,7 +307,10 @@ Append to the `LINT` log entry:
 
 Validate `relationships:` frontmatter blocks. Skip pages that have no `relationships:` block — the field is optional.
 
-**Framework-default types:** `extends`, `implements`, `contradicts`, `derived_from`, `uses`, `replaces`, `related_to`. Validate against the effective set after applying owner extensions.
+**Framework-default types:** use the standard vocabulary in `llm-wiki/SKILL.md`, plus the legacy
+compatibility values `extends`, `derived_from`, `uses`, `replaces`, and `related_to`. Validate
+against the effective set after applying owner extensions; prefer standard types for new content
+without rewriting valid legacy pages merely for vocabulary migration.
 
 **How to check:**
 - Grep frontmatter for `^relationships:` across all vault pages

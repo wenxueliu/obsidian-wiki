@@ -310,6 +310,17 @@ def write_config(vault_path: str) -> None:
     print(f"✅  Global config written to {GLOBAL_CONFIG}")
 
 
+def ensure_global_writing_profile() -> Path:
+    """Create the editable global writing profile without replacing user preferences."""
+    GLOBAL_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    target = GLOBAL_CONFIG_DIR / "WRITING.md"
+    if target.exists():
+        return target
+    template = skills_dir() / "llm-wiki" / "references" / "WRITING.md"
+    target.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
+    return target
+
+
 def scaffold_vault(vault_path: Path, layout: VaultLayout | None = None) -> bool:
     """Create the vault directory structure and special files if they don't exist yet.
 
@@ -761,6 +772,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
 
     vault_path = resolve_vault_path(args.vault)
     write_config(vault_path)
+    writing_profile = ensure_global_writing_profile()
     if not vault_path:
         print("    → Vault path not set yet. Re-run with `--vault /path/to/vault`")
         print("      or edit OBSIDIAN_VAULT_PATH in ~/.obsidian-wiki/config.")
@@ -792,6 +804,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     print(f" Skills installed: {n}  (mode: {mode})")
     if vault_path:
         print(f" Vault:            {vault_path}")
+    print(f" Writing profile:  {writing_profile.resolve()}")
     if sync_configured:
         print(" GitHub sync:      obsidian-wiki sync")
     print("\n Next steps:")

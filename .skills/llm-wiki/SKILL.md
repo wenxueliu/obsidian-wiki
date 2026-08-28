@@ -17,11 +17,20 @@ You are maintaining a persistent, compounding knowledge base. The wiki is not a 
 
 ### Layer 1: Raw Sources (immutable)
 
-The user's original documents — articles, papers, notes, PDFs, conversation logs, bookmarks, **and images** (screenshots, whiteboard photos, diagrams, slide captures). These are never modified by the system. They live wherever the user keeps them (configured via `OBSIDIAN_SOURCES_DIR` in `.env`). Images are first-class sources: the ingest skills read them via the Read tool's vision support and treat their interpreted content as inferred unless it's verbatim transcribed text. Image ingestion requires a vision-capable model — models without vision support should skip image sources and report which files were skipped.
+The user's original documents may include articles, papers, notes, PDFs, conversation logs,
+bookmarks, images, and other media. These are never modified by the system. They live wherever the
+user keeps them (configured via `OBSIDIAN_SOURCES_DIR` in `.env`). This architectural layer is
+broader than any one ingest implementation: bounded text-ingest V1 accepts only local UTF-8 `.md`,
+`.markdown`, `.mdx`, `.txt`, and `.rst` files. PDF, image, URL, structured-data, codebase, chat, and
+log sources require a specialized skill or a future source adapter; never reinterpret them as
+generic text merely because they belong to Layer 1.
 
 Think of raw sources as the "source code" — authoritative but hard to query directly.
 
-Don't confuse this with the in-vault `_raw/` staging folder, which is a different thing: a scratch inbox for quick captures and drafts awaiting promotion (see `wiki-capture` and `wiki-ingest`). Files there aren't Layer 1 sources, but `wiki-ingest` still moves rather than deletes them on promotion, since some have no other copy.
+Don't confuse this with the in-vault `_raw/` staging folder, which is a different thing: a scratch
+inbox for quick captures and drafts awaiting promotion (see `wiki-capture` and
+`wiki-folder-ingest`). Files there are archived under `_raw/_archived/` only after their complete
+source version has integrated; failed or review-pending inputs remain recoverable.
 
 ### Layer 2: The Wiki (LLM-maintained)
 
@@ -50,7 +59,7 @@ Organize pages into category directories as defined in `vault-layout.yaml` (or t
 | `concepts/` | Ideas, theories, mental models | `concepts/transformer-architecture.md` |
 | `entities/` | People, orgs, tools, projects | `entities/andrej-karpathy.md` |
 | `skills/` | How-to knowledge, procedures | `skills/fine-tuning-llms.md` |
-| `references/` | Summaries of specific sources; academic papers use the Paper Deep-Dive Template (below) | `references/attention-is-all-you-need.md` |
+| `references/` | Factual lookups and source-oriented notes | `references/attention-is-all-you-need.md` |
 | `synthesis/` | Cross-cutting analysis across sources | `synthesis/scaling-laws-debate.md` |
 | `journal/` | Timestamped observations, session logs | `journal/2024-03-15.md` |
 
@@ -118,7 +127,9 @@ One-paragraph summary of what this project is.
 Every wiki has these files at its root:
 
 ### `index.md`
-A content-oriented catalog organized by category. Each entry has a one-line summary and tags. Rebuild this after every ingest operation. Format:
+A content-oriented catalog organized by category. Each entry has a one-line summary and tags.
+Rebuild it after every committed live-page operation. Pending `_staging/` artifacts never appear in
+the index. Format:
 
 ```markdown
 # Wiki Index
@@ -140,12 +151,19 @@ Chronological append-only record tracking every operation. Each entry is parseab
 ```markdown
 ## Log
 
-- [2024-03-15T10:30:00Z] INGEST source="papers/attention.pdf" pages_updated=12 pages_created=3
+- [2024-03-15T10:30:00Z] INGEST source="notes/attention.md" pages_updated=12 pages_created=3 mode=append
 - [2024-03-15T11:00:00Z] QUERY query="How do transformers handle long sequences?" result_pages=4
 - [2024-03-16T09:00:00Z] LINT issues_found=2 orphans=1 contradictions=1
 - [2024-03-17T10:00:00Z] ARCHIVE reason="rebuild" pages=87 destination="_archives/..."
 - [2024-03-17T10:05:00Z] REBUILD archived_to="_archives/..." previous_pages=87
 ```
+
+### `hot.md`
+
+A roughly 500-word semantic snapshot that keeps the next session warm. Preserve `Recent Activity`,
+`Active Threads`, `Key Takeaways`, and `Flagged Contradictions`, retaining the last three
+operations. Describe conceptual changes and pending work rather than merely listing filenames.
+Staged review may be mentioned as pending, but `hot.md` must not claim staged pages are live.
 
 ### `.manifest.json`
 Tracks every source file that has been ingested — path, timestamps, what wiki pages it produced. This is the backbone of the delta system. See the `wiki-status` skill for the full schema.
@@ -160,6 +178,14 @@ The manifest enables:
 
 **Recording provenance.** When you write a manifest entry, populate `pages_created` and `pages_updated` with the vault-relative page paths that source contributed to. This is what makes re-ingestion (when a source changes) able to find the pages to revisit, instead of guessing.
 
+**Completion boundary.** A permanent source entry represents live, complete knowledge—not a
+planned unit, extracted Packet, or staged proposal. For bounded text ingest, write it only after all
+units for the exact content hash are integrated and every produced page is live. Preserve
+`content_hash`, `last_ingested`, and `pages_produced`; record `pages_created`, `pages_updated`, unit
+counts, source type, and chunker version; maintain top-level `version: 1` and idempotently recompute
+manifest stats. Validate pages plus `index.md`, `log.md`, and `hot.md`, then atomically replace the
+manifest last. `wiki-ingest/references/finalization-policy.md` owns the full text-source procedure.
+
 ## Page Template
 
 When creating a new wiki page, use this structure:
@@ -172,7 +198,7 @@ tags: [ml, architecture]
 aliases: [alternate name]
 relationships:
   - target: "[[concepts/related-concept]]"
-    type: extends
+    type: child_of
 sources: [papers/attention.pdf]
 summary: One or two sentences, ≤200 chars, so a reader (or another skill) can preview this page without opening it.
 provenance:
@@ -208,13 +234,19 @@ Things that are unresolved or need more sources.
 - [[references/attention-is-all-you-need]] — Original paper
 ```
 
-## Paper Deep-Dive Template
+## Paper Deep-Dive Template (specialized/future PDF ingest)
 
-The generic template suits most sources. **Academic papers are the exception.** For ML/AI/LLM/VLM (and similar) papers landing in `references/`, the substance lives in the architecture, the equations, and the results table — exactly what a terse "Key Ideas" list flattens away. For these, use the richer template below. This is the one place where *"compile, don't retrieve"* yields to a thorough, self-contained walkthrough a reader could study instead of the paper.
+The generic template suits text-ingest V1. A specialized academic-paper ingest may use the richer
+template below because a paper's architecture, equations, and results tables can be load-bearing.
+The template describes the desired compiled page; it does not make PDF/PageIndex processing part of
+text V1.
 
 Obsidian renders the needed primitives natively, so no extra tooling is required: Mermaid fenced diagrams, `$$…$$` LaTeX (MathJax), markdown tables, and `![[image]]` / `![[paper.pdf#page=N]]` embeds.
 
-Use this template only when the source is an academic paper (arXiv/conference) with load-bearing figures or equations. Everything else uses the generic Page Template above. Frontmatter, provenance markers, confidence, lifecycle, and `relationships:` are unchanged — only the body sections differ.
+Use this template only through a source skill that actually supports the paper format and can
+preserve page/figure provenance. A `.md` transcription handled by text V1 uses the generic template.
+Frontmatter, provenance markers, confidence, lifecycle, and `relationships:` are unchanged—only the
+body sections differ.
 
 ````markdown
 ---
@@ -231,9 +263,9 @@ What's broken or missing that this paper addresses.
 
 ## Method / Architecture
 
-Prose walkthrough. Embed the paper's real architecture figure as the primary
-visual (see *Academic papers* in `wiki-ingest` for the PyMuPDF extraction recipe).
-Fall back to a Mermaid flowchart only when no figure can be extracted.
+Prose walkthrough. When the specialized source adapter can extract the paper's real architecture
+figure with provenance, use it as the primary visual. Fall back to a Mermaid flowchart only when no
+figure can be extracted.
 
 ![[attachments/<slug>-fig1.png]]
 *Figure N (Author Year): one-line caption.*
@@ -318,7 +350,7 @@ Plain `[[wikilinks]]` in page bodies carry no semantic weight — they indicate 
 ```yaml
 relationships:
   - target: "[[Transformer Architecture]]"
-    type: extends
+    type: child_of
   - target: "[[LSTM]]"
     type: contradicts
   - target: "[[Attention Mechanism]]"
@@ -394,7 +426,11 @@ The standard 24-type vocabulary from the [Penfield](https://penfield.app) memory
 - **Optional field** — omit the block entirely if no typed relationships are known. Untagged wikilinks remain valid and are treated as `related_to` by `wiki-export`.
 - **Don't duplicate** — if `[[foo]]` already appears as an inline wikilink, the `relationships:` entry just enriches it with a type; it is not a second link.
 - **Direction matters** — the page declaring the entry is the *source*; `target` is the destination. Only declare relationships from this page's perspective.
-- **Don't fabricate** — only add a typed entry when the source material makes the relationship direction and type clear. When in doubt, use `related_to` or omit.
+- **Don't fabricate** — only add a typed entry when the source material makes the relationship
+  direction and type clear. Prefer one of the standard types above; when none applies, use an
+  ordinary wikilink or omit the typed edge. Existing legacy values `extends`, `derived_from`,
+  `uses`, `replaces`, and `related_to` remain readable for backward compatibility, but new content
+  should not choose them when a standard type expresses the same meaning.
 
 Skills that read `relationships:`: `wiki-export` (emits typed edges), `cross-linker` (writes typed entries when inferring links), `wiki-query` (surfaces type in answers and walks the typed-edge graph for multi-hop "how is X connected to Y" path queries — bounded BFS over the `relationships:` adjacency, frontmatter-only).
 
@@ -461,9 +497,7 @@ The deterministic `wiki-lint` path validates `_meta/trust-ledger.json`; it does 
 
 | Skill | base_confidence | lifecycle |
 |---|---|---|
-| `wiki-ingest` (URL) | `0.17 + 0.5 × classify(url)` | `draft` |
-| `wiki-ingest` (single doc) | per-source classifier | `draft` |
-| `wiki-ingest` (multi-doc) | `min(N/3,1)×0.5 + avg_q×0.5` | `draft` |
+| `wiki-ingest` (text Packet integration) | `min(independent_lineages/3,1)×0.5 + avg_q×0.5` | `draft` |
 | `wiki-research` | varies, often 0.85+ | `draft` |
 | `wiki-capture` | 0.42 | `draft` |
 | `*-history-ingest` | 0.42 | `draft` |
@@ -533,7 +567,12 @@ Skills that consume this table: `wiki-query`, `cross-linker`, `wiki-lint`, `wiki
 
 ## QMD Index Freshness
 
-QMD is an optional search index layered on top of the vault. The markdown vault is the source of truth. Any skill that writes wiki markdown should refresh QMD after the vault write completes, but only when `QMD_WIKI_COLLECTION` is configured and the local QMD transport is available. If QMD refresh fails, keep the vault changes and report the QMD status separately.
+QMD is an optional search index layered on top of the vault. The markdown vault is the source of
+truth. A write skill may refresh QMD after its live-page transaction and permanent manifest commit
+complete, but only when `QMD_WIKI_COLLECTION` is configured and the local QMD transport is
+available. Never refresh for review-pending staged artifacts. QMD freshness is not part of text
+V1's completion boundary; if refresh fails, keep the committed vault changes and report QMD status
+separately.
 
 Use the cheapest verification path that proves the new content is visible: `qmd update`, `qmd embed` only if vectors are stale or missing, then a targeted `qmd get` or `qmd ls` check for one written page or the collection root. Read-only skills should not refresh QMD.
 
@@ -625,6 +664,27 @@ Every skill's setup section should read:
 
 > **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md`. Honor an inline `@name` override first, then walk up from CWD for `.env`, fall back to `~/.obsidian-wiki/config`, else prompt setup. This gives `OBSIDIAN_VAULT_PATH` and any tool-specific path overrides.
 
+## Writing Profile Resolution
+
+Before drafting or rewriting natural-language Markdown, read the optional global writing profile at
+`~/.obsidian-wiki/WRITING.md` (`%LOCALAPPDATA%/.obsidian-wiki/WRITING.md` on Windows). Setup creates
+it from `references/WRITING.md` without overwriting an existing profile. A missing or empty profile
+means there are no custom writing preferences. If the optional read fails, warn and continue with
+framework defaults.
+
+Apply instructions in this precedence, highest first:
+
+1. framework invariants such as schema, provenance, safety, and source fidelity;
+2. current task and operation-specific skill requirements;
+3. current project `AGENTS.md`;
+4. resolved vault `AGENTS.md`;
+5. global `WRITING.md`.
+
+More-specific same-topic rules win; unspecified preferences inherit from lower layers. Writing
+preferences affect only newly drafted or rewritten natural-language title/summary values and body
+content. They cannot alter YAML syntax, required keys, value types, machine-generated fields,
+Packet JSON, structured logs, patches, or pass-through source content.
+
 ## Environment Variables
 
 The wiki is configured through environment variables (see `.env.example`). The only required variable is the vault path — everything else has sensible defaults.
@@ -640,7 +700,10 @@ The wiki is configured through environment variables (see `.env.example`). The o
 - `COPILOT_HISTORY_PATH` — Where to find Copilot session data
 - `OBSIDIAN_LINK_FORMAT` — Internal link syntax: `wikilink` (default) or `markdown`
 - `WIKI_TOKEN_WARN_THRESHOLD` — Emit a warning in `wiki-status` when the full-wiki token estimate exceeds this value (default: `100000`). Set to `0` to disable. See `wiki-status` for the token footprint report.
-- `WIKI_STAGED_WRITES` — When `true`, all LLM-written pages go to `_staging/<category>/` for human review before promotion. See `wiki-setup` and `wiki-stage-commit` for details.
+- `WIKI_STAGED_WRITES` — When `true`, LLM-written pages go to `_staging/<category>/` for human
+  review. Pending pages do not advance `index.md` or the permanent source manifest; promotion uses
+  the same validation and source-finalization contract as direct writes. See `wiki-setup` and
+  `wiki-stage-commit`.
 
 No API keys are needed — the agent running these skills already has LLM access built in.
 
@@ -661,7 +724,8 @@ Use `wiki-status` to see the delta and get a recommendation. Use `wiki-rebuild` 
 For details on specific operations, see the companion skills:
 - **wiki-status** — Audit what's ingested, compute delta, recommend append vs rebuild
 - **wiki-rebuild** — Archive current wiki, rebuild from scratch, or restore from archive
-- **wiki-ingest** — Distill source documents into wiki pages and raw text/chat/log data
+- **wiki-folder-ingest / wiki-source-text / wiki-ingest** — Coordinate supported local text,
+  extract bounded Packets, and integrate them serially into wiki pages
 - **claude-history-ingest** — Ingest Claude conversation history
 - **codex-history-ingest** — Ingest Codex CLI session history
 - **wiki-query** — Answer questions against the wiki
