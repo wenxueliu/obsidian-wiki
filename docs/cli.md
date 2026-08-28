@@ -162,7 +162,10 @@ Available for automation, scripting, and debugging. Skills call some of these in
 | `text-chunk-read <source>` | Verify the source hash and materialize exactly one planned byte range |
 | `text-ingest-plan <source>` | Discover sources and atomically create or resume a metadata-only text-ingest Job |
 | `text-ingest-status <job>` | Report deterministic source/unit counts, next unit, and the cross-link gate |
+| `text-ingest-packet-check <job> <packet>` | Validate one Packet's Job/source/unit/path binding before page integration |
+| `text-ingest-unit-advance <job> <packet>` | Atomically advance one validated direct or staged unit after page validation |
 | `wiki-context-resolve` | Run the bundled workflow context resolver without depending on the current directory |
+| `wiki-route-resolve` | Resolve a declared page type through the bundled deterministic layout router |
 | `ast-extract <path>` | Extract classes, functions, and imports from code — no LLM, no API calls |
 
 ```bash
@@ -177,6 +180,11 @@ obsidian-wiki text-chunk-read ~/research/large.md \
 obsidian-wiki text-ingest-plan ~/research \
   --vault ~/brain --write-mode direct --output /tmp/job-plan.json --pretty
 obsidian-wiki text-ingest-status ~/brain/_meta/ingest-jobs/<job-id> --pretty
+obsidian-wiki text-ingest-packet-check ~/brain/_meta/ingest-jobs/<job-id> packets/<packet>.json
+obsidian-wiki text-ingest-unit-advance ~/brain/_meta/ingest-jobs/<job-id> packets/<packet>.json \
+  --mode staged --artifact _staging/concepts/example.md
+obsidian-wiki wiki-route-resolve --routing page-contract.json \
+  --page-type concept --slug example
 obsidian-wiki ast-extract ./src --pretty
 ```
 
@@ -187,8 +195,14 @@ requires the explicit `--allow-unsafe-hard-budget` override. `text-chunk-read` w
 range without adding a newline and fails if the source changed after planning.
 
 `text-ingest-plan` combines metadata-only discovery, streaming hashing, chunk planning, unchanged
-source detection, and atomic Job creation/resume. `text-ingest-status` is read-only. These commands
-let workflows keep deterministic coordination in code while extraction remains isolated per
-document/range and Packet integration remains serial.
+source detection, and atomic Job creation/resume. `text-ingest-status` and
+`text-ingest-packet-check` are read-only. `text-ingest-unit-advance` revalidates the Packet binding
+before atomically changing exactly one unit; staged mode requires at least one `--artifact` and
+never increments the integrated count. These commands keep deterministic coordination in code
+while extraction remains isolated per document/range and Packet integration remains serial.
+
+`wiki-context-resolve` and `wiki-route-resolve` locate their helper scripts inside the installed
+package or source checkout. Workflows therefore do not depend on a `.cac/...` path or the caller's
+current working directory.
 
 Most commands accept `--json` and/or `--pretty` for machine-readable output.

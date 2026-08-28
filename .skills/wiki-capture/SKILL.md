@@ -26,7 +26,7 @@ This skill has three modes:
 
 Trigger when invoked as `/wiki-capture --quick`, by "quick capture" / "capture this finding" / "save this bug fix" / "save this gotcha" / "drop this to raw" / "quick save to wiki", or automatically by the session-end Stop hook.
 
-**Speed contract:** Inline only. No subagents. No QMD. No manifest/`index.md`/`log.md`/`hot.md` writes. Target: <60 seconds. Promotion to full wiki pages happens later via `/wiki-ingest`.
+**Speed contract:** Inline only. No subagents. No QMD. No manifest/`index.md`/`log.md`/`hot.md` writes. Target: <60 seconds. Promotion to full wiki pages happens later via `/wiki-folder-ingest`.
 
 1. **Resolve config** (Config Resolution Protocol in `llm-wiki/SKILL.md`): get `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_RAW_DIR` (default: `$OBSIDIAN_VAULT_PATH/_raw`). Ensure `$OBSIDIAN_RAW_DIR` exists; create it if not.
 
@@ -45,13 +45,13 @@ Trigger when invoked as `/wiki-capture --quick`, by "quick capture" / "capture t
 
 6. **Write raw files** — for each cluster, write `$OBSIDIAN_RAW_DIR/<ISO-date>-<slug>.md`. Read `references/RAW-FORMAT.md` for the full frontmatter spec, finding-block body structure, and provenance/confidence calibration. Per-cluster fields that vary: `title`, `tags` (2–4 from taxonomy), `summary` (≤200 chars), `project` (inferred or `null`), `base_confidence` (0.6 discussed → 0.75 fix applied → 0.9 test confirmed), `provenance.extracted`/`provenance.inferred` (sum to 1.0), `lifecycle_changed` (today), `sources` (`"<project> session (<YYYY-MM-DD>)"`).
 
-7. **Confirm** — list staged files and tell the user to run `/wiki-ingest` to promote them:
+7. **Confirm** — list staged files and tell the user to run `/wiki-folder-ingest` to promote them:
    ```
    Staged to _raw/:
      _raw/2026-05-27-swift-actor-reentrancy.md   — "Actor reentrancy causes deadlock in async forEach"
-   Run /wiki-ingest to promote these to full wiki pages.
+   Run /wiki-folder-ingest to promote these to full wiki pages.
    ```
-   Quick mode deliberately does **not** write the manifest, `index.md`, `log.md`, `hot.md`, or refresh QMD — promotion via `/wiki-ingest` handles all of that. **Stop here; do not run the full-mode steps below.**
+   Quick mode deliberately does **not** write the manifest, `index.md`, `log.md`, `hot.md`, or refresh QMD — promotion via `/wiki-folder-ingest` handles all of that. **Stop here; do not run the full-mode steps below.**
 
 ---
 

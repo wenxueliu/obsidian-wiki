@@ -16,8 +16,8 @@ You are reviewing LLM-written pages that are waiting in `_staging/` for human ap
 
 1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md`. This gives `OBSIDIAN_VAULT_PATH` and `WIKI_STAGED_WRITES`.
 2. If `WIKI_STAGED_WRITES` is not set or is `false`, tell the user: "Staged writes mode is not enabled. Set `WIKI_STAGED_WRITES=true` in your `.env` to use this feature." Then stop.
-3. Read `../wiki-ingest/references/page-write-policy.md` and
-   `../wiki-ingest/references/finalization-policy.md` completely. Accepted artifacts must produce
+3. Read `../wiki-packet-integrate/references/page-write-policy.md` and
+   `../wiki-folder-ingest/references/finalization-policy.md` completely. Accepted artifacts must produce
    the same live content and source-level commit as direct writes.
 4. Read the `_staging/` directory inventory.
 5. For every artifact with `staged_write.job_id` or `job_id`, resolve that exact Job beneath
@@ -151,8 +151,8 @@ After processing decisions, reconcile each affected Job in source/unit order:
    with `accepted=true` only after the live page write and validation succeed.
 2. If a later unit's artifacts were accepted first, leave it `approved_waiting_order` until all
    preceding units integrate; never bypass serial source order.
-3. When every unit for an exact source hash is integrated, run `wiki-ingest`'s source-completion
-   procedure by applying `../wiki-ingest/references/finalization-policy.md`: validate live pages and
+3. When every unit for an exact source hash is integrated, run the shared source-completion
+   procedure by applying `../wiki-folder-ingest/references/finalization-policy.md`: validate live pages and
    special files, update manifest fields and stats, run the completeness audit, and atomically
    update the permanent manifest last.
 4. Leave skipped artifacts and their units `staged`; the Job remains `awaiting_review`.

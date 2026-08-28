@@ -142,7 +142,7 @@ Most active category: **[category/]** ([N pages added or updated])
 
 - **Drafts to compile** ([count]): [[concepts/foo]], [[concepts/bar]] — still in draft lifecycle
 - **Ambiguous claims**: [N] `^[ambiguous]` markers across [M] pages — run `/wiki-synthesize` to resolve
-- **Unstaged notes**: [N] files in `_raw/` — run `/wiki-ingest _raw/` to promote them
+- **Unstaged notes**: [N] files in `_raw/` — run `/wiki-folder-ingest _raw/` to promote them
 - **Taxonomy gaps**: Tags `#newtag1`, `#newtag2` used but not in taxonomy — run `/tag-taxonomy`
 
 *(Omit any subsection where count is 0.)*

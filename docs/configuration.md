@@ -110,12 +110,12 @@ behind the local hard-budget splitter; PDFs remain explicitly unsupported until 
 
 ## QMD semantic search (optional)
 
-By default, `wiki-ingest` and `wiki-query` use Grep/Glob — fully functional, no extra setup. If your vault grows large or you want concept-level matches across your sources, plug in [QMD](https://github.com/tobi/qmd), either through MCP or by letting the agent call the local `qmd` CLI.
+By default, `wiki-folder-ingest` and `wiki-query` use Grep/Glob — fully functional, no extra setup. If your vault grows large or you want concept-level matches across your sources, plug in [QMD](https://github.com/tobi/qmd), either through MCP or by letting the agent call the local `qmd` CLI.
 
 | Variable | What it does | Default |
 |---|---|---|
 | `QMD_WIKI_COLLECTION` | Collection indexing your compiled wiki pages — used by `wiki-query` | *(empty — disabled)* |
-| `QMD_PAPERS_COLLECTION` | Collection indexing your raw source documents — used by `wiki-ingest` | *(empty — disabled)* |
+| `QMD_PAPERS_COLLECTION` | Collection indexing your raw source documents — used by the text-ingest pipeline | *(empty — disabled)* |
 | `QMD_TRANSPORT` | `mcp` (agent-configured MCP server) or `cli` (local `qmd` binary) | `mcp` |
 | `QMD_CLI_SEARCH_MODE` | `quality` (rerank, best relevance), `balanced` (`--no-rerank`), or `fast` (semantic only) | `quality` |
 | `QMD_CLI` | Override the `qmd` binary path if it isn't on `PATH` | `qmd` |
@@ -153,14 +153,14 @@ QMD_CLI_SEARCH_MODE=quality
 **What changes when it's on:**
 
 - `wiki-query` runs a semantic pass (lex+vec) against your wiki collection before falling back to Grep — finds conceptually related pages even when the exact terms don't match.
-- `wiki-ingest` queries your papers collection before writing a new page — surfaces related sources, spots contradictions, and decides whether to create a new page or merge into an existing one.
+- `wiki-folder-ingest` coordinates Packet integration against your papers collection before writing a new page — surfacing related sources, spotting contradictions, and deciding whether to create a new page or merge into an existing one.
 
 Both degrade gracefully: with the collection names unset, they skip the QMD step silently and use Grep.
 
 ## `_raw/` staging directory
 
 `_raw/` is a staging area inside your vault for unprocessed UTF-8 text captures. Drop supported text
-files there and the next `wiki-ingest` run routes them through `wiki-folder-ingest`; after complete
+files there and the next `wiki-folder-ingest` run processes them; after complete
 integration, originals move to `_raw/_archived/` so they are preserved without being processed twice.
 
 The fastest way to feed it during a live coding session:
@@ -174,7 +174,7 @@ It scans the current conversation, extracts bugs and gotchas, and writes structu
 To promote everything waiting there:
 
 ```text
-/wiki-ingest promote my raw pages
+/wiki-folder-ingest promote my raw pages
 ```
 
 The directory is created automatically by `wiki-setup`. The path is configurable via `OBSIDIAN_RAW_DIR`.

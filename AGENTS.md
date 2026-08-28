@@ -61,9 +61,9 @@ Skills live in `.skills/<name>/SKILL.md`. Match the user's intent to the right s
 |---|---|
 | "set up my wiki" / "initialize" | `wiki-setup` |
 | "/wiki-history-ingest claude" / "/wiki-history-ingest codex" / "/wiki-history-ingest hermes" / "/wiki-history-ingest pi" | `wiki-history-ingest` |
-| "ingest this folder" / "process these text docs" / a local `.md`, `.markdown`, `.mdx`, `.txt`, or `.rst` source | `wiki-folder-ingest` (compatibility calls through `wiki-ingest` route here) |
+| "ingest this folder" / "process these text docs" / a local `.md`, `.markdown`, `.mdx`, `.txt`, or `.rst` source | `wiki-folder-ingest` |
 | One planned text range assigned by an ingest Job | `wiki-source-text` |
-| Integrate one validated Packet into wiki pages | `wiki-ingest` |
+| One coordinator-assigned Packet transaction | `wiki-packet-integrate` (worker-only) |
 | PDF, Office, structured data, logs/transcripts, HTML/URLs, media, archives, or source code | Explicitly unsupported by text ingest V1; use a dedicated skill when one exists |
 | "import my Claude history" / "mine my conversations" | `claude-history-ingest` |
 | "import my Codex history" / "mine my Codex sessions" | `codex-history-ingest` |

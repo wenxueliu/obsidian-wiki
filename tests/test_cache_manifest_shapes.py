@@ -1,7 +1,7 @@
 """Regression tests for issue #134.
 
 cache-check / cache-update were written for a dict-keyed manifest with bare hex
-hashes, but the wiki-ingest skill writes ``sources`` as a list of objects with
+hashes, but the text-ingest finalizer writes ``sources`` as a list of objects with
 ``sha256:``-prefixed hashes and vault-relative paths. That combination caused a
 crash, then false "modified"/"new" once the crash was patched. These tests pin
 all four failure modes the issue enumerated.

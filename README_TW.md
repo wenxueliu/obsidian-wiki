@@ -55,7 +55,7 @@ https://github.com/Ar9av/obsidian-wiki — set up my wiki
 管線匯入。Agent 歷史與網路研究則使用各自的專用 skill。
 
 ```text
-/wiki-ingest ~/research
+/wiki-folder-ingest ~/research
 /wiki-update                        # 蒸餾你目前所在的這個 repo
 /wiki-capture                       # 把這段對話存下來
 /wiki-history-ingest claude         # 挖出你問過 Claude 的所有東西

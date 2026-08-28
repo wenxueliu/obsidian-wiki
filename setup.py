@@ -23,6 +23,7 @@ SKILLS_DIR = SCRIPT_DIR / ".skills"
 _IS_WINDOWS = os.name == "nt"
 GLOBAL_CONFIG_DIR = (Path(os.environ.get("LOCALAPPDATA", "")) if _IS_WINDOWS else Path.home()) / ".obsidian-wiki"
 GLOBAL_CONFIG = GLOBAL_CONFIG_DIR / "config"
+OBSOLETE_MANAGED_SKILLS = ("wiki-ingest",)
 
 
 def ensure_global_writing_profile():
@@ -68,6 +69,23 @@ def install_skills(target_dir, label, mode="absolute", subset=None):
         rel_prefix = "../" * depth
 
     target.mkdir(parents=True, exist_ok=True)
+
+    if not subset:
+        for obsolete in OBSOLETE_MANAGED_SKILLS:
+            candidate = target / obsolete
+            if candidate.is_symlink():
+                raw_target = os.readlink(candidate).replace("\\", "/")
+                if raw_target.endswith((f"/.skills/{obsolete}", f"/_data/skills/{obsolete}")):
+                    candidate.unlink()
+                continue
+            marker = candidate / "SKILL.md"
+            if marker.is_file():
+                try:
+                    content = marker.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                if "name: wiki-ingest" in content and "# Wiki Ingest — Packet Integration" in content:
+                    shutil.rmtree(candidate)
 
     for skill_path in sorted(SKILLS_DIR.iterdir()):
         if not skill_path.is_dir():

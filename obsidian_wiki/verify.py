@@ -6,7 +6,7 @@ Cross-checks the manifest against the vault to detect ingest omissions:
   - ``pages_produced`` lists a page that no longer exists on disk
   - a source is expected (passed in) but has no manifest entry at all
 
-Run after Step 7 in ``wiki-ingest`` to confirm every source in the batch was
+Run during ``wiki-finalize-sources`` to confirm every source in the batch was
 actually processed and its pages landed.  This is the source-level half of
 "did I miss anything" — it does NOT judge whether the extraction covered all
 of a document's *content* (that is an LLM-judgment concern; for large docs the
@@ -212,4 +212,3 @@ def print_sections_report(report: dict[str, Any], file: object = None) -> None:
     for s in report.get("sections", []):
         rng = f"{s['start']}-{s['end']}" if s.get("start") is not None else "?"
         print(f"  [{rng}] {s['title']}", file=out)
-

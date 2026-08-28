@@ -3,7 +3,7 @@
 # Categories are top-level content directories.  Use dot-separated paths
 # to create nested subdirectories (e.g. "concepts.patterns" creates
 # concepts/patterns/).  Subdirectories appear at setup time; skills
-# (wiki-ingest, wiki-capture) write to the top-level directory and may
+# (wiki-folder-ingest, wiki-capture) write to the top-level directory and may
 # create further subdirs on demand.
 #
 # Available layouts are listed during `obsidian-wiki setup` or browsed

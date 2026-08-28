@@ -17,7 +17,7 @@ This project is a **skill-based framework** for building and maintaining an Obsi
 | User says something like… | Read this skill |
 |---|---|
 | "set up my wiki" / "initialize" | `wiki-setup` |
-| "ingest" / "add this to the wiki" / "process these docs" / "process this export" / "ingest this data" | `wiki-ingest` |
+| "ingest this folder" / "process these text docs" / a local `.md`, `.markdown`, `.mdx`, `.txt`, or `.rst` source | `wiki-folder-ingest` |
 | "import my Claude history" / "mine my conversations" | `claude-history-ingest` |
 | "import my Codex history" | `codex-history-ingest` |
 | "import my Hermes history" | `hermes-history-ingest` |

@@ -250,7 +250,7 @@ Render as:
 
 1. 📥  Ingest 3 files waiting in _raw/
    → architecture-notes.md, meeting-2026-05-10.md, paper-draft.pdf
-   run: /wiki-ingest
+   run: /wiki-folder-ingest
 
 2. 🔄  Refresh 2 stale core pages (not updated in 90+ days)
    → [[System Architecture]] (last updated 2026-02-10), [[API Design]] (2026-01-15)
@@ -262,7 +262,7 @@ Render as:
 4. 🧩  2 synthesis opportunities identified  →  run: /wiki-synthesize
    [[Redis Caching]] × [[Session Management]] (co-occur in 8 pages)
 
-5. ✅  4 sources modified since last ingest  →  run: /wiki-ingest (append mode)
+5. ✅  4 sources modified since last ingest  →  run: /wiki-folder-ingest (append mode)
 
 6. 🩺  Lint not run in 30+ days — run: /wiki-lint
 ```
@@ -435,7 +435,7 @@ After writing the file, append to `log.md`:
 
 - If the manifest doesn't exist, report everything as "new" and recommend a full ingest
 - This skill only reads and reports — it doesn't modify anything (except writing `_insights.md` in insights mode, which is regenerable)
-- The actual ingest work is done by the ingest skills (`wiki-ingest`, `claude-history-ingest`, `codex-history-ingest`)
+- The actual ingest work is done by the ingest skills (`wiki-folder-ingest`, `claude-history-ingest`, `codex-history-ingest`)
 - Those skills are responsible for updating the manifest after they finish
 
 ## QMD Refresh After Vault Writes

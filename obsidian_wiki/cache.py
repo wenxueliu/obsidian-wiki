@@ -1,4 +1,4 @@
-"""Content-hash cache for wiki-ingest source tracking.
+"""Content-hash cache for text-ingest source tracking.
 
 Provides a reliable, platform-independent alternative to running `sha256sum`
 in the skill. The agent calls `obsidian-wiki cache-check` / `cache-update`
@@ -12,7 +12,7 @@ supported, because real vaults contain both:
     {"sources": {"<abs-or-rel-path>": {"content_hash": "...", ...}}}
 
 2. List of entry objects, each carrying its own ``path`` (the shape the
-   wiki-ingest skill writes)::
+   text-ingest finalizer writes)::
 
     {"sources": [{"path": "_raw/foo.md", "content_hash": "sha256:...", ...}]}
 

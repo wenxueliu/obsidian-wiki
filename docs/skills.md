@@ -18,7 +18,7 @@ Slash commands (`/skill-name`) work in Claude Code, Cursor, Windsurf, and most C
 |---|---|---|
 | `wiki-folder-ingest` | Coordinate resumable ingestion for supported local text files/folders; report unsupported inputs | `/wiki-folder-ingest` |
 | `wiki-source-text` | Extract exactly one planned source range into one bounded Packet | worker-only |
-| `wiki-ingest` | Validate and serially integrate one Packet; local text compatibility requests route to `wiki-folder-ingest` | `/wiki-ingest` |
+| `wiki-packet-integrate` | Validate and serially integrate one coordinator-assigned Packet using frozen Job context | worker-only |
 | `wiki-capture` | Save the current conversation as a wiki note; `--quick` stages findings to `_raw/` in under 60 seconds | `/wiki-capture` |
 | `wiki-update` | Sync the current project's knowledge into the vault — works from any repo | `/wiki-update` |
 | `wiki-research` | Autonomous multi-round web research, filed straight into the vault | `/wiki-research [topic]` |

@@ -19,7 +19,7 @@ This project is a **skill-based framework** for building and maintaining an Obsi
 | User says something like… | Read this skill |
 |---|---|
 | "set up my wiki" / "initialize" | `.skills/wiki-setup/SKILL.md` |
-| "ingest" / "add this to the wiki" / "process this export" / "ingest this data" | `.skills/wiki-ingest/SKILL.md` |
+| "ingest this folder" / "process these text docs" / a local `.md`, `.markdown`, `.mdx`, `.txt`, or `.rst` source | `.skills/wiki-folder-ingest/SKILL.md` |
 | "/wiki-history-ingest claude" / "/wiki-history-ingest codex" | `.skills/wiki-history-ingest/SKILL.md` |
 | "import my Claude history" | `.skills/claude-history-ingest/SKILL.md` |
 | "import my Codex history" | `.skills/codex-history-ingest/SKILL.md` |

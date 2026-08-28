@@ -39,7 +39,7 @@ PLACEHOLDER = re.compile(r"\{\{([A-Z][A-Z0-9_]*)\}\}")
 DEFAULT_CATEGORIES = ["concepts", "entities", "skills", "references", "synthesis", "journal"]
 DEFAULT_INDEX_SECTIONS = """## Concepts
 
-*No pages yet. Use `wiki-ingest` to add your first source.*
+*No pages yet. Use `wiki-folder-ingest` to add your first source.*
 
 ## Entities
 

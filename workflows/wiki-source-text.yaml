@@ -58,7 +58,7 @@ steps:
       2. 验证 packet_version、packet_id、source id/path/hash、unit id/heading/ranges、字段类型、每项 provenance/locator、packet_path boundary，以及没有 full-source body。
       3. 不修改 job.json 或任何共享文件；coordinator 独占 unit 状态转换。
       4. 写 packet-validation.md，包含验证方法/命令、结果、warnings、Packet path、source/unit/hash/range 和明确 handoff。失败则保留 Packet 供诊断但不得宣称 packet_ready。
-      5. 验证成功后输出 <promise>done</promise> 并停止，不调用 wiki-ingest。
+      5. 验证成功后输出 <promise>done</promise> 并停止，不调用 wiki-packet-integrate。
     input: unit-binding.md + Packet + job.json source record
     output: packet-validation.md；成功时交付一个 validated Packet
     check: |

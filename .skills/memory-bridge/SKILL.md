@@ -31,7 +31,7 @@ Parse the user's invocation to determine mode:
 | `/memory-bridge diff <tool-a> <tool-b>` | **Diff** — compare two specific tools |
 | `/memory-bridge map` | **Map** — full origin matrix: every page × every tool that touched it |
 
-Recognized tool names: `claude`, `codex`, `hermes`, `openclaw`, `copilot`, `pi`, `manual` (hand-written), `ingest` (wiki-ingest documents).
+Recognized tool names: `claude`, `codex`, `hermes`, `openclaw`, `copilot`, `pi`, `manual` (hand-written), `ingest` (text-ingest documents).
 
 ## Step 1: Build the Source Map
 

@@ -22,7 +22,8 @@ This project is a **skill-based framework** for building and maintaining an Obsi
 | Skill | Folder | Purpose |
 |---|---|---|
 | Setup | `.skills/wiki-setup/` | Initialize vault structure |
-| Ingest | `.skills/wiki-ingest/` | Distill documents into wiki pages, plus any text data — chat exports, logs, transcripts |
+| Text ingest | `.skills/wiki-folder-ingest/` | Public entry for supported local text files and folders |
+| Packet integration | `.skills/wiki-packet-integrate/` | Internal worker for one validated text Packet |
 | History Router | `.skills/wiki-history-ingest/` | Route `/wiki-history-ingest <claude|codex>` to the right history skill |
 | Claude History | `.skills/claude-history-ingest/` | Mine `~/.claude` conversations |
 | Codex History | `.skills/codex-history-ingest/` | Mine `~/.codex` sessions and rollout logs |

@@ -1,7 +1,7 @@
 """Local AST-based code structure extractor.
 
 Extracts classes, functions, and imports from source files using regex patterns
-(no LLM, no API calls). Outputs a node-link graph that wiki-ingest uses to seed
+(no LLM, no API calls). Outputs a node-link graph that an ingest adapter can use to seed
 entity pages and map dependencies before any token is spent on the LLM.
 
 Optional tree-sitter upgrade: install `obsidian-wiki[ast]` for higher-fidelity

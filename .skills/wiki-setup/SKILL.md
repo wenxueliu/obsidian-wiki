@@ -25,14 +25,14 @@ If `.env` doesn't exist, create it from `.env.example`. Ask the user for:
    - Default: `~/Documents`
    - Local git repo clones (public or private, any host) can be listed here too — clone
      the repo locally first, then add its path. See "Ingesting Git Repositories" in
-     `wiki-ingest/SKILL.md` for how repo sources are handled.
+     `wiki-folder-ingest/SKILL.md` for how supported text sources are handled.
 
 3. **Want to import Claude history?** → `CLAUDE_HISTORY_PATH`
    - Default: auto-discovers from `~/.claude`
    - Set explicitly if Claude data is elsewhere
 
 4. **Have QMD installed?** → `QMD_WIKI_COLLECTION` / `QMD_PAPERS_COLLECTION` / `QMD_TRANSPORT`
-   - Optional. Enables semantic search in `wiki-query` and source discovery in `wiki-ingest`.
+   - Optional. Enables semantic search in `wiki-query` and source discovery in `wiki-folder-ingest`.
    - Default to `QMD_TRANSPORT=mcp` unless the user wants the agent to call the local `qmd` CLI directly.
    - If using CLI mode, set `QMD_CLI_SEARCH_MODE=quality` by default; suggest `balanced` if reranking is too slow.
    - If unsure, skip for now — both skills fall back to `Grep` automatically.
@@ -49,7 +49,7 @@ If `.env` doesn't exist, create it from `.env.example`. Ask the user for:
      one, so editing the YAML is the only way to scope it. Run `qmd update` after editing.
      If the collection already exists without the `ignore` block, tell the user their
      wiki collection is indexing `_raw/` (including `_raw/_archived/` drafts left behind by
-     `wiki-ingest`) and offer to add the `ignore` block and re-run `qmd update`.
+     `wiki-folder-ingest`) and offer to add the `ignore` block and re-run `qmd update`.
 
 5. **Token budget warning threshold?** → `WIKI_TOKEN_WARN_THRESHOLD`
    - Default: `100000` (warn when full-wiki read would cost > 100K tokens)
@@ -99,7 +99,7 @@ If the layout module is unavailable, fall back to the default listed in `vault-l
 - `.obsidian/` — Obsidian's own config. Creates vault recognition.
 - `projects/` — Per-project knowledge (populated during ingest).
 - `_archives/` — Stores wiki snapshots for rebuild/restore operations.
-- `_raw/` — Staging area for unprocessed drafts. Drop rough notes here; `wiki-ingest` will promote them to proper wiki pages and move the originals into `_raw/_archived/` (created on first use).
+- `_raw/` — Staging area for unprocessed drafts. Drop rough notes here; `wiki-folder-ingest` will promote them to proper wiki pages and move the originals into `_raw/_archived/` (created on first use).
 - `_staging/` — Review queue for LLM-written pages when `WIKI_STAGED_WRITES=true`. Pages here are not visible in Obsidian's graph until promoted via `/wiki-stage-commit`.
 - `_meta/` — Trust ledger, taxonomy, dashboard definitions.
 - `_readouts/` — Narrative readouts saved by wiki-narrate.
@@ -119,7 +119,7 @@ title: Wiki Index
 
 ## Concepts
 
-*No pages yet. Use `wiki-ingest` to add your first source.*
+*No pages yet. Use `wiki-folder-ingest` to add your first source.*
 
 ## Entities
 
@@ -229,7 +229,7 @@ Run a quick sanity check:
 Report the results and tell the user they can now:
 1. Open the vault in Obsidian (File → Open Vault → select the directory)
 2. Run `wiki-status` to see what's available to ingest
-3. Run `wiki-ingest` to add their first sources
+3. Run `wiki-folder-ingest` to add their first sources
 4. Run `claude-history-ingest` to mine their Claude conversations
 5. Run `codex-history-ingest` to mine their Codex sessions (if they use Codex)
 6. Run `wiki-status` again anytime to check the delta

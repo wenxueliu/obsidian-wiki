@@ -1,4 +1,4 @@
-"""Batch planner for parallel wiki-ingest subagent dispatch.
+"""Batch planner for parallel wiki-folder-ingest subagent dispatch.
 
 When ingesting a large folder of docs, this module splits the source list into
 batches and emits a dispatch plan the skill uses to spawn parallel Claude
@@ -24,7 +24,7 @@ and gets back a JSON plan:
     "skipped_unchanged": N,
     "skipped_binary": N
   },
-  "merge_hint": "Run /wiki-ingest on each batch in parallel, then run /cross-linker once all batches are done."
+  "merge_hint": "Run /wiki-folder-ingest on each batch in parallel, then run /cross-linker once all batches are done."
 }
 
 The skill dispatches each batch as a parallel subagent call, then runs
@@ -136,7 +136,7 @@ def discover_sources(
     """Return a list of ingestible file dicts under source_dir.
 
     Each dict: {path, kind, size_bytes}. Code files are excluded by default
-    because wiki-ingest Step 1c handles them via ast-extract separately.
+    because source-code ingestion uses ast-extract separately.
 
     If source_dir is the root of a git working tree, files are enumerated
     with `git ls-files` so the repo's own `.gitignore` rules apply (this
@@ -265,7 +265,7 @@ def plan_batches(
         })
 
     merge_hint = (
-        "Dispatch each batch as a parallel subagent with /wiki-ingest on its file list. "
+        "Dispatch each batch as a parallel subagent with /wiki-folder-ingest on its file list. "
         "Once all batches complete, run /cross-linker to wire up cross-references."
     )
 

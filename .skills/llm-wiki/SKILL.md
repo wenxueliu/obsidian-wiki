@@ -184,7 +184,7 @@ units for the exact content hash are integrated and every produced page is live.
 `content_hash`, `last_ingested`, and `pages_produced`; record `pages_created`, `pages_updated`, unit
 counts, source type, and chunker version; maintain top-level `version: 1` and idempotently recompute
 manifest stats. Validate pages plus `index.md`, `log.md`, and `hot.md`, then atomically replace the
-manifest last. `wiki-ingest/references/finalization-policy.md` owns the full text-source procedure.
+manifest last. `wiki-folder-ingest/references/finalization-policy.md` owns the full text-source procedure.
 
 ## Page Template
 
@@ -497,7 +497,7 @@ The deterministic `wiki-lint` path validates `_meta/trust-ledger.json`; it does 
 
 | Skill | base_confidence | lifecycle |
 |---|---|---|
-| `wiki-ingest` (text Packet integration) | `min(independent_lineages/3,1)×0.5 + avg_q×0.5` | `draft` |
+| `wiki-packet-integrate` (text Packet integration) | `min(independent_lineages/3,1)×0.5 + avg_q×0.5` | `draft` |
 | `wiki-research` | varies, often 0.85+ | `draft` |
 | `wiki-capture` | 0.42 | `draft` |
 | `*-history-ingest` | 0.42 | `draft` |
@@ -540,7 +540,7 @@ The `tier:` field controls which pages get updated on each ingest pass and their
 
 ### Who manages tier
 
-- `wiki-ingest` reads `tier:` to decide whether to update a page on the current pass
+- `wiki-packet-integrate` reads `tier:` to decide whether to update a page on the current pass
 - `wiki-query` uses `tier:` to order candidates in the index pass and trim to context budget
 - `wiki-status` insights mode computes graph metrics and **suggests** tier assignments — it never writes them automatically
 - `wiki-lint` flags missing `tier:` on newly created pages (Phase 2 enforcement, same timeline as `base_confidence`)
@@ -724,7 +724,7 @@ Use `wiki-status` to see the delta and get a recommendation. Use `wiki-rebuild` 
 For details on specific operations, see the companion skills:
 - **wiki-status** — Audit what's ingested, compute delta, recommend append vs rebuild
 - **wiki-rebuild** — Archive current wiki, rebuild from scratch, or restore from archive
-- **wiki-folder-ingest / wiki-source-text / wiki-ingest** — Coordinate supported local text,
+- **wiki-folder-ingest / wiki-source-text / wiki-packet-integrate** — Coordinate supported local text,
   extract bounded Packets, and integrate them serially into wiki pages
 - **claude-history-ingest** — Ingest Claude conversation history
 - **codex-history-ingest** — Ingest Codex CLI session history

@@ -11,9 +11,9 @@ commands:
   - name: wiki-update
     description: Sync the current project's knowledge into the Obsidian wiki.
     skill: .skills/wiki-update/SKILL.md
-  - name: wiki-ingest
-    description: Ingest documents into the Obsidian wiki.
-    skill: .skills/wiki-ingest/SKILL.md
+  - name: wiki-folder-ingest
+    description: Ingest supported local text files or folders into the Obsidian wiki.
+    skill: .skills/wiki-folder-ingest/SKILL.md
   - name: wiki-status
     description: Show what's been ingested, what's pending, and the delta.
     skill: .skills/wiki-status/SKILL.md

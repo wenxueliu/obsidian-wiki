@@ -323,7 +323,7 @@ Update `index.md` and `log.md` per the standard process:
 - [TIMESTAMP] COPILOT_HISTORY_INGEST projects=N sessions=M checkpoints=C pages_updated=X pages_created=Y mode=append|full
 ```
 
-**`hot.md`** — Read `$OBSIDIAN_VAULT_PATH/hot.md` (create from the template in `wiki-ingest` if missing). Update **Recent Activity** with a one-line summary — e.g. "Ingested 5 Copilot sessions across 2 projects; surfaced patterns in API design and testing strategy." Keep the last 3 operations. Update **Active Threads** if any ongoing project is now better understood. Update `updated` timestamp.
+**`hot.md`** — Read `$OBSIDIAN_VAULT_PATH/hot.md` (create from the vault setup template if missing). Update **Recent Activity** with a one-line summary — e.g. "Ingested 5 Copilot sessions across 2 projects; surfaced patterns in API design and testing strategy." Keep the last 3 operations. Update **Active Threads** if any ongoing project is now better understood. Update `updated` timestamp.
 
 ## Privacy
 

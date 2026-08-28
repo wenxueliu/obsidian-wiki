@@ -10,7 +10,7 @@ description: >
 # Wiki Folder Ingest — V1 Coordinator
 
 Coordinate metadata and artifacts; never read or receive full source bodies. Extraction belongs to
-`wiki-source-text`, and page writes belong to `wiki-ingest`.
+`wiki-source-text`, and single-Packet page writes belong to worker-only `wiki-packet-integrate`.
 
 ## Resolve and secure context
 
@@ -63,6 +63,10 @@ warnings, and Packet paths—never source bodies.
 are a 48,000-byte target and a 64,000-byte absolute hard cap. Invalid UTF-8 is a failed source with
 conversion guidance; do not guess encoding.
 
+Resolve `wiki-context` once and generate one `wiki-page-contract` for the whole Job before dispatch.
+Pass those frozen artifacts to every Packet integrator. A Packet worker must validate their
+vault/write-mode/layout binding but must not resolve either artifact again.
+
 ## Process units
 
 Create one independent scheduling lane per changed input document and never mix documents in an
@@ -76,7 +80,8 @@ their planned order. For each source in discovery order:
    unavailable, persist `next_unit` and stop for a later invocation.
 3. Verify the resulting Packet path is beneath `packets/` and validate it against the Job.
 4. Set the unit to `packet_ready`.
-5. Invoke `wiki-ingest` by its bare workflow name for that one Packet.
+5. Invoke `wiki-packet-integrate` by its bare workflow name for that one Packet, passing the Job's
+   frozen `wiki-context.json` and `page-contract.json`.
 6. In direct-write mode, atomically mark the unit integrated. With `WIKI_STAGED_WRITES=true`,
    record its validated review artifacts and mark it staged without increasing `units_integrated`.
    Advance `next_unit` in either mode.
@@ -90,7 +95,9 @@ manifest, index, log, hot-cache, or page files.
 
 The permanent `.manifest.json` advances only when every unit for an exact source hash has integrated;
 staged units count only after their artifacts become live through `wiki-stage-commit`.
-`wiki-ingest` performs that commit last. Retain successful units and Packets after failures.
+After the Packet sweep, invoke `wiki-finalize-sources` once for all eligible sources; it performs
+the manifest-last commit. Read `references/finalization-policy.md` completely and pass its
+completion boundary to that shared workflow. Retain successful units and Packets after failures.
 
 - Extraction failure: mark only that unit failed and retain prior successes.
 - Packet validation failure: retain the Packet and error; do not integrate it.

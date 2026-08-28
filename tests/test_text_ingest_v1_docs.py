@@ -7,11 +7,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_v1_skills_are_packaged_and_have_clear_write_ownership():
     folder = (ROOT / ".skills" / "wiki-folder-ingest" / "SKILL.md").read_text()
     worker = (ROOT / ".skills" / "wiki-source-text" / "SKILL.md").read_text()
-    integrator = (ROOT / ".skills" / "wiki-ingest" / "SKILL.md").read_text()
+    integrator = (ROOT / ".skills" / "wiki-packet-integrate" / "SKILL.md").read_text()
 
     assert "never read or receive full source bodies" in folder
     assert "Never update\n`job.json`, `.manifest.json`" in worker
-    assert "permanent manifest **last**" in integrator
+    assert "Never update `index.md`, `log.md`, `hot.md`, QMD, or the permanent manifest" in integrator
     assert "serial incremental reducer" in integrator
 
 
@@ -20,9 +20,9 @@ def test_extraction_and_synthesis_guidance_remain_in_the_correct_stage():
     extraction = (
         ROOT / ".skills" / "wiki-source-text" / "references" / "extraction-frame.md"
     ).read_text()
-    integrator = (ROOT / ".skills" / "wiki-ingest" / "SKILL.md").read_text()
+    integrator = (ROOT / ".skills" / "wiki-packet-integrate" / "SKILL.md").read_text()
     prompts = (
-        ROOT / ".skills" / "wiki-ingest" / "references" / "ingest-prompts.md"
+        ROOT / ".skills" / "wiki-packet-integrate" / "references" / "ingest-prompts.md"
     ).read_text()
 
     assert "Read `references/extraction-frame.md` completely" in worker
@@ -43,9 +43,9 @@ def test_extraction_and_synthesis_guidance_remain_in_the_correct_stage():
 
 
 def test_page_writes_staging_and_cross_references_remain_integrated():
-    integrator = (ROOT / ".skills" / "wiki-ingest" / "SKILL.md").read_text()
+    integrator = (ROOT / ".skills" / "wiki-packet-integrate" / "SKILL.md").read_text()
     policy = (
-        ROOT / ".skills" / "wiki-ingest" / "references" / "page-write-policy.md"
+        ROOT / ".skills" / "wiki-packet-integrate" / "references" / "page-write-policy.md"
     ).read_text()
     stage_commit = (ROOT / ".skills" / "wiki-stage-commit" / "SKILL.md").read_text()
     coordinator = (ROOT / ".skills" / "wiki-folder-ingest" / "SKILL.md").read_text()
@@ -73,14 +73,19 @@ def test_page_writes_staging_and_cross_references_remain_integrated():
 
 
 def test_manifest_and_special_file_finalization_is_a_shared_complete_source_policy():
-    integrator = (ROOT / ".skills" / "wiki-ingest" / "SKILL.md").read_text()
+    integrator = (ROOT / ".skills" / "wiki-packet-integrate" / "SKILL.md").read_text()
+    coordinator = (ROOT / ".skills" / "wiki-folder-ingest" / "SKILL.md").read_text()
     stage_commit = (ROOT / ".skills" / "wiki-stage-commit" / "SKILL.md").read_text()
     policy = (
-        ROOT / ".skills" / "wiki-ingest" / "references" / "finalization-policy.md"
+        ROOT / ".skills" / "wiki-folder-ingest" / "references" / "finalization-policy.md"
     ).read_text()
 
-    assert "`references/finalization-policy.md` completely" in integrator
-    assert "../wiki-ingest/references/finalization-policy.md" in stage_commit
+    assert "`references/finalization-policy.md` completely" in coordinator
+    assert "../wiki-folder-ingest/references/finalization-policy.md" in stage_commit
+    assert "finalization-policy.md" not in integrator
+    folder_workflow = (ROOT / "workflows" / "wiki-folder-ingest.yaml").read_text()
+    assert "workflow: wiki-finalize-sources" in folder_workflow
+    assert "当前 Job 中全部 eligible sources" in folder_workflow
     for field in (
         '"content_hash"', '"last_ingested"', '"pages_produced"',
         '"pages_created"', '"pages_updated"', '"source_type"',
@@ -108,7 +113,7 @@ def test_llm_wiki_foundation_matches_text_v1_and_live_commit_boundaries():
     assert "Paper Deep-Dive Template (specialized/future PDF ingest)" in foundation
     assert "does not make PDF/PageIndex processing part of\ntext V1" in foundation
     assert "PyMuPDF extraction recipe" not in foundation
-    assert "wiki-ingest` (URL)" not in foundation
+    assert "wiki-packet-integrate` (URL)" not in foundation
     assert "raw text/chat/log data" not in foundation
 
     for special_file in ("### `index.md`", "### `log.md`", "### `hot.md`", "### `.manifest.json`"):
@@ -125,7 +130,7 @@ def test_text_ingest_uses_the_effective_relationship_schema_without_legacy_hardc
         ROOT / ".skills" / "wiki-source-text" / "references" / "extraction-frame.md"
     ).read_text()
     prompts = (
-        ROOT / ".skills" / "wiki-ingest" / "references" / "ingest-prompts.md"
+        ROOT / ".skills" / "wiki-packet-integrate" / "references" / "ingest-prompts.md"
     ).read_text()
     lint_skill = (ROOT / ".skills" / "wiki-lint" / "SKILL.md").read_text()
 
@@ -138,9 +143,9 @@ def test_text_ingest_uses_the_effective_relationship_schema_without_legacy_hardc
 
 def test_writing_profile_is_resolved_for_ingest_without_overriding_structured_contracts():
     foundation = (ROOT / ".skills" / "llm-wiki" / "SKILL.md").read_text()
-    integrator = (ROOT / ".skills" / "wiki-ingest" / "SKILL.md").read_text()
+    integrator = (ROOT / ".skills" / "wiki-packet-integrate" / "SKILL.md").read_text()
     page_policy = (
-        ROOT / ".skills" / "wiki-ingest" / "references" / "page-write-policy.md"
+        ROOT / ".skills" / "wiki-packet-integrate" / "references" / "page-write-policy.md"
     ).read_text()
     setup_skill = (ROOT / ".skills" / "wiki-setup" / "SKILL.md").read_text()
     configuration = (ROOT / "docs" / "configuration.md").read_text()

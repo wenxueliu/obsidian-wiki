@@ -52,3 +52,41 @@ def test_wiki_context_workflow_uses_cwd_independent_cli() -> None:
 
     assert "obsidian-wiki wiki-context-resolve" in workflow
     assert "python3 .cac/ralph-flow/workflows/wiki/scripts/resolve_wiki_context.py" not in workflow
+
+
+def test_wiki_route_resolve_does_not_depend_on_cwd(tmp_path: Path) -> None:
+    routing = tmp_path / "routing.json"
+    routing.write_text(
+        json.dumps({
+            "version": 1,
+            "allowed_placeholders": ["slug"],
+            "content_roots": ["concepts"],
+            "system_dirs": ["_meta"],
+            "skip_dirs": ["_meta"],
+            "system_paths": ["index.md", "_meta/layout.json"],
+            "fallback": "concept",
+            "routes": {"concept": "concepts/{slug}.md"},
+        }),
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT)
+    result = subprocess.run(
+        [
+            sys.executable, "-m", "obsidian_wiki", "wiki-route-resolve",
+            "--routing", str(routing), "--page-type", "concept", "--slug", "alpha",
+        ],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["target"] == "concepts/alpha.md"
+
+
+def test_page_contract_uses_cwd_independent_route_cli() -> None:
+    workflow = (ROOT / "workflows" / "wiki-page-contract.yaml").read_text(encoding="utf-8")
+    assert "obsidian-wiki wiki-route-resolve" in workflow
+    assert ".cac/" not in workflow

@@ -101,7 +101,7 @@ Tell the user the vault is cleared and ready for a full re-ingest. They can now 
 1. `wiki-status` — to see all sources as "new"
 2. `claude-history-ingest` — to reprocess Claude history
 3. `codex-history-ingest` — to reprocess Codex session history
-4. `wiki-ingest` — to reprocess documents and any other raw data
+4. `wiki-folder-ingest` — to reprocess supported text documents and raw notes
 
 Each of these will rebuild the manifest as they go.
 

@@ -40,7 +40,7 @@ def hash_source(path: Path) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Compute the wiki-ingest content hash for a file or directory."
+        description="Compute the text-ingest content hash for a file or directory."
     )
     parser.add_argument("source", type=Path)
     args = parser.parse_args()

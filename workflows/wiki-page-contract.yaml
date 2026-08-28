@@ -20,12 +20,12 @@ steps:
       5. 每个新页面的最终 target 必须调用确定性路由器生成并记录 route evidence：
 
          ```bash
-         python3 .cac/ralph-flow/workflows/wiki/scripts/resolve_wiki_route.py \
+         obsidian-wiki wiki-route-resolve \
            --routing page-contract.json --page-type "<declared-type>" \
            --slug "<safe-slug>" --project "<safe-project>" --date "<YYYY-MM-DD>"
          ```
 
-         只传目标模板实际需要的参数；脚本拒绝未知类型、路径分隔符、`..`、绝对路径、未知占位符和 system target。链接目标必须已存在或在同一事务创建，新增链接做局部双向引用检查。
+         只传目标模板实际需要的参数；若 console script 不在 PATH，使用 `python3 -m obsidian_wiki wiki-route-resolve ...`。随包发布的 resolver 拒绝未知类型、路径分隔符、`..`、绝对路径、未知占位符和 system target。链接目标必须已存在或在同一事务创建，新增链接做局部双向引用检查。
       6. 更新页面必须 read-modify-write，保留不相关正文、owner 字段、历史 sources 与可信度信息；compatible facts 去重合并。existing target 也必须位于 routing.content_roots 内。所有写入先生成 candidate/temp sibling，页面校验通过后原子替换。
       7. direct mode 只允许写 route resolver 返回的 live content target；staged mode 只写 `_staging` 下绑定该 canonical target 的完整新页面或 patch。patch 必须绑定 target/base hash/job/source/unit，并包含 Additions、Deletions、Updated Fields；staged mode 不得修改 live/index/manifest。
       8. 写 `page-contract.json` 与 `page-contract.md`，包含 layout name/version/status/hash、完整 `routing.rules`、`routing.prompt`、effective fields、taxonomy、relationship allowlist、provenance markers、merge rules、link format、write mode、validation 和 Writing Profile 摘要。不得写 vault。

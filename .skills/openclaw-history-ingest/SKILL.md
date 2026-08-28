@@ -205,7 +205,7 @@ Update `index.md` and `log.md`:
 - [TIMESTAMP] OPENCLAW_HISTORY_INGEST memory=updated daily_notes=N sessions=M pages_updated=X pages_created=Y mode=append|full
 ```
 
-**`hot.md`** — Read `$OBSIDIAN_VAULT_PATH/hot.md` (create from the template in `wiki-ingest` if missing). Update **Recent Activity** with a one-line summary — e.g. "Ingested OpenClaw MEMORY.md and 14 daily notes; surfaced automation patterns and multi-agent coordination knowledge." Keep the last 3 operations. Update `updated` timestamp.
+**`hot.md`** — Read `$OBSIDIAN_VAULT_PATH/hot.md` (create from the vault setup template if missing). Update **Recent Activity** with a one-line summary — e.g. "Ingested OpenClaw MEMORY.md and 14 daily notes; surfaced automation patterns and multi-agent coordination knowledge." Keep the last 3 operations. Update `updated` timestamp.
 
 ## Privacy and Compliance
 

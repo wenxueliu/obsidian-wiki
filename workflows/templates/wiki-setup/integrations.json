@@ -59,7 +59,7 @@
   "next_steps": [
     "Open Vault in Obsidian",
     "run wiki-status to see ingestible content",
-    "run wiki-ingest to add sources",
+    "run wiki-folder-ingest to add sources",
     "run claude-history-ingest",
     "run codex-history-ingest",
     "run wiki-status again to inspect the delta"

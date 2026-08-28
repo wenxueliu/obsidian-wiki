@@ -55,7 +55,7 @@ Other paths — `git clone`, Skills CLI, multiple vaults → **[Installation](ht
 resumable, context-bounded pipeline. Agent histories and web research use their dedicated skills.
 
 ```text
-/wiki-ingest ~/research
+/wiki-folder-ingest ~/research
 /wiki-update                        # distill the repo you're standing in
 /wiki-capture                       # save this conversation
 /wiki-history-ingest claude         # mine everything you've ever asked Claude

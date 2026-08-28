@@ -27,7 +27,7 @@ Each page also gets a 1–2 sentence `summary:` in its frontmatter at write time
 
 ### 3. Merge
 
-`wiki-ingest` validates and integrates Packets serially in source order. New knowledge merges
+`wiki-packet-integrate` validates and integrates Packets serially in source order. New knowledge merges
 against what's already there; contradictions and exact source locators are retained. Packet
 boundaries never become page boundaries.
 

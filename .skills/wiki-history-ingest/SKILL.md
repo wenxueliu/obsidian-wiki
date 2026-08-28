@@ -9,7 +9,7 @@ description: >
 
 # Unified History Ingest Router
 
-This is a thin router for **history sources only**. It does not replace `wiki-ingest` for documents.
+This is a thin router for **history sources only**. It does not replace `wiki-folder-ingest` for documents.
 
 ## Subcommands
 
@@ -46,7 +46,7 @@ If the user invokes `/wiki-history-ingest <target>` (or equivalent text command)
 
 ## UX Convention
 
-- Use `wiki-ingest` for **documents/content sources**
+- Use `wiki-folder-ingest` for **documents/content sources**
 - Use `wiki-history-ingest` for **agent history sources**
 
 Examples:

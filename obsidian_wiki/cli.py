@@ -39,6 +39,7 @@ GLOBAL_CONFIG = GLOBAL_CONFIG_DIR / "config"
 # config). These are also installed globally for agents that only scope skills
 # per-project, so cross-project sync/query/context work everywhere.
 PORTABLE_SKILLS = ("wiki-update", "wiki-query", "wiki-context-pack")
+OBSOLETE_MANAGED_SKILLS = ("wiki-ingest",)
 
 
 class SchemaOptions(TypedDict):
@@ -98,6 +99,26 @@ def list_skills() -> list[str]:
 
 
 # ── Skill installation ───────────────────────────────────────────────────────
+def _remove_obsolete_managed_skills(target_dir: Path) -> None:
+    """Remove only legacy skill installs recognizable as ours."""
+    for name in OBSOLETE_MANAGED_SKILLS:
+        candidate = target_dir / name
+        if candidate.is_symlink():
+            raw_target = os.readlink(candidate).replace("\\", "/")
+            if raw_target.endswith((f"/.skills/{name}", f"/_data/skills/{name}")):
+                candidate.unlink()
+            continue
+        marker = candidate / "SKILL.md"
+        if not marker.is_file():
+            continue
+        try:
+            content = marker.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if "name: wiki-ingest" in content and "# Wiki Ingest — Packet Integration" in content:
+            shutil.rmtree(candidate)
+
+
 def install_skills(
     target_dir: Path,
     label: str,
@@ -109,6 +130,8 @@ def install_skills(
     """Install bundled skills into *target_dir*. Returns the count installed."""
     src_root = skills_dir()
     target_dir.mkdir(parents=True, exist_ok=True)
+    if subset is None:
+        _remove_obsolete_managed_skills(target_dir)
     installed = 0
     for skill in sorted(p for p in src_root.iterdir() if p.is_dir()):
         name = skill.name
@@ -1220,6 +1243,129 @@ def cmd_text_ingest_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_bound_packet(job_dir: Path, packet_arg: str) -> tuple[dict, dict, dict, dict, str]:
+    """Load one Packet and prove that it is the next writable unit for its Job source."""
+    from obsidian_wiki.ingest_pipeline import (
+        PipelineContractError,
+        load_job,
+        resolve_packet_path,
+        validate_packet,
+    )
+
+    directory = job_dir.expanduser().resolve()
+    job = load_job(directory)
+    packet_path = resolve_packet_path(directory, packet_arg)
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    if not isinstance(packet, dict):
+        raise PipelineContractError("Packet must be a JSON object")
+    packet_source = packet.get("source", {})
+    packet_unit = packet.get("unit", {})
+    source = next(
+        (
+            item for item in job.get("sources", [])
+            if item.get("source_id") == packet_source.get("source_id")
+        ),
+        None,
+    )
+    if source is None:
+        raise PipelineContractError("Packet source is not present in the Job")
+    validate_packet(packet, job_source=source)
+    unit_id = packet_unit.get("unit_id")
+    units = source.get("units", [])
+    target_index = next(
+        (index for index, unit in enumerate(units) if unit.get("unit_id") == unit_id),
+        None,
+    )
+    if target_index is None:
+        raise PipelineContractError("Packet unit is not present in the Job")
+    unit = units[target_index]
+    expected_path = resolve_packet_path(directory, unit.get("packet_path", ""))
+    if packet_path != expected_path:
+        raise PipelineContractError("Packet path does not match the planned Job unit")
+    write_mode = job.get("write_mode", "direct")
+    allowed_previous = {"integrated"} if write_mode == "direct" else {
+        "staged", "approved_waiting_order", "integrated",
+    }
+    if any(previous.get("status") not in allowed_previous for previous in units[:target_index]):
+        raise PipelineContractError("Packet is not the next writable unit for its source")
+    if unit.get("status") in {"integrated", "staged", "approved_waiting_order"}:
+        raise PipelineContractError("Packet unit has already advanced")
+    relative_packet = packet_path.relative_to(directory).as_posix()
+    return job, packet, source, unit, relative_packet
+
+
+def cmd_text_ingest_packet_check(args: argparse.Namespace) -> int:
+    from obsidian_wiki.ingest_pipeline import PipelineContractError
+
+    try:
+        job, packet, source, unit, relative_packet = _load_bound_packet(
+            Path(args.job), args.packet
+        )
+        result = {
+            "status": "valid",
+            "job_id": job.get("job_id"),
+            "write_mode": job.get("write_mode", "direct"),
+            "packet_path": relative_packet,
+            "packet_id": packet.get("packet_id"),
+            "source_id": source.get("source_id"),
+            "unit_id": unit.get("unit_id"),
+            "range": {
+                key: unit.get(key)
+                for key in ("start_line", "end_line", "start_byte", "end_byte")
+            },
+        }
+        _emit_workflow_json(result, pretty=args.pretty, output=args.output)
+    except (OSError, ValueError, json.JSONDecodeError, PipelineContractError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_text_ingest_unit_advance(args: argparse.Namespace) -> int:
+    from obsidian_wiki.ingest_pipeline import (
+        PipelineContractError,
+        mark_unit_integrated,
+        mark_unit_staged,
+        summarize_job,
+        write_job,
+    )
+
+    try:
+        job_dir = Path(args.job).expanduser().resolve()
+        job, _packet, source, unit, relative_packet = _load_bound_packet(
+            job_dir, args.packet
+        )
+        write_mode = job.get("write_mode", "direct")
+        if args.mode != write_mode:
+            raise PipelineContractError(
+                f"advance mode {args.mode!r} does not match Job write_mode {write_mode!r}"
+            )
+        if args.mode == "direct":
+            if args.artifact:
+                raise PipelineContractError("direct unit advance does not accept staged artifacts")
+            mark_unit_integrated(
+                job, str(source.get("source_id")), str(unit.get("unit_id")), relative_packet
+            )
+        else:
+            mark_unit_staged(
+                job, str(source.get("source_id")), str(unit.get("unit_id")), args.artifact
+            )
+        write_job(job_dir, job)
+        result = summarize_job(job_dir, job)
+        result["advanced"] = {
+            "source_id": source.get("source_id"),
+            "unit_id": unit.get("unit_id"),
+            "status": unit.get("status"),
+            "packet_path": relative_packet,
+            "artifacts": list(args.artifact),
+        }
+        _emit_workflow_json(result, pretty=args.pretty, output=args.output)
+    except (OSError, ValueError, json.JSONDecodeError, PipelineContractError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_wiki_context_resolve(args: argparse.Namespace) -> int:
     """Run the bundled context resolver from any working directory."""
     try:
@@ -1241,6 +1387,32 @@ def cmd_wiki_context_resolve(args: argparse.Namespace) -> int:
     ]
     if args.layouts_dir is not None:
         command.extend(["--layouts-dir", args.layouts_dir])
+    return subprocess.run(command, check=False).returncode
+
+
+def cmd_wiki_route_resolve(args: argparse.Namespace) -> int:
+    """Run the bundled page-route resolver from any working directory."""
+    try:
+        script = workflows_dir() / "scripts" / "resolve_wiki_route.py"
+        if not script.is_file():
+            raise FileNotFoundError(f"bundled page-route resolver is missing: {script}")
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    command = [
+        sys.executable, str(script),
+        "--routing", args.routing,
+        "--page-type", args.page_type,
+    ]
+    for flag, value in (
+        ("--slug", args.slug),
+        ("--project", args.project),
+        ("--date", args.date),
+        ("--output", args.output),
+    ):
+        if value is not None:
+            command.extend([flag, value])
     return subprocess.run(command, check=False).returncode
 
 
@@ -2027,6 +2199,31 @@ def build_parser() -> argparse.ArgumentParser:
     tis.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
     tis.set_defaults(func=cmd_text_ingest_status)
 
+    tipc = sub.add_parser(
+        "text-ingest-packet-check",
+        help="validate one Packet against its Job and planned source/unit/path binding",
+    )
+    tipc.add_argument("job", help="ingest Job directory")
+    tipc.add_argument("packet", help="planned Packet path, relative to the Job or absolute")
+    tipc.add_argument("--output", help="atomically write the JSON result to this artifact path")
+    tipc.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    tipc.set_defaults(func=cmd_text_ingest_packet_check)
+
+    tiua = sub.add_parser(
+        "text-ingest-unit-advance",
+        help="atomically advance one validated Packet unit after page validation succeeds",
+    )
+    tiua.add_argument("job", help="ingest Job directory")
+    tiua.add_argument("packet", help="planned Packet path, relative to the Job or absolute")
+    tiua.add_argument("--mode", choices=("direct", "staged"), required=True)
+    tiua.add_argument(
+        "--artifact", action="append", default=[],
+        help="staged review artifact path; repeat for multiple artifacts",
+    )
+    tiua.add_argument("--output", help="atomically write the JSON result to this artifact path")
+    tiua.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    tiua.set_defaults(func=cmd_text_ingest_unit_advance)
+
     wcr = sub.add_parser(
         "wiki-context-resolve",
         help="run the bundled workflow context resolver independently of the current directory",
@@ -2039,6 +2236,18 @@ def build_parser() -> argparse.ArgumentParser:
     wcr.add_argument("--layouts-dir", default=None, help="override the bundled layouts directory")
     wcr.add_argument("--output-dir", required=True, help="artifact output directory")
     wcr.set_defaults(func=cmd_wiki_context_resolve)
+
+    wrr = sub.add_parser(
+        "wiki-route-resolve",
+        help="resolve one declared page type with the bundled deterministic router",
+    )
+    wrr.add_argument("--routing", required=True, help="routing.json or frozen page contract")
+    wrr.add_argument("--page-type", required=True)
+    wrr.add_argument("--slug")
+    wrr.add_argument("--project")
+    wrr.add_argument("--date")
+    wrr.add_argument("--output")
+    wrr.set_defaults(func=cmd_wiki_route_resolve)
 
     ap = sub.add_parser(
         "ast-extract",

@@ -106,7 +106,7 @@ steps:
       1. archive-only 向 live log 幂等追加 ARCHIVE plan_id（pages/destination），live content 不变；QMD 仅在 log 被索引且已配置时可选刷新，否则记录 live unchanged。
       2. archive+rebuild 必须 QMD update，需时 embed，并验证 collection 不再返回已清除页；restore 必须 update+按需 embed，并 get 一个 restored page。QMD unset/unavailable/error 分别报告，不回滚 Markdown。
       3. 写 wiki-rebuild-completion.md：mode、archive destination/meta、previous/final counts、preserved dirs、manifest/index/log、QMD、warnings 与 recovery。
-      4. rebuild 模式只建议下一步依次选择 wiki-status、claude-history-ingest、codex-history-ingest、wiki-ingest；不自动执行。restore 建议 wiki-lint。
+      4. rebuild 模式只建议下一步依次选择 wiki-status、claude-history-ingest、codex-history-ingest、wiki-folder-ingest；不自动执行。restore 建议 wiki-lint。
       5. 最终事实与磁盘一致后输出 <promise>done</promise>。
     input: archive verification + live mutation report + 最终 vault/QMD
     output: 幂等 archive/rebuild/restore tracking + completion + 条件 QMD refresh

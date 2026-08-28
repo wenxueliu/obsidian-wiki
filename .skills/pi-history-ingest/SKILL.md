@@ -260,7 +260,7 @@ Update `index.md` and `log.md`:
 - [TIMESTAMP] PI_HISTORY_INGEST sessions=N pages_updated=X pages_created=Y mode=append|full
 ```
 
-**`hot.md`** — Read `$OBSIDIAN_VAULT_PATH/hot.md` (create from the template in `wiki-ingest` if missing). Update **Recent Activity** with a one-line summary — e.g. "Ingested 12 Pi sessions across 3 projects; surfaced patterns in CLI tooling and API design." Keep the last 3 operations. Update `updated` timestamp.
+**`hot.md`** — Read `$OBSIDIAN_VAULT_PATH/hot.md` (create from the vault setup template if missing). Update **Recent Activity** with a one-line summary — e.g. "Ingested 12 Pi sessions across 3 projects; surfaced patterns in CLI tooling and API design." Keep the last 3 operations. Update `updated` timestamp.
 
 ## Privacy and Compliance
 

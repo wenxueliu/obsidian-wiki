@@ -30,7 +30,7 @@ The extension writes a markdown file named like `2026-06-17-page-title.md` into 
 After captures land in `_raw/`, run the ingest skill from your AI agent:
 
 ```text
-/wiki-ingest promote my raw pages
+/wiki-folder-ingest promote my raw pages
 ```
 
 The ingest skill will distill the raw captures into proper wiki pages, update the vault bookkeeping files, and delete promoted `_raw/` files so they are not processed twice.

@@ -8,7 +8,7 @@ Implementation mapping:
 - minimal Job and Packet contracts: `obsidian_wiki/ingest_pipeline.py`;
 - CLI materialization boundary: `text-chunk-plan` and `text-chunk-read`;
 - orchestration and extraction: `wiki-folder-ingest` and `wiki-source-text`;
-- serialized integration: `wiki-ingest`.
+- serialized integration: `wiki-packet-integrate`.
 
 ## 1. Decision summary
 
@@ -70,7 +70,7 @@ wiki-source-text
   one range per isolated context -> one bounded Packet
         |
         v
-wiki-ingest
+wiki-packet-integrate
   integrate Packets serially into the wiki
         |
         v
@@ -91,7 +91,7 @@ never reads or receives full source bodies.
 - create a durable Job containing one source record per file;
 - invoke the partition planner for each changed text source;
 - route each pending part to `wiki-source-text` in an isolated context;
-- queue Packets for serialized `wiki-ingest` integration;
+- queue Packets for serialized `wiki-packet-integrate` integration;
 - report complete, incomplete, unchanged, unsupported, and failed sources;
 - run cross-linking once after integrations finish.
 
@@ -113,9 +113,9 @@ This skill processes one planned source range at a time. It reads only that rang
 partitioner, extracts bounded knowledge with exact provenance, and writes one Packet. It does not
 read other ranges, write wiki pages, or update shared job or manifest files.
 
-### 4.4 `wiki-ingest`
+### 4.4 `wiki-packet-integrate`
 
-V1 narrows `wiki-ingest` to Packet integration:
+V1 narrows `wiki-packet-integrate` to Packet integration:
 
 1. validate one Packet;
 2. locate related existing pages;
@@ -391,7 +391,7 @@ For one changed source:
 3. claim one pending unit;
 4. use `text-chunk-read` to verify the hash and materialize only that unit;
 5. create one Packet with `wiki-source-text`;
-6. integrate the Packet serially with `wiki-ingest`;
+6. integrate the Packet serially with `wiki-packet-integrate`;
 7. mark the unit integrated;
 8. continue with the next unit, normally in a fresh context;
 9. record the permanent source entry only after every unit integrates.
@@ -532,9 +532,9 @@ is updated last, after page and special-file validation.
 
 ### Phase 4 — Integration-only ingest
 
-- teach `wiki-ingest` to accept text Packets;
+- add worker-only `wiki-packet-integrate` for text Packets;
 - serialize integration and source-order updates;
-- move folder and raw source-reading out of `wiki-ingest`;
+- keep folder and raw source-reading in public `wiki-folder-ingest`;
 - preserve file/directory compatibility routing;
 - update manifest completeness verification.
 

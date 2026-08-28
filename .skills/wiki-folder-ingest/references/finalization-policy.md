@@ -1,7 +1,7 @@
 # Completed Text Source Finalization Policy
 
 Read and apply this policy for both direct writes and accepted staged writes. Finalization is one
-source-level commit boundary, not a per-Packet action.
+source-level commit boundary owned by `wiki-finalize-sources`, not a per-Packet action.
 
 ## Preconditions
 
