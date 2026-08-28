@@ -1,0 +1,62 @@
+description: 从 workflow-local 模板生成带 hash 的 Wiki 核心初始化契约，再合并可选集成与验收契约
+
+auto_reset: true
+
+adversarial_check:
+  timeout_ms: 3600000
+  system_prompt: |
+    你是 Wiki Setup Contract 的只读审计者。独立读取模板和 artifacts 并重算 hash，不得调用 contract 生成脚本作为验证方法，不得创建或修改 vault、config、hook、QMD collection、Git 仓库或远端。
+
+steps:
+  - id: build_core_contract
+    desc: 从外部模板冻结配置、Writing Profile、layout 与核心文件契约
+    do: |
+      运行 workflow-local builder 的 `core` phase：
+
+      ```bash
+      python3 .cac/ralph-flow/workflows/wiki/scripts/build_setup_contract.py core \
+        --templates-dir .cac/ralph-flow/workflows/wiki/templates/wiki-setup \
+        --layouts-dir .cac/ralph-flow/workflows/wiki/layouts \
+        --output-dir "{{artifacts_dir}}"
+      ```
+
+      模板是 authoring source of truth，位于 `.cac/ralph-flow/workflows/wiki/templates/wiki-setup/`：`WRITING.md`、`index.md`、`log.md`、`hot.md`、`manifest.json`、`app.json`、`appearance.json`。builder 必须验证 Markdown/JSON 结构、只允许预定义占位符，并将每个模板的 source path、完整正文、allowed placeholders 和 SHA-256 冻结到 core artifacts。
+
+      允许的动态值仅为 `TIMESTAMP`、`VAULT_PATH`、`CATEGORY_LIST`、`INDEX_SECTIONS`。新建文件从冻结模板渲染；repair 只允许 minimal repair，保留 owner frontmatter、历史、manifest data 和未知 JSON keys。WRITING.md 只在缺失时创建，永不覆盖。
+
+      同时扫描 `.cac/ralph-flow/workflows/wiki/layouts/<name>/layout.json`、`routing.json`、`routing.md` 和对应 `vault/` 树，冻结每个 layout 的多级目录、预制文件 hash、categories、路由规则/分类提示及 inventory hash。`routing.json` 只允许安全相对模板和 allowlisted placeholders，所有 route 必须位于 content_roots；`routing.md` 是 layout-specific 分类提示，不能授权路径。layout 必须是 missing-only，拒绝 symlink、路径逃逸、超限文件和 index/log/hot/manifest/app/appearance 等核心保留目标。
+    input: 父 workflow 的 non-secret invocation metadata（仅用于 provenance，不改变模板）
+    output: setup-core-contract.json + setup-core-contract.md
+    check_voting:
+      - check: 不运行 build_setup_contract.py；逐文件读取 templates/wiki-setup，独立校验 UTF-8、Markdown frontmatter/headings、JSON parse 与 allowed placeholders，确认文件集无缺失
+      - check: 独立重算每个 template SHA-256 和 core contract hash，确认 artifact 内容与磁盘模板逐字一致，default render 无未替换占位符
+      - check: 独立遍历 layouts/<name>，重算 manifest/routing/prompt/file/inventory hashes，核对路由占位符/content roots、多级目录与预制文件完整，无 symlink、reserved target 或 path escape
+      - check: 核对 config defaults、Writing Profile create-only、default/system dirs、atomic/timezone-aware/minimal-repair 规则完整，且除 artifacts 外零写入
+    on_pass: build_integration_contract
+    on_fail: build_core_contract
+    max_fail_count: 3
+
+  - id: build_integration_contract
+    desc: 合并 QMD、Stop hook、Git sync、verification 和 handoff 并冻结最终契约
+    do: |
+      只在 core contract 已验证后运行 builder 的 `finalize` phase：
+
+      ```bash
+      python3 .cac/ralph-flow/workflows/wiki/scripts/build_setup_contract.py finalize \
+        --templates-dir .cac/ralph-flow/workflows/wiki/templates/wiki-setup \
+        --layouts-dir .cac/ralph-flow/workflows/wiki/layouts \
+        --output-dir "{{artifacts_dir}}"
+      ```
+
+      `integrations.json` 是可选集成与 handoff 的 authoring source，必须冻结 QMD `_raw/**` exclusion/disjoint/update 规则、Stop hook 的 Unix/Windows path/URL/JSON merge/sentinel/uninstall/单次开关、Git sync CLI/fallback/private/status source、doctor/等价 required checks、Dataview/Graph Analysis/Templater/Obsidian Git 四个手动插件，以及 Open Vault、status、ingest、Claude history、Codex history、再次 status 六个 next steps。
+
+      最终 `setup-contract.json/md` 必须携带 core hash、integration source hash 和 final contract hash。父 `wiki-setup` 只消费该冻结 artifact，不直接回读 authoring templates。
+    input: 已验证的 setup-core-contract.json/md + templates/wiki-setup/integrations.json
+    output: setup-contract.json + setup-contract.md
+    check_voting:
+      - check: 不运行 builder；独立重算 core/integration/final hashes，确认最终 JSON 完整包含 core 且 Markdown 携带每个冻结模板正文
+      - check: 逐项核对 qmd has no --ignore flag、_raw/**、wiki-stop-capture.sh/ps1、≥ 4 shell commands、HIVEMIND_CAPTURE=false、obsidian-wiki sync-setup/sync 和 PYTHONPATH fallback 无缺失
+      - check: 确认 verification、四个插件用途、六个 next steps 完整，且全流程只写 artifacts，没有改变 vault/home/QMD/Git/网络状态
+    on_pass: done
+    on_fail: build_integration_contract
+    max_fail_count: 3

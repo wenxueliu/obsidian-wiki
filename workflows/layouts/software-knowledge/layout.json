@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "name": "software-knowledge",
+  "description": "Traceable software knowledge organized by domain semantics",
+  "copy_policy": "missing-only",
+  "routing": {
+    "rules": "routing.json",
+    "prompt": "routing.md"
+  },
+  "categories": [
+    "projects",
+    "terms",
+    "domains",
+    "capabilities",
+    "behaviors",
+    "rules",
+    "models",
+    "processes",
+    "systems",
+    "deployables",
+    "components",
+    "interfaces",
+    "decisions",
+    "changes",
+    "operations",
+    "quality",
+    "concepts",
+    "patterns",
+    "skills",
+    "references",
+    "synthesis"
+  ],
+  "ignore": [".gitkeep", ".DS_Store"],
+  "core_template_overrides": {}
+}

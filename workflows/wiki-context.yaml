@@ -1,0 +1,56 @@
+description: 为 Wiki workflow 交互式收集 vault，并用确定性脚本生成共享运行时上下文
+
+auto_reset: true
+
+manual_step:
+  - collect_vault
+
+adversarial_check:
+  timeout_ms: 3600000
+  system_prompt: |
+    你是 Wiki Context 的只读审计者。必须独立检查输入、文件系统和 artifacts，不得调用 context 生成脚本作为验证方法，不得修改 vault 或执行后续业务流程。
+
+steps:
+  - id: collect_vault
+    desc: 交互式收集并确认 vault 绝对路径
+    do: |
+      只生成 `vault-input.json`，不读取 config 或 vault 内容。
+
+      若调用方 inputs 含 `run_condition` 且父报告证明条件不成立，不向用户询问，直接写 `{"mode":"skipped","reason":"...","evidence":"..."}`。
+
+      否则，从当前交互中获取 vault 路径：如用户尚未给出，明确请其输入。拒绝以 `@` 开头的值和相对路径；必须是展开 `~` 后的绝对路径。同时允许用户填写调用方 `requested_keys` 中的非秘密 overrides。
+
+      将确认结果写为 `{"mode":"interactive","vault_path":"<absolute path>","overrides":{...}}`。本步骤由用户检查后运行 `/ralphflow-continue` 放行；准备好后输出 `<promise>done</promise>`。
+    input: 调用方 invocation、run_condition（如有）、requested_keys 和用户输入
+    output: vault-input.json
+    on_pass: resolve_context
+    on_fail: collect_vault
+    max_fail_count: 3
+
+  - id: resolve_context
+    desc: 调用 workflow-local 脚本生成 Wiki 共享上下文
+    do: |
+      运行 `.cac/ralph-flow/workflows/wiki/scripts/resolve_wiki_context.py`，参数来自已批准的 `vault-input.json` 和调用方 inputs：
+
+      ```bash
+      python3 .cac/ralph-flow/workflows/wiki/scripts/resolve_wiki_context.py \
+        --input "{{artifacts_dir}}/vault-input.json" \
+        --source-cwd "<source-cwd>" \
+        --requested-keys "<comma-separated requested_keys>" \
+        --optional-reads "<comma-separated optional_reads>" \
+        --setup-mode "<true-or-false>" \
+        --output-dir "{{artifacts_dir}}"
+      ```
+
+      vault 始终来自人工确认的输入；脚本不支持 named config 或 `@name`。它只从 source CWD 向 HOME/root 查找包含 requested non-vault key 的最近 `.env`，完全未命中时才读取全局 config，为其他 requested keys 提供默认值。用户 overrides 优先，不混入第二个 config source。当前 keys 均不是秘密值，artifacts 写入 effective values。
+
+      脚本只读 owner `AGENTS.md`、Writing Profile 和 optional metadata，不读 knowledge page body。请求 active layout 时，它读取 `_meta/layout.json`，按 name 加载随 workflow 发布的 layout，重算 manifest/inventory/routing/prompt hashes，并输出 matched/stale/missing 状态、完整冻结 routing rules/prompt/content roots；绝不根据 vault 目录猜测 layout。所有依赖 layout scope 或写页面的下游 workflow 必须要求 status=matched，其他状态 fail closed 并引导 setup repair/migration。只写 artifacts 中的 `wiki-context.json/md`。
+    input: vault-input.json + 调用方传入的 source_cwd、requested_keys、optional_reads、setup_mode
+    output: wiki-context.json + wiki-context.md
+    check_voting:
+      - check: 不运行 resolve_wiki_context.py；直接读 vault-input.json 和 wiki-context.json，用文件系统 realpath 独立核对 vault 是已批准的绝对路径、非 `@` 值，setup_mode=false 时存在且为目录
+      - check: 不运行生成脚本；独立解析报告的唯一 config source 与 requested non-vault keys，核对 overrides 优先、boolean 类型、owner/Writing Profile、optional metadata 和 retrieval order；请求 active layout 时独立重算 marker 与四类 hash，确认没有目录推断
+      - check: 文件系统审计确认除 artifacts 外零写入，vault/config/QMD/state/log 未改变；mode=skipped 时没有读取 config 或 vault
+    on_pass: done
+    on_fail: resolve_context
+    max_fail_count: 3

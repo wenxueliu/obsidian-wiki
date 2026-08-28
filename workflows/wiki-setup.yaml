@@ -1,0 +1,153 @@
+description: 经人工确认后安全初始化或修复 Obsidian wiki 的配置、layout、核心文件与可选集成
+
+auto_reset: true
+
+manual_step:
+  - approve_setup
+
+adversarial_check:
+  timeout_ms: 3600000
+  system_prompt: |
+    你是 Wiki Setup 的安全审计者。批准前不得写文件；批准后不得覆盖 owner 现有配置、Writing Profile、vault 内容或 hooks。
+    网络、Git sync、全局 hook 等可选外部变更只能执行 setup plan 中明确获批的项目。
+
+steps:
+  - id: resolve_existing_context
+    desc: 按共享规则解析现有配置，允许尚未初始化的 vault
+    workflow: wiki-context
+    input: setup invocation、source CWD 与可能存在的 config/vault metadata
+    inputs:
+      requested_keys: OBSIDIAN_VAULT_PATH,OBSIDIAN_SOURCES_DIR,CLAUDE_HISTORY_PATH,QMD_WIKI_COLLECTION,QMD_PAPERS_COLLECTION,QMD_TRANSPORT,QMD_CLI_SEARCH_MODE,WIKI_TOKEN_WARN_THRESHOLD,WIKI_STAGED_WRITES,OBSIDIAN_WIKI_REPO
+      optional_reads: existing config, vault metadata, AGENTS.md, active layout metadata, QMD collection metadata
+      setup_mode: "true"
+    output: wiki-context.json + wiki-context.md
+    on_pass: load_setup_contract
+    on_fail: resolve_existing_context
+    max_fail_count: 3
+
+  - id: load_setup_contract
+    desc: 生成仓库内自包含的精确初始化契约
+    workflow: wiki-setup-contract
+    input: wiki-context.json 中的非秘密 invocation metadata
+    inputs:
+      invocation_metadata: wiki-context.json 中的 resolution mode、canonical paths 与 configured/unconfigured 状态；不得传递秘密明文
+    output: setup-contract.md + setup-contract.json
+    on_pass: plan_setup
+    on_fail: load_setup_contract
+    max_fail_count: 3
+
+  - id: plan_setup
+    desc: 收集配置选择并形成零写入 setup plan
+    do: |
+      以 `wiki-context.json` 的磁盘事实和 `setup-contract.json/md` 的精确默认值、模板、命令与验收条款为唯一依据，形成 setup plan，不读取外部规范或示例配置。
+
+      先区分新建或 repair，并盘点唯一 config path、canonical vault、active layout、core files、Writing Profile、QMD collection、hooks 与 Git remote。只询问尚未确定或需要用户选择的项目：vault/source/history paths、layout、QMD、token threshold、staged writes，以及是否安装 Stop hook、配置 private Git sync和准确 repo URL。采用默认值时也要在 plan 明示。
+
+      在 `setup-plan.md` 列出 exact targets、每项 create/preserve/minimal-repair、原子写策略、required checks，以及所有需要 home/network/git/QMD 变更的 optional approvals。现有 `.env`、WRITING.md、core files、hooks、custom dirs 和 owner data 默认 preserve；此步骤零写入。
+    input: wiki-context.json + setup-contract.json/md + 用户的初始化/修复请求与配置选择
+    output: setup-plan.md（exact paths、defaults、create/preserve/repair、optional approvals、contract version/hash）
+    check: |
+      对照 context、contract 与磁盘事实复核：vault path 为绝对路径，layout 可加载，sources/history/QMD/staged/token 设置明确，所有现有文件有 preserve/minimal-repair 策略，可选 hook/Git/network 动作均有明确选择。确认尚未写本地或外部状态。
+    on_pass: approve_setup
+    on_fail: plan_setup
+    max_fail_count: 3
+
+  - id: approve_setup
+    desc: 人工审批 setup 的全部本地与外部变更
+    do: |
+      展示 setup-plan.md 的精简变更清单与 exact targets，写 approval-request.md 和 approved-setup.json，绑定 plan hash、setup contract hash、vault、config path、create/preserve/repair 集合及 approved optional actions。
+
+      用户运行 /ralphflow-continue 表示批准当前 binding；如修改选择，先更新 plan/binding 再重新等待。拒绝则取消 workflow。批准前不得创建目录、配置、QMD collection、hook、Git repo 或 remote。准备好后输出 <promise>done</promise>。
+    input: setup-plan.md + 用户批准/修改/拒绝
+    output: approval-request.md + approved-setup.json
+    check: |
+      确认 plan/contract hash、vault/config paths 与用户选择精确绑定，optional actions 未被默认扩大；用户已经过人工门明确批准，且此前本地和外部状态零变更。
+    on_pass: scaffold_vault
+    on_fail: approve_setup
+    max_fail_count: 3
+
+  - id: scaffold_vault
+    desc: 创建配置、Writing Profile 与 layout 目录
+    do: |
+      只执行 approved-setup.json 批准的 scaffold 项，并逐项使用 setup-contract.json 的 config、Writing Profile 和 layout 契约。
+
+      缺失 config 时从契约默认值和用户选择生成 `.env`；repair 时 read-modify-write，保留未知字段、注释和秘密值。展开 vault path 后验证绝对路径。全局 WRITING.md 仅缺失时按契约精确模板创建，永不覆盖。
+
+      用 setup contract 冻结的 layout inventory 验证用户选择，然后运行 workflow-local copier：
+
+      ```bash
+      python3 .cac/ralph-flow/workflows/wiki/scripts/apply_wiki_layout.py apply \
+        --layouts-dir .cac/ralph-flow/workflows/wiki/layouts \
+        --layout "<approved-layout>" \
+        --vault "<canonical-vault>" \
+        --output-dir "{{artifacts_dir}}"
+      ```
+
+      copier 递归复制 `layouts/<name>/vault/` 的多级目录和预制文件，并原子创建 `_meta/layout.json`，绑定 layout name/version、manifest/inventory/routing/prompt hashes；新 vault 创建全部内容，repair 只创建缺失项，现有文件始终 preserved，不删除 custom dirs。已有 marker 必须逐项匹配，否则停止，不能根据目录猜测或静默换 layout。若同名 layout 仅因发布包规则升级而 stale，必须在 approved plan 明确列出 routing diff 和影响，并额外传 `--refresh-layout-marker`；该参数只刷新同名 marker，不能切换 layout。切换 layout 涉及页面迁移，不属于普通 repair。`layout-apply-report.json` 必须与 approved layout inventory hash 一致且 `overwritten_files=[]`。若 QMD 已配置，只按获批范围验证/修复 collection：先确保 wiki/papers disjoint，并按契约安全编辑 index.yml 以排除 `_raw/**`（最好也排除 log.md）；不得使用不存在的 ignore flag，也不得对已有路径重复 collection add。
+
+      所有写入使用 sibling temp、验证和原子替换。写 scaffold-report.md，列出 created/preserved/repaired paths、effective values（秘密只报 configured）、layout/system dirs 与 QMD exclusion 状态。
+    input: approved-setup.json + setup-contract.json/md + wiki-context.json
+    output: config/.env + WRITING.md（仅缺失时）+ layout-apply-report.json + vault layout tree + scaffold-report.md
+    check_voting:
+      - check: 对照 approved plan/contract 检查 config defaults/overrides、absolute vault path、unknown fields/comments preserved、WRITING.md 未覆盖、无越权 optional action
+      - check: 从 frozen layout inventory 重算 directories/files/routing/prompt hashes，确认 `_meta/layout.json` 精确绑定、全部缺失项已创建、现有文件/custom dirs 未覆盖或删除，overwritten_files 为空
+      - check: QMD 配置时核对 collection path/pattern/ignore 排除 _raw/** 且 collections disjoint；未批准或未配置时没有创建或修改 collection
+    on_pass: initialize_core
+    on_fail: scaffold_vault
+    max_fail_count: 4
+
+  - id: initialize_core
+    desc: 按精确模板幂等创建或最小修复核心文件
+    do: |
+      只按 approved binding 执行，逐个使用 setup-contract.md/json 中已冻结的 index.md、log.md、hot.md、.manifest.json、app.json、appearance.json 模板和值，并替换 timezone-aware timestamp、canonical vault path 与 active categories。执行期不得直接回读 `templates/wiki-setup/`；审批绑定的 contract hash 是本次事务的唯一模板事实源。
+
+      缺失文件按模板创建；repair 必须先完整读取并只补缺失结构，保留现有 pages、manifest/log/index/hot 历史、owner frontmatter 和未知 Obsidian JSON keys，禁止空模板整文件覆盖。每个 Markdown/JSON 都先写 sibling candidate，验证 frontmatter/headings/JSON 后原子替换。写 core-files-report.md，逐文件记录 created/preserved/repaired、diff 摘要和模板 contract hash。
+    input: approved-setup.json + setup-contract.json/md + scaffold-report.md + 现有 core files
+    output: 完整 core files/.obsidian config + core-files-report.md
+    check_voting:
+      - check: 逐字核对新建文件与 contract template，确认 manifest newline、INIT/category/vault、timezone-aware timestamp 和 app/appearance 的类型和值准确
+      - check: 对 repair diff 逐项审计，确认 owner fields、历史内容、manifest 与未知 Obsidian settings 未被覆盖或删除
+      - check: 确认 atomic writes、JSON parse、Markdown frontmatter/headings 有效，除 approved targets 外没有文件变化
+    on_pass: optional_integrations
+    on_fail: initialize_core
+    max_fail_count: 4
+
+  - id: optional_integrations
+    desc: 只执行已批准的 Stop hook、Git sync 与 QMD refresh
+    do: |
+      从 approved-setup.json 读取 optional approvals，逐项执行 setup-contract 的完整平台路径、命令、JSON merge、授权和回滚条款；未批准项明确 skipped。
+
+      Stop hook：按契约发现 Unix/Windows 脚本，仅在批准下载时 fetch canonical copy；把平台对应 command append 到用户 settings 的 hooks.Stop，保留旧 JSON、去重 entry，不删除 tracked project registration，并报告 sentinel 行为、卸载方式和 HIVEMIND_CAPTURE 单次开关。
+
+      Git sync：只在批准且 repo URL 已提供时运行 contract 的首选 CLI；binary 不可用时仅以已解析的本地 repo path 使用 PYTHONPATH fallback。推荐 private，不擅自创建 public repo；以 vault git remote 验证，交付后续 sync 命令。
+
+      QMD：仅已配置、local CLI 可用且 `_raw/**` exclusion 和 collection disjoint 已验证时运行 `qmd update`；初始空 vault 通常不 embed。失败不得回滚或破坏已完成的 vault 初始化。
+
+      写 optional-integrations-report.md，记录 installed/skipped/failed、exact paths/remotes/collection、命令结果与可逆说明，不泄露 secrets。
+    input: approved-setup.json + setup-contract.json/md + 已初始化 vault
+    output: 获批 optional integrations + optional-integrations-report.md
+    check_voting:
+      - check: 对照 approvals/contract 审计所有 home/network/git/QMD 变更，无未授权下载、hook、repo/remote 或 collection；settings JSON 保留旧 hooks 且无 duplicate entry
+      - check: Git remote/vault root、首选或 fallback 命令准确，无 public-repo 越权或 secret 泄露；未执行时报告准确
+      - check: QMD refresh 只在 exclusion/disjoint 验证后执行；hook 平台命令、sentinel、uninstall 和 single-session switch 均已准确交付
+    on_pass: verify_setup
+    on_fail: optional_integrations
+    max_fail_count: 3
+
+  - id: verify_setup
+    desc: 完整验证并交付可用 vault
+    do: |
+      逐项执行 setup-contract 的 required checks，并将最终 filesystem/config/remotes/hooks/QMD 与 approved plan 和 contract hash 对账。优先运行 `obsidian-wiki doctor`；不可用时做等价检查。验证 canonical vault、active layout/all system dirs、`.obsidian/`、`_staging/`、三个 Markdown、manifest、两个 Obsidian JSON、绝对 config path、source readability、WRITING preservation、staged/token/QMD/hook/sync 状态。
+
+      只修复 approved 且 in-scope 的失败。写 setup-completion.md，逐项列 pass/fail、created/preserved/repaired、warnings；列出契约定义的四个手动插件及用途和全部六个下一步，包括 Claude 与 Codex history ingest。required checks 有任何失败时不得宣称完成。
+
+      required checks 全部通过才输出 <promise>done</promise>。
+    input: setup-contract.json/md + setup/scaffold/core/optional reports + 最终 config/vault
+    output: setup-completion.md + 可用或明确失败的 vault
+    check_voting:
+      - check: 独立执行 doctor/等价 sanity，核对 layout/system dirs、core templates/JSON、absolute config、source readability、_staging 与 owner preservation
+      - check: 最终状态与 approved plan/contract 逐项一致，无遗漏或越权，optional skipped/failed 和 warnings 真实披露
+      - check: completion 含四个插件用途与 Open Vault、status、ingest、Claude history、Codex history、再次 status 六项路由，required failure 时没有虚报完成
+    on_pass: done
+    on_fail: verify_setup
+    max_fail_count: 4

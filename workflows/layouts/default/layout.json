@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "name": "default",
+  "description": "Default Obsidian knowledge wiki",
+  "copy_policy": "missing-only",
+  "routing": {
+    "rules": "routing.json",
+    "prompt": "routing.md"
+  },
+  "categories": ["concepts", "entities", "skills", "references", "synthesis", "journal"],
+  "ignore": [".gitkeep", ".DS_Store"],
+  "core_template_overrides": {}
+}

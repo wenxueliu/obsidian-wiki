@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "allowed_placeholders": ["date", "project", "slug"],
+  "routes": {
+    "concept": "concepts/{slug}.md",
+    "entity": "entities/{slug}.md",
+    "skill": "skills/{slug}.md",
+    "reference": "references/{slug}.md",
+    "synthesis": "synthesis/{slug}.md",
+    "journal": "journal/{date}.md",
+    "project_overview": "projects/{project}/{project}.md",
+    "project_concept": "projects/{project}/concepts/{slug}.md",
+    "project_entity": "projects/{project}/entities/{slug}.md",
+    "project_skill": "projects/{project}/skills/{slug}.md",
+    "project_reference": "projects/{project}/references/{slug}.md",
+    "project_synthesis": "projects/{project}/synthesis/{slug}.md",
+    "lint_consolidation_report": "synthesis/consolidation-{date}.md"
+  },
+  "fallback": "reference",
+  "content_roots": ["concepts", "entities", "skills", "references", "synthesis", "journal", "projects"],
+  "system_dirs": [".obsidian", "_archives", "_meta", "_raw", "_readouts", "_staging"],
+  "skip_dirs": [".obsidian", "_archives", "_raw", "_readouts", "_staging"],
+  "system_paths": ["index.md", "log.md", "hot.md", ".manifest.json", "_meta/layout.json"]
+}

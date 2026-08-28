@@ -1,0 +1,93 @@
+description: 将知识库需求设计为可执行的三层 LLM Wiki 架构、schema、检索与维护契约
+
+auto_reset: true
+
+adversarial_check:
+  timeout_ms: 3600000
+  system_prompt: |
+    你是 LLM Wiki 架构审计者。只评估设计 artifacts，不得初始化 vault 或修改知识库。
+    设计必须区分 immutable raw sources、compiled wiki 与 schema，并把具体操作路由给专用 workflow。
+
+steps:
+  - id: frame_requirements
+    desc: 澄清知识边界、用户目标与现有环境
+    do: |
+      本 YAML 是 LLM Wiki 架构规划的完整运行时规范。根据用户任务识别：
+
+      1. 原始 sources 的种类、位置、可变性、敏感度与现有 ingest adapters；明确 text V1 仅支持本地 UTF-8 .md/.markdown/.mdx/.txt/.rst，其他格式不能冒充纯文本。
+      2. 用户希望查询/维护的知识、项目范围、交互式 vault 路径、config defaults/overrides、owner AGENTS、writing profile、link format、staged writes 与 QMD 状态。
+      3. 规模、token/检索约束、协作/审批要求、provenance 与 trust 风险。
+      4. 哪些需求属于 llm-wiki 架构设计，哪些必须路由 wiki-setup、wiki-folder-ingest、wiki-query、wiki-lint、wiki-status、wiki-rebuild 等具体 workflow。
+
+      写 requirements-brief.md，包含 assumptions、open questions、in/out of scope 和不得执行的写入。此 workflow 全程只写 artifacts，不修改 vault/config。
+    input: 用户的知识库架构、schema 或组织需求
+    output: requirements-brief.md
+    check: |
+      对照用户任务复核 sources/knowledge/schema 三层需求、V1 格式边界、现有环境、审批与规模约束均已覆盖；路由边界明确且没有提前设计或执行 vault 写入。
+    on_pass: design_architecture
+    on_fail: frame_requirements
+    max_fail_count: 3
+
+  - id: design_architecture
+    desc: 设计三层架构、目录布局与核心数据契约
+    do: |
+      基于 requirements-brief.md 写 wiki-architecture.md：
+
+      1. Layer 1 immutable raw sources 与 vault/_raw scratch inbox 明确分离；列出每种 source 的专用 adapter/unsupported 状态。
+      2. Layer 2 compiled wiki 使用 active/proposed vault layout 的 declared page types、routing templates/content roots、项目 overview route、system/skip dirs 与 special files；不得把 default layout 的目录命名当成框架不变量。
+      3. Layer 3 schema 定义 page required/optional frontmatter、summary<=200、provenance markers/fractions、standard+owner relationship types、confidence/lifecycle、tier、visibility 与 link format。
+      4. 定义 index.md、append-only log.md、约 500 字 hot.md、manifest canonical absolute source keys/complete-live boundary。
+      5. 给出 generic page example，只作为 schema 示例；PDF deep-dive 仅标为 specialized future/source-adapter contract。
+      6. 体现 compile-not-retrieve、compound over time、human curates/LLM maintains、Obsidian-compatible Markdown。
+
+      不创建 vault 或页面，不把建议冒充 owner 已批准 schema。
+    input: requirements-brief.md
+    output: wiki-architecture.md（三层架构、layout、page/special-file schema）
+    check_voting:
+      - check: 逐项对照 llm-wiki 三层架构、layout routing/content roots/special files/page template，确认 raw、live、staging 与 manifest completion boundary 没有混淆
+      - check: 审计 provenance、typed relationships、confidence formula/independent lineages、lifecycle state machine、tier/visibility/link format 完整且 owner extension 未被覆盖
+      - check: 确认设计与 requirements 对齐、unsupported source 未被降级处理、没有实际 vault/config 写入
+    on_pass: design_operations
+    on_fail: design_architecture
+    max_fail_count: 4
+
+  - id: design_operations
+    desc: 设计可扩展检索、写入事务与维护流程
+    do: |
+      写 operations-design.md：
+
+      1. Config Resolution：交互式确认 vault 绝对路径，其他 requested keys 按 user overrides → CWD .env walk-up → global config；vault-scoped runtime state 与 Writing Profile precedence。
+      2. Retrieval Primitives：index/frontmatter → summary → anchored grep context → whole page last；说明 QMD 是可选 index、Markdown 是 source of truth。
+      3. 写入事务：direct/staged 边界、validation、index/log/hot、manifest-last、QMD 仅在 live commit 后刷新。
+      4. ingest append/rebuild/restore 路由，canonical sources、delta、idempotency、cross-links、contradictions 与 trust review。
+      5. 为实际任务给出 workflow map：wiki-setup、wiki-folder-ingest → wiki-source-text → wiki-ingest、wiki-stage-commit、wiki-query、wiki-lint、wiki-status、wiki-rebuild 等，注明每个读写权限和完成条件。
+      6. 给出 phased adoption 与 acceptance criteria，避免要求全 vault 读取或数据库依赖。
+
+      本步骤仍只输出设计，不执行任何专用 workflow。
+    input: requirements-brief.md + wiki-architecture.md
+    output: operations-design.md（config、retrieval、transactions、workflow map、acceptance）
+    check_voting:
+      - check: 检查 config/writing precedence、retrieval escalation、QMD source-of-truth 边界和大 vault token 成本是否准确
+      - check: 检查 direct/staged、manifest-last、special files、idempotency、trust/human approval 和 source completion transactions 是否闭合
+      - check: workflow routing 覆盖用户需求且权限最小，没有让 theory workflow 执行 setup/ingest/lint 等具体变更
+    on_pass: deliver_blueprint
+    on_fail: design_operations
+    max_fail_count: 4
+
+  - id: deliver_blueprint
+    desc: 汇总经验证的 LLM Wiki 实施蓝图
+    do: |
+      将前述 artifacts 汇总为 llm-wiki-blueprint.md：目标、关键决策、三层图、effective/proposed schema、layout、source adapter matrix、operational workflow map、风险/权衡、phased rollout、验收标准和下一条推荐命令。
+
+      明确标记 owner 已确认、framework invariant、proposal、open question；不要伪造现有配置。若用户请求实际初始化，下一步指向 `wiki/wiki-setup`；文本 ingest 指向 `wiki/wiki-folder-ingest`。写 blueprint-validation.md 记录逐项 contract 检查。
+
+      确认全程没有修改 vault/config 后输出 <promise>done</promise>。
+    input: requirements-brief.md + wiki-architecture.md + operations-design.md
+    output: llm-wiki-blueprint.md + blueprint-validation.md
+    check_voting:
+      - check: 从用户需求重查 blueprint 的可追踪性、决策/假设/open questions、phased acceptance 与下一 workflow 路由，无遗漏或过度设计
+      - check: 从 llm-wiki contract 重查三层、schema、provenance/trust、retrieval、special files、QMD、config 和 operation boundaries，无内部矛盾
+      - check: 确认 artifacts 自洽且全程没有 vault/config/external writes，blueprint 没有把 proposal 表述为已生效事实
+    on_pass: done
+    on_fail: deliver_blueprint
+    max_fail_count: 3

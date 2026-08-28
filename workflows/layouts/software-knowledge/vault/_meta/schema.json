@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ralph-flow.local/schemas/software-knowledge-page.json",
+  "title": "Software knowledge page frontmatter",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "category",
+    "summary",
+    "aliases",
+    "tags",
+    "sources",
+    "provenance",
+    "lifecycle",
+    "operational_status",
+    "owners",
+    "relations",
+    "created",
+    "updated"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "category": {
+      "enum": [
+        "project", "term", "domain", "capability", "behavior", "rule",
+        "model", "process", "system", "deployable", "component", "interface",
+        "decision", "change", "operation", "quality", "concept", "pattern",
+        "skill", "reference", "synthesis"
+      ]
+    },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 400 },
+    "aliases": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "tags": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["source_id", "uri", "revision", "locator"],
+        "properties": {
+          "source_id": { "type": "string", "minLength": 1 },
+          "uri": { "type": "string", "minLength": 1 },
+          "revision": { "type": "string", "minLength": 1 },
+          "locator": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": true
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["extracted", "inferred", "ambiguous"],
+      "properties": {
+        "extracted": { "type": "integer", "minimum": 0 },
+        "inferred": { "type": "integer", "minimum": 0 },
+        "ambiguous": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "lifecycle": { "enum": ["draft", "reviewed", "verified", "disputed", "archived"] },
+    "operational_status": {
+      "type": "object",
+      "required": ["state", "replacement"],
+      "properties": {
+        "state": { "enum": ["active", "deprecated", "sunset"] },
+        "replacement": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "owners": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "relations": { "type": "object" },
+    "pending_relations": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "created": { "type": "string", "format": "date" },
+    "updated": { "type": "string", "format": "date" },
+    "given": {},
+    "when": {},
+    "then": {},
+    "statement": {},
+    "scope": {},
+    "exceptions": {},
+    "context": {},
+    "drivers": {},
+    "alternatives": {},
+    "decision": {},
+    "consequences": {},
+    "responsibility": {},
+    "hosted_by": {},
+    "provider": {},
+    "consumers": {},
+    "contract_source": {},
+    "definition": {},
+    "domain": {},
+    "not_equivalent_to": {},
+    "motivation": {},
+    "acceptance": {}
+  },
+  "allOf": [
+    { "if": { "properties": { "category": { "const": "behavior" } } }, "then": { "required": ["given", "when", "then"] } },
+    { "if": { "properties": { "category": { "const": "rule" } } }, "then": { "required": ["statement", "scope", "exceptions"] } },
+    { "if": { "properties": { "category": { "const": "decision" } } }, "then": { "required": ["context", "drivers", "alternatives", "decision", "consequences"] } },
+    { "if": { "properties": { "category": { "const": "component" } } }, "then": { "required": ["responsibility", "hosted_by"] } },
+    { "if": { "properties": { "category": { "const": "interface" } } }, "then": { "required": ["provider", "consumers", "contract_source"] } },
+    { "if": { "properties": { "category": { "const": "term" } } }, "then": { "required": ["definition", "domain", "not_equivalent_to"] } },
+    { "if": { "properties": { "category": { "const": "change" } } }, "then": { "required": ["motivation", "scope", "acceptance"] } }
+  ],
+  "additionalProperties": true
+}

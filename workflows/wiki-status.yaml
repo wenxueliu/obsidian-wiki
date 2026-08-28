@@ -1,0 +1,116 @@
+description: 只读计算 Wiki 来源增量、健康优先级与 token footprint，并可生成知识图谱 insights
+
+auto_reset: true
+
+adversarial_check:
+  timeout_ms: 3600000
+  system_prompt: |
+    你是 Wiki Status 的事实审计者。标准模式必须只读，不能把 mtime touched 误报为 modified，不能混用非 canonical manifest keys。
+    insights 模式只允许重写可再生的 _insights.md、追加一条日志并按需刷新 QMD；不得修改知识页或 manifest。
+
+steps:
+  - id: resolve_context
+    desc: 复用共享子 workflow 解析 status 来源与 vault 上下文
+    workflow: wiki-context
+    input: status invocation 与当前 CWD
+    output: wiki-context.json + wiki-context.md
+    inputs:
+      requested_keys: OBSIDIAN_VAULT_PATH,OBSIDIAN_SOURCES_DIR,CLAUDE_HISTORY_PATH,CODEX_HISTORY_PATH,WIKI_STAGED_WRITES,WIKI_TOKEN_WARN_THRESHOLD,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_CLI_SEARCH_MODE
+      optional_reads: owner AGENTS,index,hot,manifest,active layout
+      setup_mode: "false"
+    on_pass: resolve_and_inventory
+    on_fail: resolve_context
+    max_fail_count: 3
+
+  - id: resolve_and_inventory
+    desc: 解析 vault、来源配置与当前 manifest
+    do: |
+      使用 wiki-context.json 建立 status inventory。
+
+      1. 使用 context 中已解析的 vault、sources/history paths、write mode、token threshold 与 QMD；不得重新选择 profile。
+      2. 读取 .manifest.json；缺失时标记 fresh，不创建。canonicalize 所有 source keys，检测 `~`/absolute 混用但只建议 normalize。
+      3. 扫描 documents、Claude projects/conversations/memory、Codex session_index/sessions/history 和按请求启用的 archived rollouts；再检查 manifest 指向的非标准路径。记录 path/type/size/mtime/hash（可安全计算时）/project。
+      4. 读取 routing.content_roots 下 live page frontmatter 及 index/log/hot 的最低成本信息；routing.skip_dirs/system_dirs/system_paths 不算 live pages。
+      5. 识别 standard 或 additive insights mode，写 status-context.md 与 source-inventory.json。不得修改 vault/source/manifest。
+    input: wiki 状态、delta、dashboard、health 或 insights 请求（vault 由 wiki-context 交互式确认）
+    output: status-context.md + source-inventory.json
+    check_voting:
+      - check: 复核 config precedence、canonical paths、所有标准 source inventories 与 manifest 外路径，fresh/archived coverage 判定准确
+      - check: 抽查 page/source counts、scope exclusions 和 mode，确认只用了廉价 metadata/frontmatter 且没有任何写入
+    on_pass: compute_delta
+    on_fail: resolve_and_inventory
+    max_fail_count: 3
+
+  - id: compute_delta
+    desc: 分类来源 delta 并计算 Wiki 概览与 token footprint
+    do: |
+      1. 将每个来源分类为 new、modified、touched、unchanged、deleted：优先 content_hash；mtime 新但 hash 相同必须 touched；旧 manifest 无 hash 才 fallback mtime。
+      2. 分别统计 Claude 新项目/conversations/memory 与 Codex rollout/index/archive delta；manifest 缺失时全部 current sources 为 new。
+      3. 统计 live pages/categories、manifest sources/projects/last ingest，并 grep visibility：无 visibility 或 visibility/public 计 public，internal/pii 分列；全未标时省略 visibility 行。
+      4. WIKI_STAGED_WRITES=true 时统计 _staging 新页/patch 与 oldest age；否则不报告 staged queue。
+      5. 按 tier 聚合 page bytes/4；unset→supporting。计算 full/index-only/typical-query estimates，使用 threshold（默认100000，0禁用 warning）。
+      6. 写 delta.json、wiki-status-report.md 的 Overview/Delta/Summary/Token Footprint 草稿，明确 append/full recommendation 与 4 chars/token heuristic。保持只读。
+    input: status-context.md + source-inventory.json + manifest/page frontmatter
+    output: delta.json + wiki-status-report.md（概览、delta、token footprint）
+    check_voting:
+      - check: 重新抽样 hash/mtime/manifest 对比，确认 new/modified/touched/unchanged/deleted 互斥且 canonical keys 无重复
+      - check: 重算 pages/categories/visibility/staging/source/project counts，fresh manifest 与 archive coverage 没有误报
+      - check: 重算各 tier、full/index/typical token estimate 与 threshold guard，确认报告只写 artifacts
+    on_pass: rank_actions
+    on_fail: compute_delta
+    max_fail_count: 4
+
+  - id: rank_actions
+    desc: 按固定优先级生成 What to Do Next
+    do: |
+      收集并排序 7 类信号：0 staged pending、1 _raw top-level pending（排除 .gitkeep/_archived）、2 updated>=90d 且 incoming>=5 的 stale core、3 zero-incoming orphans、4 synthesis opportunities/14d overdue、5 new+modified sources、6 lint issues/30d overdue。
+
+      最多展示 6 项，严格按上述优先级；orphans 最多列 5 个名称，overflow 写剩余数。全部为空时输出 healthy empty state。将结果追加到 wiki-status-report.md，并写 next-actions.json；不得运行推荐 workflow 或修改 vault。
+    input: delta.json + index/log/hot + live link/frontmatter metadata
+    output: next-actions.json + 完整 standard wiki-status-report.md
+    check_voting:
+      - check: 独立重算 raw/stale/orphan/synthesis/source/lint/staging signals，阈值、排除项与 counts 准确
+      - check: 核对 priority 0-6、最多 6 项、overflow/empty state 和推荐 workflow，未把 touched 算作 ingest delta
+      - check: 确认 standard report 全程只读，未修改 vault/log/hot/manifest/QMD
+    on_pass: insights
+    on_fail: rank_actions
+    max_fail_count: 3
+
+  - id: insights
+    desc: 条件生成 Wiki 图谱 insights 与 snapshot
+    do: |
+      若不是 insights mode，写 insights-report.md 标记 skipped: standard mode，不修改 vault。
+
+      insights mode 时：
+      1. 若 live pages<20 或 fresh rebuild 后尚无 ingest，写明确 skip 原因，不创建/改写 _insights.md。
+      2. 否则优先运行 `obsidian-wiki graph-analyse "$OBSIDIAN_VAULT_PATH" --pretty`；不可用才解析 wikilinks 构建 graph。
+      3. 计算 top-10 incoming anchors、top-5 bridges、n>=5 tag cohesion（<0.15 fragmented）、top-5 surprising cross-category connections、orphan-adjacent、rough clusters。
+      4. 读取旧 _insights.md GRAPH_SNAPSHOT 并计算 nodes/edges add/remove、新连接与 lost incoming；首次无 snapshot 则略过 delta。
+      5. 只建议 tier，不改页面：incoming>=5 或 top-5 bridge 提升 core；incoming<=1 且 stale>=90d 降 peripheral，最多10项。问题最多7项，ambiguous→bridge→isolated。
+      6. 写 artifacts/insights-report.md 与 insights-data.json；通过内部一致性检查后原子重写 vault/_insights.md，末尾嵌 compact JSON snapshot。除该文件外保持 vault 不变。
+    input: status report + graph metadata + optional previous _insights.md
+    output: insights-report.md + insights-data.json；适用时重写 _insights.md
+    check_voting:
+      - check: 重跑 graph analyzer/fallback，核对 anchors/bridges/communities/dead ends/isolates/surprising 与 stats，skip guards 准确
+      - check: 重算 cohesion、graph delta、tier thresholds/questions priority，确认 snapshot JSON 完整可供下次 diff
+      - check: standard/skip 模式 vault 零变化；active insights 只改 _insights.md，未改知识页/manifest/index/hot
+    on_pass: finalize_status
+    on_fail: insights
+    max_fail_count: 4
+
+  - id: finalize_status
+    desc: 交付状态报告并仅为 insights 记录可选写入
+    do: |
+      1. standard 或 skipped insights：不写 log、不刷新 QMD，写 wiki-status-completion.md 指向 report 并注明 read-only。
+      2. active insights：向 log.md 幂等追加 STATUS_INSIGHTS，包含 stable run_id、anchors/bridges/cohesion/surprising/questions/delta/tier_suggestions；不改 hot/manifest/index。
+      3. 只有 _insights.md 实际写入且 QMD_WIKI_COLLECTION 已配置时运行 `${QMD_CLI:-qmd} update`，需要时 embed，并用 ls/get 验证；错误不回滚 Markdown。
+      4. completion 记录 Overview/Delta/What Next、insights/QMD 状态和 artifacts。事实一致后输出 <promise>done</promise>。
+    input: wiki-status-report.md + insights reports + log/QMD config
+    output: wiki-status-completion.md + 条件 STATUS_INSIGHTS/QMD refresh
+    check_voting:
+      - check: 对照最终 source/vault metadata 抽查 status report、delta、token footprint 与 next actions，无过期或虚构 counts
+      - check: standard/skip 保持完全只读；active insights 的 log run_id 恰好一次且只有 _insights.md/log.md 为 vault diff
+      - check: QMD 仅在 insights write 后执行，guard/update/embed/verify 与 completion 状态准确
+    on_pass: done
+    on_fail: finalize_status
+    max_fail_count: 3

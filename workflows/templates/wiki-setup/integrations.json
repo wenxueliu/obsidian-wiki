@@ -1,0 +1,67 @@
+{
+  "qmd": {
+    "source_of_truth": "Markdown",
+    "fallback": "rg",
+    "requirements": [
+      "QMD_WIKI_COLLECTION must exclude _raw/** and should exclude log.md",
+      "wiki and papers collections must be disjoint",
+      "qmd has no --ignore flag",
+      "new collection command: qmd collection add \"$OBSIDIAN_VAULT_PATH\" --name <collection-name>, then edit index.yml safely",
+      "do not add an existing collection path twice",
+      "run qmd update only after approval and exclusion verification",
+      "an empty vault normally needs no embedding pass"
+    ]
+  },
+  "stop_hook": {
+    "opt_in": true,
+    "unix_candidates": ["<REPO>/hooks/wiki-stop-capture.sh", "<REPO>/.claude/hooks/wiki-stop-capture.sh"],
+    "windows_candidate": "<REPO>/.claude/hooks/wiki-stop-capture.ps1",
+    "unix_url": "https://raw.githubusercontent.com/Ar9av/obsidian-wiki/main/.claude/hooks/wiki-stop-capture.sh",
+    "windows_url": "https://raw.githubusercontent.com/Ar9av/obsidian-wiki/main/.claude/hooks/wiki-stop-capture.ps1",
+    "unix_download_target": "~/.obsidian-wiki/hooks/wiki-stop-capture.sh",
+    "windows_download_target": "%LOCALAPPDATA%/.obsidian-wiki/hooks/wiki-stop-capture.ps1",
+    "unix_command": "bash <HOOK_PATH>",
+    "windows_command": "powershell -NoProfile -File <HOOK_PATH>",
+    "meaningful_work": "file edits or ≥ 4 shell commands",
+    "single_session_skip": "HIVEMIND_CAPTURE=false",
+    "merge_policy": "append to ~/.claude/settings.json hooks.Stop, preserve existing hooks, avoid duplicate entries, keep the tracked project registration",
+    "sentinel": "an atomic per-session sentinel deduplicates global and project registrations",
+    "uninstall": "remove only this hook entry from settings"
+  },
+  "git_sync": {
+    "opt_in": true,
+    "privacy": "recommend private; never create a public repository without approval",
+    "preferred": "obsidian-wiki sync-setup \"<repo-url>\" --vault \"$OBSIDIAN_VAULT_PATH\"",
+    "fallback": "PYTHONPATH=\"$OBSIDIAN_WIKI_REPO\" python3 -m obsidian_wiki.cli sync-setup \"<repo-url>\" --vault \"$OBSIDIAN_VAULT_PATH\"",
+    "subsequent": "obsidian-wiki sync",
+    "status_source": "the vault git remote"
+  },
+  "verification": {
+    "preferred": "obsidian-wiki doctor",
+    "required": [
+      "canonical vault and every active-layout directory exist",
+      ".obsidian/ and _staging/ exist",
+      "index.md, log.md, hot.md and .manifest.json are valid",
+      "app.json and appearance.json are valid",
+      "config contains the canonical absolute OBSIDIAN_VAULT_PATH",
+      "configured source directories exist and are readable",
+      "WRITING.md was not overwritten",
+      "staged/token/QMD/hook/sync state matches the approved plan"
+    ]
+  },
+  "plugin_install_policy": "recommend only; never install automatically",
+  "plugins": {
+    "Dataview": "metadata query/table",
+    "Graph Analysis": "connection exploration",
+    "Templater": "manual page templates",
+    "Obsidian Git": "git backup"
+  },
+  "next_steps": [
+    "Open Vault in Obsidian",
+    "run wiki-status to see ingestible content",
+    "run wiki-ingest to add sources",
+    "run claude-history-ingest",
+    "run codex-history-ingest",
+    "run wiki-status again to inspect the delta"
+  ]
+}

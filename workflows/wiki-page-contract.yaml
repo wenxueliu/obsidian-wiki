@@ -1,0 +1,41 @@
+description: 从共享 Wiki context 生成可复用的页面 schema、归并、provenance 与 direct/staged 写入契约
+
+auto_reset: true
+
+adversarial_check:
+  timeout_ms: 3600000
+  system_prompt: |
+    你是 Wiki Page Contract 的只读审计者。只生成契约 artifact，不读取 source body，不创建、修改或移动任何 live/staged 页面。
+
+steps:
+  - id: build_page_contract
+    desc: 结合 owner schema、taxonomy 与 Writing Profile 固化页面写入规则
+    do: |
+      只读取父 workflow 传入的 `wiki-context.json` 及其中明确允许的 owner/taxonomy metadata，生成本次事务的 effective page contract。
+
+      1. required frontmatter 至少包含 title、category、tags、sources、summary、created、updated；owner 可增加字段或放宽 framework 默认。保留现有未知 owner 字段。summary 不超过 200 字，tags 使用 effective taxonomy，relationships 使用 owner allowlist；不得发明未允许类型。
+      2. 页面边界由 canonical topic 决定，不由 source、conversation、Packet 或 unit 边界决定。先以 title/aliases/tags/summary 做 cheap canonical pass，只打开高相关候选；existing-first、aggressive merge，只有真正新概念才创建页面。
+      3. 每条新 claim 必须绑定 source path/id、content hash、unit/session 与最窄 line/byte/turn locator。源文本直接支持标 extracted；跨条目综合标 `^[inferred]`；未解决冲突并列双方并标 `^[ambiguous]`，禁止静默覆盖。
+      4. active layout 必须来自 `_meta/layout.json` 且 status=matched；禁止根据现有目录猜测 layout。将 active layout 的冻结 `routing.json` 规则和 `routing.md` 分类提示合入契约：模型只从 declared page types 中选择 `page_type`，不得自行创造目录或路径。owner rules 可以补充分类判断，但不能扩展 content_roots、占位符或绕过 system/skip paths。
+      5. 每个新页面的最终 target 必须调用确定性路由器生成并记录 route evidence：
+
+         ```bash
+         python3 .cac/ralph-flow/workflows/wiki/scripts/resolve_wiki_route.py \
+           --routing page-contract.json --page-type "<declared-type>" \
+           --slug "<safe-slug>" --project "<safe-project>" --date "<YYYY-MM-DD>"
+         ```
+
+         只传目标模板实际需要的参数；脚本拒绝未知类型、路径分隔符、`..`、绝对路径、未知占位符和 system target。链接目标必须已存在或在同一事务创建，新增链接做局部双向引用检查。
+      6. 更新页面必须 read-modify-write，保留不相关正文、owner 字段、历史 sources 与可信度信息；compatible facts 去重合并。existing target 也必须位于 routing.content_roots 内。所有写入先生成 candidate/temp sibling，页面校验通过后原子替换。
+      7. direct mode 只允许写 route resolver 返回的 live content target；staged mode 只写 `_staging` 下绑定该 canonical target 的完整新页面或 patch。patch 必须绑定 target/base hash/job/source/unit，并包含 Additions、Deletions、Updated Fields；staged mode 不得修改 live/index/manifest。
+      8. 写 `page-contract.json` 与 `page-contract.md`，包含 layout name/version/status/hash、完整 `routing.rules`、`routing.prompt`、effective fields、taxonomy、relationship allowlist、provenance markers、merge rules、link format、write mode、validation 和 Writing Profile 摘要。不得写 vault。
+    input: wiki-context.json + 调用方 transaction_kind/source_scope
+    output: page-contract.json + page-contract.md
+    check_voting:
+      - check: 对照 marker/context/owner/taxonomy 重算 effective schema、write mode、link format 与路由，确认 layout status=matched、routing hashes 一致且 owner 未扩权
+      - check: 对每种 declared page type 调用 route resolver，确认 targets 均在 content_roots、system paths 不可写且 workflow 没有硬编码 default layout 目录
+      - check: 审计 canonical merge、exact provenance、inferred/ambiguous、link 与 direct/staged 契约完整且无 source/unit=page 的机械映射
+      - check: 确认只产生 contract artifacts，source body、live/staged pages、Job、index/log/hot/manifest 均未修改
+    on_pass: done
+    on_fail: build_page_contract
+    max_fail_count: 3
