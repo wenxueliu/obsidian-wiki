@@ -1,12 +1,12 @@
 # Text Ingest Integration Frames
 
-Use these prompts while locating merge targets and integrating validated Packets. Extraction of a
-single source range belongs to `wiki-source-text`; these frames restore the cross-Packet and
+Use these prompts while locating merge targets and integrating validated Packet or inline
+extractions. Packet extraction of a single source range belongs to `wiki-source-text`; these frames restore the cross-transport and
 wiki-aware judgment that only the serial integrator can perform.
 
 ## Knowledge routing frame
 
-For the Packet's extracted items, ask:
+For the transport's extracted items, ask:
 
 1. Which important ideas belong on an existing concept page, and which genuinely need a new one?
 2. Which people, tools, organizations, or projects deserve an entity page rather than a mention?
@@ -14,12 +14,12 @@ For the Packet's extracted items, ask:
 4. Which claims require attribution, qualification, or an explicit contradiction note?
 5. How does this knowledge connect to what the wiki already knows?
 
-The last question is the most important. Packet boundaries are transport boundaries; they must not
+The last question is the most important. Packet/inline boundaries are transport boundaries; they must not
 become page boundaries. Omit transient detail and repeated prose, but retain useful provenance.
 
 ## Synthesis frame
 
-When a Packet covers ground already represented in the wiki:
+When an extraction covers ground already represented in the wiki:
 
 - do not duplicate it; synthesize it into the canonical narrative;
 - if it agrees, strengthen the claim with additional attribution;

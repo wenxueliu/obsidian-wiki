@@ -90,8 +90,10 @@ never reads or receives full source bodies.
 - compute SHA-256 and skip unchanged supported sources;
 - create a durable Job containing one source record per file;
 - invoke the partition planner for each changed text source;
-- route each pending part to `wiki-source-text` in an isolated context;
-- queue Packets for serialized `wiki-packet-integrate` integration;
+- route sources at or below the configured direct-extraction threshold to serialized inline
+  integration while retaining one logical full-source unit;
+- route each larger-source part to `wiki-source-text` in an isolated context;
+- queue Packet and inline transports for serialized `wiki-packet-integrate` integration;
 - report complete, incomplete, unchanged, unsupported, and failed sources;
 - run cross-linking once after integrations finish.
 
@@ -109,23 +111,24 @@ summarize, infer, call a model, create Packets, or know about the vault.
 
 ### 4.3 `wiki-source-text`
 
-This skill processes one planned source range at a time. It reads only that range through the
+This skill processes one planned packet-transport source range at a time. It reads only that range through the
 partitioner, extracts bounded knowledge with exact provenance, and writes one Packet. It does not
 read other ranges, write wiki pages, or update shared job or manifest files.
 
 ### 4.4 `wiki-packet-integrate`
 
-V1 narrows `wiki-packet-integrate` to Packet integration:
+`wiki-packet-integrate` handles one serialized transport transaction:
 
-1. validate one Packet;
+1. validate one Packet, or validate and directly extract one planned inline full-source unit;
 2. locate related existing pages;
 3. merge knowledge and record contradictions;
 4. create or update pages with frontmatter, provenance, relationships, and links;
 5. validate changed pages;
-6. update `.manifest.json`, `index.md`, `log.md`, and `hot.md`;
-7. mark that Packet and source part integrated.
+6. mark that Packet or inline unit integrated after page validation;
+7. return source-level finalization candidates to `wiki-folder-ingest`.
 
-Packets integrate serially in source order. The wiki acts as the incremental reducer; V1 does not
+Packet and inline transports integrate serially in source order. Inline extraction stays in the
+worker context and does not create a Packet file. The wiki acts as the incremental reducer; V1 does not
 add a separate whole-document Reduce stage.
 
 ## 5. Independent text partitioning feature
@@ -394,19 +397,26 @@ For one or more changed sources:
 
 1. compute its hash;
 2. generate ordered ranges with `text-chunk-plan`;
-3. reconcile interrupted `extracting` units from their planned Packet paths;
-4. claim up to `WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS` pending units in one atomic Job update;
-5. use isolated workers to run `text-chunk-read` and materialize only each assigned unit;
-6. create one independent Packet per unit with `wiki-source-text`;
-7. buffer Packets that finish ahead of earlier units;
-8. integrate ready Packets serially in stable source/unit order with `wiki-packet-integrate`;
-9. mark each integrated unit and refill the bounded extraction queue;
-10. record the permanent source entry only after every unit integrates.
+3. if the complete non-empty source is at or below `WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES`, replace
+   normal ranges with one logical full-source inline unit and do not allocate a Packet path;
+4. reconcile interrupted packet-transport `extracting` units from their planned Packet paths;
+5. claim up to `WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS` pending packet units in one atomic Job update;
+6. use isolated workers to run `text-chunk-read` and materialize only each assigned packet unit;
+7. create one independent Packet per packet unit with `wiki-source-text`;
+8. buffer Packets that finish ahead of earlier units;
+9. integrate Packet and inline transports serially in stable source/unit order with
+   `wiki-packet-integrate`; inline extraction remains in memory;
+10. mark each integrated unit and refill the bounded extraction queue;
+11. record the permanent source entry only after every unit integrates.
 
 Extraction may run concurrently across different documents and across units in the same document.
 The configured maximum defaults to 4, while the host may impose a lower limit. Integration remains
 serialized and follows stable source/unit order in V1. Without workers, the Job exposes the next
 pending unit for a later invocation.
+
+The direct-extraction threshold defaults to 16,000 UTF-8 bytes, must not exceed the hard budget,
+and can be disabled with `0`. It is frozen in the Job and participates in incomplete-Job resume
+compatibility.
 
 ## 10. Incremental processing and completion
 
@@ -514,7 +524,7 @@ is updated last, after page and special-file validation.
 6. Headingless and single-section large files partition safely.
 7. The coordinator never reads source bodies.
 8. Each unit can run in a fresh context.
-9. Packet integration is serialized.
+9. Packet and inline transport integration is serialized.
 10. Interrupted work resumes without repeating successful units.
 11. `.manifest.json` advances only after the entire source version integrates.
 12. Existing `content_hash`, `last_ingested`, and `pages_produced` remain compatible.

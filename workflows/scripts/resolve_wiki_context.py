@@ -22,6 +22,7 @@ POSITIVE_INT_KEYS = {
     "WIKI_TEXT_CHUNK_HARD_MAX_BYTES",
     "WIKI_TEXT_CHUNK_MIN_BYTES",
 }
+NON_NEGATIVE_INT_KEYS = {"WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES"}
 JSON_OBJECT_KEYS = {"WIKI_TEXT_CHUNK_OPTIONS"}
 
 
@@ -41,6 +42,16 @@ def parse_positive_int(key: str, value: str) -> int:
         raise ValueError(f"{key} must be a positive integer, got: {value!r}") from exc
     if parsed <= 0:
         raise ValueError(f"{key} must be a positive integer, got: {value!r}")
+    return parsed
+
+
+def parse_non_negative_int(key: str, value: str) -> int:
+    try:
+        parsed = int(value.strip())
+    except ValueError as exc:
+        raise ValueError(f"{key} must be a non-negative integer, got: {value!r}") from exc
+    if parsed < 0:
+        raise ValueError(f"{key} must be a non-negative integer, got: {value!r}")
     return parsed
 
 
@@ -228,6 +239,8 @@ def main() -> int:
                     values[key] = parse_bool(str(raw))
                 elif key in POSITIVE_INT_KEYS:
                     values[key] = parse_positive_int(key, str(raw))
+                elif key in NON_NEGATIVE_INT_KEYS:
+                    values[key] = parse_non_negative_int(key, str(raw))
                 elif key in JSON_OBJECT_KEYS:
                     values[key] = parse_json_object(key, str(raw))
                 else:
@@ -244,6 +257,16 @@ def main() -> int:
             )
         if chunk_hard > 64_000:
             raise ValueError("WIKI_TEXT_CHUNK_HARD_MAX_BYTES cannot exceed 64000")
+        direct_extract_max = int(
+            values.get(
+                "WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES", min(16_000, chunk_hard)
+            )
+        )
+        if direct_extract_max > chunk_hard:
+            raise ValueError(
+                "WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES cannot exceed "
+                "WIKI_TEXT_CHUNK_HARD_MAX_BYTES"
+            )
         text_chunking = {
             "strategy": str(values.get("WIKI_TEXT_CHUNK_STRATEGY", "adaptive_sections")),
             "target_bytes": chunk_target,
@@ -255,6 +278,7 @@ def main() -> int:
             "max_extraction_workers": int(
                 values.get("WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS", 4)
             ),
+            "direct_extract_max_bytes": direct_extract_max,
         }
 
         owner_path = vault / "AGENTS.md"

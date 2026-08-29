@@ -43,6 +43,7 @@ def test_text_ingest_plan_and_status_are_cwd_independent(tmp_path: Path) -> None
         "--target-budget", "16",
         "--min-budget", "8",
         "--hard-budget", "24",
+        "--direct-extract-max-bytes", "0",
         "--chunk-strategy", "strict_sections",
         "--strategy-options-file", str(options_path),
         "--output", str(plan_path),
@@ -76,6 +77,16 @@ def test_text_ingest_plan_and_status_are_cwd_independent(tmp_path: Path) -> None
     assert json.loads(status_path.read_text(encoding="utf-8"))["job_id"] == plan["job_id"]
 
 
+def test_text_ingest_plan_help_exposes_chunk_and_inline_options(tmp_path: Path) -> None:
+    result = run_cli("text-ingest-plan", "--help", cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert "--min-budget" in result.stdout
+    assert "--chunk-strategy" in result.stdout
+    assert "--direct-extract-max-bytes" in result.stdout
+    assert "adaptive_sections" in result.stdout
+
+
 def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> None:
     workflow = (ROOT / "workflows" / "wiki-folder-ingest.yaml").read_text(encoding="utf-8")
     skill = (ROOT / ".skills" / "wiki-folder-ingest" / "SKILL.md").read_text(encoding="utf-8")
@@ -88,17 +99,19 @@ def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> 
     assert "WIKI_TEXT_CHUNK_STRATEGY" in workflow
     assert "WIKI_TEXT_CHUNK_OPTIONS" in workflow
     assert "WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS" in workflow
+    assert "WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES" in workflow
     assert '--target-budget "<text_chunking.target_bytes>"' in workflow
     assert '--min-budget "<text_chunking.min_bytes>"' in workflow
     assert '--hard-budget "<text_chunking.hard_max_bytes>"' in workflow
     assert '--chunk-strategy "<text_chunking.strategy>"' in workflow
+    assert '--direct-extract-max-bytes "<text_ingest.direct_extract_max_bytes>"' in workflow
     assert "--strategy-options-file" in workflow
     assert "obsidian-wiki text-ingest-status" in workflow
     assert "wiki/" not in workflow
     assert ".cac/" not in workflow
-    assert "同一文档的多个 unit 也可并行" in workflow
+    assert "同一文档的多个 packet unit 也可并行" in workflow
     assert "text_ingest.max_extraction_workers" in workflow
-    assert "integration 不并发" in workflow
+    assert "integration 均不并发" in workflow
     assert workflow.count("check_voting:") == 0
     assert "workflow: wiki-page-contract" in workflow
     assert workflow.count("workflow: wiki-finalize-sources") == 1
@@ -109,8 +122,9 @@ def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> 
     assert "WIKI_TEXT_CHUNK_HARD_MAX_BYTES" in skill
     assert "WIKI_TEXT_CHUNK_STRATEGY" in skill
     assert "WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS" in skill
+    assert "WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES" in skill
     assert "Different units from the same\ndocument may extract concurrently" in skill
-    assert "integration remains serialized" in skill
+    assert "integration remain serialized" in skill
     assert ".cac/" not in skill
     assert "`wiki/" not in skill
     assert not (ROOT / "workflows" / "wiki-ingest.yaml").exists()
@@ -122,6 +136,8 @@ def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> 
     assert "obsidian-wiki wiki-route-resolve" in packet
     assert "obsidian-wiki text-ingest-packet-check" in packet
     assert "obsidian-wiki text-ingest-unit-advance" in packet
+    assert "obsidian-wiki text-ingest-inline-check" in packet
+    assert "obsidian-wiki text-ingest-inline-advance" in packet
 
 
 def _write_planned_packet(job_dir: Path) -> tuple[Path, dict, dict]:
@@ -161,7 +177,8 @@ def test_packet_check_and_direct_advance_are_atomic_cli_operations(tmp_path: Pat
     vault = tmp_path / "vault"
     vault.mkdir()
     planned = run_cli(
-        "text-ingest-plan", str(source), "--vault", str(vault), cwd=tmp_path
+        "text-ingest-plan", str(source), "--vault", str(vault),
+        "--direct-extract-max-bytes", "0", cwd=tmp_path
     )
     assert planned.returncode == 0, planned.stderr
     job_dir = Path(json.loads(planned.stdout)["job_dir"])
@@ -198,7 +215,7 @@ def test_staged_advance_requires_artifacts_and_never_integrates(tmp_path: Path) 
     vault.mkdir()
     planned = run_cli(
         "text-ingest-plan", str(source), "--vault", str(vault),
-        "--write-mode", "staged", cwd=tmp_path,
+        "--write-mode", "staged", "--direct-extract-max-bytes", "0", cwd=tmp_path,
     )
     assert planned.returncode == 0, planned.stderr
     job_dir = Path(json.loads(planned.stdout)["job_dir"])
@@ -218,3 +235,99 @@ def test_staged_advance_requires_artifacts_and_never_integrates(tmp_path: Path) 
     assert result["advanced"]["status"] == "staged"
     assert result["units"]["integrated"] == 0
     assert result["units"]["staged"] == 1
+
+
+def test_inline_check_and_direct_advance_require_no_packet(tmp_path: Path) -> None:
+    source = tmp_path / "source.md"
+    source.write_text("# Small\n\nBody.\n", encoding="utf-8")
+    vault = tmp_path / "vault"
+    vault.mkdir()
+
+    planned = run_cli(
+        "text-ingest-plan", str(source), "--vault", str(vault),
+        "--direct-extract-max-bytes", "16000", cwd=tmp_path,
+    )
+    assert planned.returncode == 0, planned.stderr
+    summary = json.loads(planned.stdout)
+    assert summary["next_unit"]["transport"] == "inline"
+    assert "packet_path" not in summary["next_unit"]
+    job_dir = Path(summary["job_dir"])
+    job = json.loads((job_dir / "job.json").read_text(encoding="utf-8"))
+    source_record = job["sources"][0]
+    unit = source_record["units"][0]
+    assert not any((job_dir / "packets").iterdir())
+
+    checked = run_cli(
+        "text-ingest-inline-check", str(job_dir),
+        "--source-id", source_record["source_id"],
+        "--unit-id", unit["unit_id"], cwd=tmp_path,
+    )
+    assert checked.returncode == 0, checked.stderr
+    assert json.loads(checked.stdout)["transport"] == "inline"
+
+    advanced = run_cli(
+        "text-ingest-inline-advance", str(job_dir),
+        "--source-id", source_record["source_id"],
+        "--unit-id", unit["unit_id"], "--mode", "direct", cwd=tmp_path,
+    )
+    assert advanced.returncode == 0, advanced.stderr
+    result = json.loads(advanced.stdout)
+    assert result["advanced"]["transport"] == "inline"
+    stored = json.loads((job_dir / "job.json").read_text(encoding="utf-8"))
+    assert stored["sources"][0]["units"][0]["integrated_via"] == "inline"
+    assert not any((job_dir / "packets").iterdir())
+
+
+def test_inline_advance_rechecks_source_hash(tmp_path: Path) -> None:
+    source = tmp_path / "source.md"
+    source.write_text("small\n", encoding="utf-8")
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    planned = run_cli(
+        "text-ingest-plan", str(source), "--vault", str(vault), cwd=tmp_path,
+    )
+    summary = json.loads(planned.stdout)
+    job_dir = Path(summary["job_dir"])
+    job = json.loads((job_dir / "job.json").read_text(encoding="utf-8"))
+    source_record = job["sources"][0]
+    unit = source_record["units"][0]
+    source.write_text("changed\n", encoding="utf-8")
+
+    advanced = run_cli(
+        "text-ingest-inline-advance", str(job_dir),
+        "--source-id", source_record["source_id"],
+        "--unit-id", unit["unit_id"], "--mode", "direct", cwd=tmp_path,
+    )
+    assert advanced.returncode == 1
+    assert "hash changed" in advanced.stderr
+
+
+def test_inline_staged_advance_requires_review_artifact(tmp_path: Path) -> None:
+    source = tmp_path / "source.txt"
+    source.write_text("small\n", encoding="utf-8")
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    planned = run_cli(
+        "text-ingest-plan", str(source), "--vault", str(vault),
+        "--write-mode", "staged", cwd=tmp_path,
+    )
+    summary = json.loads(planned.stdout)
+    job_dir = Path(summary["job_dir"])
+    job = json.loads((job_dir / "job.json").read_text(encoding="utf-8"))
+    source_record = job["sources"][0]
+    unit = source_record["units"][0]
+
+    missing = run_cli(
+        "text-ingest-inline-advance", str(job_dir),
+        "--source-id", source_record["source_id"],
+        "--unit-id", unit["unit_id"], "--mode", "staged", cwd=tmp_path,
+    )
+    assert missing.returncode == 1
+    advanced = run_cli(
+        "text-ingest-inline-advance", str(job_dir),
+        "--source-id", source_record["source_id"],
+        "--unit-id", unit["unit_id"], "--mode", "staged",
+        "--artifact", "_staging/page.md", cwd=tmp_path,
+    )
+    assert advanced.returncode == 0, advanced.stderr
+    assert json.loads(advanced.stdout)["advanced"]["status"] == "staged"

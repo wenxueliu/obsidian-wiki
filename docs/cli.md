@@ -165,6 +165,8 @@ Available for automation, scripting, and debugging. Skills call some of these in
 | `text-ingest-status <job>` | Report deterministic source/unit counts, next unit, and the cross-link gate |
 | `text-ingest-packet-check <job> <packet>` | Validate one Packet's Job/source/unit/path binding before page integration |
 | `text-ingest-unit-advance <job> <packet>` | Atomically advance one validated direct or staged unit after page validation |
+| `text-ingest-inline-check <job>` | Validate a planned full-source inline unit and current source hash without a Packet |
+| `text-ingest-inline-advance <job>` | Atomically advance a revalidated inline unit after page validation |
 | `wiki-context-resolve` | Run the bundled workflow context resolver without depending on the current directory |
 | `wiki-setup-contract-build <phase>` | Build the setup contract from bundled templates and layouts |
 | `wiki-layout-apply` | Apply a bundled workflow layout without depending on the current directory |
@@ -185,12 +187,17 @@ obsidian-wiki text-chunk-read ~/research/large.md \
 obsidian-wiki text-ingest-plan ~/research \
   --vault ~/brain --write-mode direct \
   --target-budget 48000 --min-budget 24000 --hard-budget 64000 \
+  --direct-extract-max-bytes 16000 \
   --chunk-strategy adaptive_sections --strategy-options-file /tmp/chunk-options.json \
   --output /tmp/job-plan.json --pretty
 obsidian-wiki text-ingest-status ~/brain/_meta/ingest-jobs/<job-id> --pretty
 obsidian-wiki text-ingest-packet-check ~/brain/_meta/ingest-jobs/<job-id> packets/<packet>.json
 obsidian-wiki text-ingest-unit-advance ~/brain/_meta/ingest-jobs/<job-id> packets/<packet>.json \
   --mode staged --artifact _staging/concepts/example.md
+obsidian-wiki text-ingest-inline-check ~/brain/_meta/ingest-jobs/<job-id> \
+  --source-id <source-id> --unit-id <unit-id>
+obsidian-wiki text-ingest-inline-advance ~/brain/_meta/ingest-jobs/<job-id> \
+  --source-id <source-id> --unit-id <unit-id> --mode direct
 obsidian-wiki wiki-setup-contract-build core --output-dir /tmp/wiki-setup
 obsidian-wiki wiki-layout-apply --layout default --vault ~/brain --output-dir /tmp/wiki-setup
 obsidian-wiki wiki-route-resolve --routing page-contract.json \
@@ -208,13 +215,16 @@ requires the explicit `--allow-unsafe-hard-budget` override. `text-chunk-read` w
 range without adding a newline and fails if the source changed after planning.
 
 `text-ingest-plan` combines metadata-only discovery, streaming hashing, chunk planning, unchanged
-source detection, and atomic Job creation/resume. `text-ingest-status` and
-`text-ingest-packet-check` are read-only. `text-ingest-unit-advance` revalidates the Packet binding
-before atomically changing exactly one unit; staged mode requires at least one `--artifact` and
-never increments the integrated count. These commands keep deterministic coordination in code
-while extraction remains isolated per document/range and Packet integration remains serial.
-`wiki-folder-ingest` supplies the effective budgets, strategy, and options from the resolved vault
-config and freezes them in the Job and completed manifest entry.
+source detection, transport selection, and atomic Job creation/resume. The command explicitly
+supports `--min-budget`, `--chunk-strategy`, and `--direct-extract-max-bytes`; the last defaults to
+the smaller of 16,000 bytes and the hard budget, and `0` disables inline extraction.
+`text-ingest-status`, `text-ingest-packet-check`, and `text-ingest-inline-check` are read-only.
+The corresponding advance command revalidates its Packet or inline source binding before atomically
+changing exactly one unit; staged mode requires at least one `--artifact` and never increments the
+integrated count. These commands keep deterministic coordination in code while Packet extraction
+may run concurrently and all page integration remains serial. `wiki-folder-ingest` supplies the
+effective threshold, budgets, strategy, and options from the resolved vault config and freezes them
+in the Job; chunk compatibility fields are also retained in the completed manifest entry.
 
 ### Custom text chunk strategies
 

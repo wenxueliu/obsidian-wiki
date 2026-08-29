@@ -125,6 +125,7 @@ def test_context_resolver_types_text_chunk_budget_config(tmp_path: Path) -> None
         "WIKI_TEXT_CHUNK_TARGET_BYTES=12000\n"
         "WIKI_TEXT_CHUNK_MIN_BYTES=7000\n"
         "WIKI_TEXT_CHUNK_HARD_MAX_BYTES=16000\n"
+        "WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES=6000\n"
         "WIKI_TEXT_CHUNK_STRATEGY=custom_sections\n"
         "WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS=7\n"
         'WIKI_TEXT_CHUNK_OPTIONS={"mode":"compact"}\n',
@@ -138,7 +139,8 @@ def test_context_resolver_types_text_chunk_budget_config(tmp_path: Path) -> None
         requested_keys=(
             "WIKI_TEXT_CHUNK_TARGET_BYTES,WIKI_TEXT_CHUNK_MIN_BYTES,"
             "WIKI_TEXT_CHUNK_HARD_MAX_BYTES,WIKI_TEXT_CHUNK_STRATEGY,"
-            "WIKI_TEXT_CHUNK_OPTIONS,WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS"
+            "WIKI_TEXT_CHUNK_OPTIONS,WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS,"
+            "WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES"
         ),
     )
 
@@ -156,7 +158,10 @@ def test_context_resolver_types_text_chunk_budget_config(tmp_path: Path) -> None
         "min_bytes": 7000,
         "options": {"mode": "compact"},
     }
-    assert context["text_ingest"] == {"max_extraction_workers": 7}
+    assert context["text_ingest"] == {
+        "max_extraction_workers": 7,
+        "direct_extract_max_bytes": 6000,
+    }
     assert json.loads(
         (tmp_path / "artifacts-false" / "text-chunk-options.json").read_text()
     ) == {"mode": "compact"}
@@ -179,7 +184,10 @@ def test_context_resolver_defaults_and_validates_extraction_concurrency(
     context = json.loads(
         (tmp_path / "artifacts-false" / "wiki-context.json").read_text(encoding="utf-8")
     )
-    assert context["text_ingest"] == {"max_extraction_workers": 4}
+    assert context["text_ingest"] == {
+        "max_extraction_workers": 4,
+        "direct_extract_max_bytes": 16000,
+    }
 
     rejected = run_context_resolver(
         tmp_path,
@@ -190,6 +198,54 @@ def test_context_resolver_defaults_and_validates_extraction_concurrency(
     )
     assert rejected.returncode == 1
     assert "must be a positive integer" in rejected.stderr
+
+
+def test_context_resolver_validates_direct_extract_threshold(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+
+    disabled = run_context_resolver(
+        tmp_path,
+        vault,
+        setup_mode="false",
+        requested_keys="WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES",
+        overrides={"WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES": "0"},
+    )
+    assert disabled.returncode == 0, disabled.stderr
+    context = json.loads(
+        (tmp_path / "artifacts-false" / "wiki-context.json").read_text(encoding="utf-8")
+    )
+    assert context["text_ingest"]["direct_extract_max_bytes"] == 0
+
+    capped_default = run_context_resolver(
+        tmp_path,
+        vault,
+        setup_mode="false",
+        requested_keys=(
+            "WIKI_TEXT_CHUNK_TARGET_BYTES,WIKI_TEXT_CHUNK_MIN_BYTES,"
+            "WIKI_TEXT_CHUNK_HARD_MAX_BYTES"
+        ),
+        overrides={
+            "WIKI_TEXT_CHUNK_TARGET_BYTES": "10000",
+            "WIKI_TEXT_CHUNK_MIN_BYTES": "5000",
+            "WIKI_TEXT_CHUNK_HARD_MAX_BYTES": "12000",
+        },
+    )
+    assert capped_default.returncode == 0, capped_default.stderr
+    context = json.loads(
+        (tmp_path / "artifacts-false" / "wiki-context.json").read_text(encoding="utf-8")
+    )
+    assert context["text_ingest"]["direct_extract_max_bytes"] == 12000
+
+    rejected = run_context_resolver(
+        tmp_path,
+        vault,
+        setup_mode="false",
+        requested_keys="WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES",
+        overrides={"WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES": "64001"},
+    )
+    assert rejected.returncode == 1
+    assert "cannot exceed WIKI_TEXT_CHUNK_HARD_MAX_BYTES" in rejected.stderr
 
 
 def test_context_resolver_reads_vault_from_nearest_env(tmp_path: Path) -> None:

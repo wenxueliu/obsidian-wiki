@@ -9,6 +9,7 @@ import pytest
 from obsidian_wiki.text_chunker import CHUNKER_VERSION, DEFAULT_CHUNK_STRATEGY
 from obsidian_wiki.ingest_pipeline import (
     PipelineContractError,
+    bind_inline_unit,
     classify_source,
     create_job,
     create_or_resume_job,
@@ -194,6 +195,102 @@ def test_job_resume_is_bound_to_write_mode(tmp_path):
     assert resumed is False
     assert staged_dir != direct_dir
     assert staged_job["write_mode"] == "staged"
+
+
+def test_small_source_uses_inline_transport_without_packet(tmp_path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    source = tmp_path / "source.md"
+    source.write_text("# Small\n\nDurable fact.\n", encoding="utf-8")
+
+    job_dir, job = create_job(source, vault, direct_extract_max_bytes=16_000)
+    source_record = job["sources"][0]
+    unit = source_record["units"][0]
+
+    assert job["execution"] == {"direct_extract_max_bytes": 16_000}
+    assert source_record["execution"] == {"mode": "inline"}
+    assert unit["transport"] == "inline"
+    assert "packet_path" not in unit
+    assert summarize_job(job_dir, job)["next_unit"] == {
+        "source_id": source_record["source_id"],
+        "source_path": str(source),
+        "unit_id": unit["unit_id"],
+        "transport": "inline",
+    }
+    assert bind_inline_unit(job, source_record["source_id"], unit["unit_id"]) == (
+        source_record,
+        unit,
+    )
+
+
+def test_small_strict_sections_source_is_one_inline_logical_unit(tmp_path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    source = tmp_path / "source.md"
+    source.write_text("# One\n\nA.\n\n# Two\n\nB.\n", encoding="utf-8")
+
+    _, job = create_job(
+        source,
+        vault,
+        chunk_strategy="strict_sections",
+        direct_extract_max_bytes=16_000,
+    )
+
+    source_record = job["sources"][0]
+    assert source_record["chunking"]["strategy"] == "strict_sections"
+    assert source_record["execution"]["mode"] == "inline"
+    assert len(source_record["units"]) == 1
+    assert source_record["units"][0]["start_byte"] == 0
+    assert source_record["units"][0]["end_byte"] == source.stat().st_size
+
+
+def test_small_utf8_bom_source_uses_complete_inline_text_range(tmp_path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    source = tmp_path / "source.txt"
+    source.write_bytes(b"\xef\xbb\xbfbody\n")
+
+    _, job = create_job(source, vault)
+    source_record = job["sources"][0]
+    unit = source_record["units"][0]
+
+    assert unit["transport"] == "inline"
+    assert unit["start_byte"] == 3
+    assert unit["end_byte"] == source.stat().st_size
+    bind_inline_unit(job, source_record["source_id"], unit["unit_id"])
+
+
+def test_direct_extract_threshold_can_be_disabled_and_changes_resume_identity(tmp_path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    source = tmp_path / "source.md"
+    source.write_text("# Small\n\nBody.\n", encoding="utf-8")
+
+    inline_dir, inline_job, resumed = create_or_resume_job(
+        source, vault, direct_extract_max_bytes=16_000
+    )
+    assert resumed is False
+    assert inline_job["sources"][0]["execution"]["mode"] == "inline"
+
+    packet_dir, packet_job, resumed = create_or_resume_job(
+        source, vault, direct_extract_max_bytes=0
+    )
+    assert resumed is False
+    assert packet_dir != inline_dir
+    assert packet_job["sources"][0]["execution"]["mode"] == "packet"
+    assert "packet_path" in packet_job["sources"][0]["units"][0]
+
+
+def test_direct_extract_threshold_cannot_exceed_hard_budget(tmp_path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    source = tmp_path / "source.md"
+    source.write_text("body\n", encoding="utf-8")
+
+    with pytest.raises(PipelineContractError, match="cannot exceed hard_budget"):
+        create_job(
+            source, vault, hard_budget=100, direct_extract_max_bytes=101
+        )
 
 
 def test_job_summary_reports_next_unit_without_source_body(tmp_path):

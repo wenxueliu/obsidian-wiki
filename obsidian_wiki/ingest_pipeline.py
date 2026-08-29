@@ -6,6 +6,7 @@ extraction and wiki-page integration remain agent-skill responsibilities.
 
 from __future__ import annotations
 
+import codecs
 import hashlib
 import json
 import os
@@ -25,12 +26,14 @@ from obsidian_wiki.text_chunker import (
     SUPPORTED_EXTENSIONS,
     normalize_chunk_settings,
     plan_text_chunks,
+    unit_for_range,
 )
 
 
 JOB_VERSION = 1
 PACKET_VERSION = 1
 JOBS_RELATIVE_DIR = Path("_meta") / "ingest-jobs"
+DEFAULT_DIRECT_EXTRACT_MAX_BYTES = 16_000
 
 _KIND_BY_EXTENSION = {
     ".md": "markdown", ".markdown": "markdown", ".mdx": "markdown",
@@ -162,6 +165,7 @@ def create_job(
     min_budget: int | None = None,
     chunk_strategy: str = DEFAULT_CHUNK_STRATEGY,
     strategy_options: dict[str, Any] | None = None,
+    direct_extract_max_bytes: int | None = None,
     write_mode: str = "direct",
     now: datetime | None = None,
 ) -> tuple[Path, dict[str, Any]]:
@@ -174,6 +178,14 @@ def create_job(
     vault = Path(vault).expanduser().resolve()
     if write_mode not in {"direct", "staged"}:
         raise PipelineContractError("write_mode must be direct or staged")
+    if direct_extract_max_bytes is None:
+        direct_extract_max_bytes = min(DEFAULT_DIRECT_EXTRACT_MAX_BYTES, hard_budget)
+    if direct_extract_max_bytes < 0:
+        raise PipelineContractError("direct_extract_max_bytes must be zero or positive")
+    if direct_extract_max_bytes > hard_budget:
+        raise PipelineContractError(
+            "direct_extract_max_bytes cannot exceed hard_budget"
+        )
     timestamp = now or datetime.now(timezone.utc)
     effective_min_budget, chunk_strategy, effective_options = normalize_chunk_settings(
         target_budget=target_budget,
@@ -236,12 +248,27 @@ def create_job(
             })
             continue
         units = []
-        for unit in plan.units:
+        inline = direct_extract_max_bytes > 0 and 0 < plan.size_bytes <= direct_extract_max_bytes
+        planned_units = plan.units
+        if inline:
+            coverage_start = 3 if plan.encoding == "utf-8-sig" else 0
+            planned_units = (
+                unit_for_range(
+                    start_byte=coverage_start,
+                    end_byte=plan.size_bytes,
+                    expected_hash=plan.content_hash,
+                    start_line=1,
+                    end_line=max(1, plan.line_count),
+                ),
+            )
+        for unit in planned_units:
             value = unit.to_dict()
             value["status"] = "pending"
-            value["packet_path"] = str(
-                Path("packets") / f"{_source_id(str(path))}-{unit.unit_id}.json"
-            )
+            value["transport"] = "inline" if inline else "packet"
+            if not inline:
+                value["packet_path"] = str(
+                    Path("packets") / f"{_source_id(str(path))}-{unit.unit_id}.json"
+                )
             units.append(value)
         sources.append({
             "source_id": _source_id(str(path)), "path": str(path),
@@ -250,6 +277,7 @@ def create_job(
             "chunker_version": CHUNKER_VERSION,
             "budget": plan.to_dict()["budget"],
             "chunking": plan.to_dict()["chunking"],
+            "execution": {"mode": "inline" if inline else "packet"},
             "units": units,
             "chunk_plan": {
                 "units_total": len(units), "units_integrated": 0,
@@ -265,6 +293,7 @@ def create_job(
         "job_id": job_id,
         "source_root": str(root),
         "write_mode": write_mode,
+        "execution": {"direct_extract_max_bytes": direct_extract_max_bytes},
         "status": "incomplete" if active else ("ready_to_commit" if ready else "complete"),
         "created_at": timestamp.isoformat(),
         "sources": sources,
@@ -333,6 +362,7 @@ def find_resumable_job(
     min_budget: int | None = None,
     chunk_strategy: str | None = None,
     strategy_options: dict[str, Any] | None = None,
+    direct_extract_max_bytes: int | None = None,
     write_mode: str | None = None,
 ) -> tuple[Path, dict[str, Any]] | None:
     """Find the newest incomplete, source-compatible Job for one canonical root."""
@@ -350,6 +380,12 @@ def find_resumable_job(
         }:
             continue
         if write_mode is not None and job.get("write_mode", "direct") != write_mode:
+            continue
+        if (
+            direct_extract_max_bytes is not None
+            and job.get("execution", {}).get("direct_extract_max_bytes", 0)
+            != direct_extract_max_bytes
+        ):
             continue
         planned_sources = [source for source in job.get("sources", []) if source.get("budget")]
         if target_budget is not None and any(
@@ -388,6 +424,7 @@ def create_or_resume_job(
     min_budget: int | None = None,
     chunk_strategy: str = DEFAULT_CHUNK_STRATEGY,
     strategy_options: dict[str, Any] | None = None,
+    direct_extract_max_bytes: int | None = None,
     write_mode: str = "direct",
 ) -> tuple[Path, dict[str, Any], bool]:
     """Resume a compatible Job, otherwise create a fresh source-version plan.
@@ -396,6 +433,14 @@ def create_or_resume_job(
     """
     if write_mode not in {"direct", "staged"}:
         raise PipelineContractError("write_mode must be direct or staged")
+    if direct_extract_max_bytes is None:
+        direct_extract_max_bytes = min(DEFAULT_DIRECT_EXTRACT_MAX_BYTES, hard_budget)
+    if direct_extract_max_bytes < 0:
+        raise PipelineContractError("direct_extract_max_bytes must be zero or positive")
+    if direct_extract_max_bytes > hard_budget:
+        raise PipelineContractError(
+            "direct_extract_max_bytes cannot exceed hard_budget"
+        )
     effective_min_budget, chunk_strategy, effective_options = normalize_chunk_settings(
         target_budget=target_budget,
         hard_budget=hard_budget,
@@ -407,6 +452,7 @@ def create_or_resume_job(
         source_root, vault, target_budget=target_budget, hard_budget=hard_budget,
         min_budget=effective_min_budget, chunk_strategy=chunk_strategy,
         strategy_options=effective_options,
+        direct_extract_max_bytes=direct_extract_max_bytes,
         write_mode=write_mode,
     )
     if resumable is not None:
@@ -426,7 +472,7 @@ def create_or_resume_job(
                 previous["status"] = "invalidated"
                 previous["invalidated_reason"] = (
                     "source path, content hash, chunk settings, chunker version, "
-                    "or write mode changed after planning"
+                    "direct extraction threshold, or write mode changed after planning"
                 )
                 write_job(job_file.parent, previous)
                 break
@@ -434,6 +480,7 @@ def create_or_resume_job(
         source_root, vault, target_budget=target_budget, hard_budget=hard_budget,
         min_budget=effective_min_budget, chunk_strategy=chunk_strategy,
         strategy_options=effective_options,
+        direct_extract_max_bytes=direct_extract_max_bytes,
         write_mode=write_mode,
     )
     return job_dir, job, False
@@ -462,6 +509,7 @@ def summarize_job(job_dir: Path, job: dict[str, Any] | None = None) -> dict[str,
             "status": status,
             "reason": source.get("reason"),
             "units_total": len(units),
+            "execution_mode": source.get("execution", {}).get("mode", "packet"),
         })
 
     pending = next_pending_unit(current)
@@ -472,8 +520,12 @@ def summarize_job(job_dir: Path, job: dict[str, Any] | None = None) -> dict[str,
             "source_id": source.get("source_id"),
             "source_path": source.get("path"),
             "unit_id": unit.get("unit_id"),
-            "packet_path": str(resolve_packet_path(directory, unit.get("packet_path", ""))),
+            "transport": unit.get("transport", "packet"),
         }
+        if unit.get("transport", "packet") == "packet":
+            next_unit["packet_path"] = str(
+                resolve_packet_path(directory, unit.get("packet_path", ""))
+            )
     complete_statuses = {"complete", "unchanged", "unsupported"}
     cross_link_allowed = bool(current.get("sources")) and all(
         source.get("status") in complete_statuses for source in current.get("sources", [])
@@ -484,6 +536,7 @@ def summarize_job(job_dir: Path, job: dict[str, Any] | None = None) -> dict[str,
         "job_path": str(directory / "job.json"),
         "status": current.get("status"),
         "write_mode": current.get("write_mode", "direct"),
+        "execution": current.get("execution", {"direct_extract_max_bytes": 0}),
         "source_counts": source_counts,
         "sources": sources,
         "units": {
@@ -615,6 +668,41 @@ def _find_source_and_unit(
     return source, units[target_index], target_index
 
 
+def bind_inline_unit(
+    job: dict[str, Any], source_id: str, unit_id: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Validate one full-source inline unit against current Job and source bytes."""
+    source, unit, target_index = _find_source_and_unit(job, source_id, unit_id)
+    if source.get("execution", {}).get("mode") != "inline":
+        raise PipelineContractError("Job source is not planned for inline extraction")
+    if unit.get("transport") != "inline" or "packet_path" in unit:
+        raise PipelineContractError("inline unit must not declare a Packet path")
+    if target_index != 0 or len(source.get("units", [])) != 1:
+        raise PipelineContractError("inline extraction requires exactly one full-source unit")
+    if unit.get("status") not in {"pending", "failed"}:
+        raise PipelineContractError("inline unit has already advanced")
+    path = Path(str(source.get("path", "")))
+    if not path.is_file():
+        raise PipelineContractError("inline source is missing")
+    expected_hash = str(source.get("content_hash", ""))
+    if expected_hash and ":" not in expected_hash:
+        expected_hash = f"sha256:{expected_hash}"
+    actual_hash = f"sha256:{compute_hash(path)}"
+    if actual_hash != expected_hash:
+        raise PipelineContractError("inline source hash changed after planning")
+    threshold = job.get("execution", {}).get("direct_extract_max_bytes", 0)
+    if not isinstance(threshold, int) or threshold <= 0 or path.stat().st_size > threshold:
+        raise PipelineContractError("inline source exceeds the frozen direct extraction threshold")
+    with path.open("rb") as stream:
+        coverage_start = 3 if stream.read(3) == codecs.BOM_UTF8 else 0
+    if (
+        unit.get("start_byte") != coverage_start
+        or unit.get("end_byte") != path.stat().st_size
+    ):
+        raise PipelineContractError("inline unit does not cover the complete source")
+    return source, unit
+
+
 def mark_unit_staged(
     job: dict[str, Any], source_id: str, unit_id: str, artifact_paths: list[str]
 ) -> None:
@@ -731,15 +819,23 @@ def record_staging_decision(
 
 
 def mark_unit_integrated(
-    job: dict[str, Any], source_id: str, unit_id: str, packet_path: str
+    job: dict[str, Any], source_id: str, unit_id: str, packet_path: str | None = None
 ) -> None:
     """Advance exactly the next source unit, enforcing serial integration order."""
     source, target, target_index = _find_source_and_unit(job, source_id, unit_id)
     units = source.get("units", [])
     if any(unit.get("status") != "integrated" for unit in units[:target_index]):
         raise PipelineContractError("Packets must integrate serially in source order")
+    transport = target.get("transport", "packet")
+    if transport == "inline":
+        if packet_path is not None:
+            raise PipelineContractError("inline unit advance does not accept a Packet path")
+        target["integrated_via"] = "inline"
+    else:
+        if not packet_path:
+            raise PipelineContractError("Packet unit advance requires a Packet path")
+        target["packet_path"] = packet_path
     target["status"] = "integrated"
-    target["packet_path"] = packet_path
     integrated = sum(unit.get("status") == "integrated" for unit in units)
     pending = next((unit for unit in units if unit.get("status") != "integrated"), None)
     source["chunk_plan"].update({

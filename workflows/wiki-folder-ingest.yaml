@@ -1,4 +1,4 @@
-description: 可恢复地发现和规划本地文本来源，隔离提取 Packet，并按 source/unit 顺序串行归并到 Obsidian wiki
+description: 可恢复地发现和规划本地文本来源；小文档 inline 提取，大文档隔离生成 Packet，并按 source/unit 顺序串行归并到 Obsidian wiki
 
 auto_reset: true
 
@@ -15,7 +15,7 @@ steps:
     input: 用户 invocation、source CWD 与所需配置字段
     output: wiki-context.json + wiki-context.md + text-chunk-options.json
     inputs:
-      requested_keys: OBSIDIAN_VAULT_PATH,WIKI_STAGED_WRITES,OBSIDIAN_LINK_FORMAT,WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS,WIKI_TEXT_CHUNK_TARGET_BYTES,WIKI_TEXT_CHUNK_HARD_MAX_BYTES,WIKI_TEXT_CHUNK_MIN_BYTES,WIKI_TEXT_CHUNK_STRATEGY,WIKI_TEXT_CHUNK_OPTIONS,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_CLI_SEARCH_MODE
+      requested_keys: OBSIDIAN_VAULT_PATH,WIKI_STAGED_WRITES,OBSIDIAN_LINK_FORMAT,WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS,WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES,WIKI_TEXT_CHUNK_TARGET_BYTES,WIKI_TEXT_CHUNK_HARD_MAX_BYTES,WIKI_TEXT_CHUNK_MIN_BYTES,WIKI_TEXT_CHUNK_STRATEGY,WIKI_TEXT_CHUNK_OPTIONS,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_CLI_SEARCH_MODE
       optional_reads: owner AGENTS,taxonomy,index,manifest,active layout,writing profile
       setup_mode: "false"
     on_pass: plan_job
@@ -34,13 +34,14 @@ steps:
         --target-budget "<text_chunking.target_bytes>" \
         --min-budget "<text_chunking.min_bytes>" \
         --hard-budget "<text_chunking.hard_max_bytes>" \
+        --direct-extract-max-bytes "<text_ingest.direct_extract_max_bytes>" \
         --chunk-strategy "<text_chunking.strategy>" \
         --strategy-options-file "{{artifacts_dir}}/text-chunk-options.json" \
         --output "{{artifacts_dir}}/job-plan.json" \
         --pretty
       ```
 
-      CLI 负责 canonical discovery、unsupported inventory、streaming SHA-256、UTF-8 validation、按 effective strategy/budgets 分片、resume/replan 判断、Packet path boundary 和原子 `job.json` 写入。`adaptive_sections` 把标题当作优先边界，合并短章节并在 hard cap 内回并小尾块；`strict_sections` 保留标题变化即分片的旧行为。自定义名称必须是已安装的 `obsidian_wiki.text_chunk_strategies` entry point。不得再调用 workflow-relative helper 或由 agent 手工复现这些规则。若 console script 不在 PATH，使用 `python3 -m obsidian_wiki text-ingest-plan ...`。
+      CLI 负责 canonical discovery、unsupported inventory、streaming SHA-256、UTF-8 validation、按 effective strategy/budgets 分片、resume/replan 判断、transport 选择和原子 `job.json` 写入。非空且大小不超过 `text_ingest.direct_extract_max_bytes` 的来源标记为 `inline`，用一个覆盖全文的逻辑 unit 取代普通 chunk units，但不分配或落盘 Packet；`0` 禁用快路径，阈值不得超过 hard max。其他来源使用 `packet` transport。`adaptive_sections` 把标题当作优先边界，合并短章节并在 hard cap 内回并小尾块；`strict_sections` 保留 packet transport 下标题变化即分片的旧行为。自定义名称必须是已安装的 `obsidian_wiki.text_chunk_strategies` entry point。不得再调用 workflow-relative helper 或由 agent 手工复现这些规则。若 console script 不在 PATH，使用 `python3 -m obsidian_wiki text-ingest-plan ...`。
 
       Coordinator 只读取 `job-plan.json` 与 Job metadata，不读取 source body。active layout 必须为 matched；URL、缺失或未授权 source 直接失败。unsupported 文件保留在 Job 和最终报告中。
     input: wiki-context.json + 用户给定的本地文本文件或文件夹
@@ -63,26 +64,26 @@ steps:
     max_fail_count: 3
 
   - id: process_documents
-    desc: 有界并行提取 unit，Packet 按 Job 顺序串行集成
+    desc: 小文档 inline 集成，大文档有界并行提取 Packet，并按 Job 顺序串行集成
     do: |
-      Coordinator 永远不读取 source body。读取 `wiki-context.json` 的 `text_ingest.max_extraction_workers`（默认 4），把它作为当前 Job 的 extraction 并发硬上限；宿主可用槽位更少时使用较小值。恢复 Job 时先对账所有 `extracting` unit：已有合法 planned Packet 的标为 `packet_ready`，否则标为 failed 供重试，避免陈旧 claim 占用并发额度。按稳定 source discovery order 和 unit order 建立全 Job extraction 队列，同一文档的多个 unit 也可并行。每轮在一次原子 Job 更新中领取最多该上限个 pending/failed unit 并标为 `extracting`，不得重复派发同一 unit。
+      Coordinator 永远不读取 source body。读取 `wiki-context.json` 的 `text_ingest.max_extraction_workers`（默认 4），把它作为当前 Job 的 Packet extraction 并发硬上限；宿主可用槽位更少时使用较小值。恢复 Job 时先对账所有 packet transport 的 `extracting` unit：已有合法 planned Packet 的标为 `packet_ready`，否则标为 failed 供重试，避免陈旧 claim 占用并发额度。按稳定 source discovery order 和 unit order 建立全 Job 队列，同一文档的多个 packet unit 也可并行提取。每轮只领取 packet transport 的 pending/failed unit，最多达到该并发上限，并在一次原子 Job 更新中标为 `extracting`；inline unit 不进入 extraction wave，也不生成 Packet。
 
       每个 extraction subagent 只获得 Job directory、一个 source_id 和当前 unit_id，并以 bare workflow name 调用 `wiki-source-text`，不添加任何目录前缀。subagent 只能运行 `text-chunk-read` 读取该 range 并写自己的 Packet，不能写 Job、manifest、index、log、hot 或 pages。
 
-      Coordinator 可按完成顺序收集 Packet，逐个验证其位于 Job `packets/` 且绑定 source/hash/range，并标为 `packet_ready`；已就绪的后序 Packet 留在有界缓冲区。然后严格按 Job 的 source/unit 全局顺序，以 bare workflow name 逐个调用 worker-only `wiki-packet-integrate`，传入同一份冻结的 `wiki-context.json`、`page-contract.json`、Packet 和 job.json。较早 unit 尚未就绪或失败时暂停后序 integration，但保留已经生成的 Packet。Packet integrator 不得再次解析 context/contract，integration 不并发。direct mode 在页面验证后标 integrated；staged mode 标 staged 且不增加 units_integrated。
+      Coordinator 可按完成顺序收集 Packet，逐个验证其位于 Job `packets/` 且绑定 source/hash/range，并标为 `packet_ready`；已就绪的后序 Packet 留在有界缓冲区。然后严格按 Job 的 source/unit 全局顺序，以 bare workflow name 逐个调用 worker-only `wiki-packet-integrate`。packet transport 传入冻结的 `wiki-context.json`、`page-contract.json`、Packet 和 job.json；inline transport 传入同一冻结 context/contract、Job directory、source_id 和 unit_id，不传 Packet。Inline worker 先用 `text-ingest-inline-check` 校验完整来源绑定，在内存中直接提取并归并，页面验证后用 `text-ingest-inline-advance` 推进；不得写 `packets/*.json`。较早 unit 尚未就绪或失败时暂停后序 integration，但保留已经生成的 Packet。Integrator 不得再次解析 context/contract，所有页面 integration 均不并发。direct mode 在页面验证后标 integrated；staged mode 标 staged 且不增加 units_integrated。
 
-      单文档/subagent 失败只标记对应 unit 并保留其他文档成果。无 subagent 能力时保留 next unit 为 pending 并停止，不允许 coordinator 退化为全文读取。写 `unit-processing-report.md`，只记录 metadata、Packet、状态、错误和恢复点。
+      单文档/subagent 失败只标记对应 unit 并保留其他文档成果。无 subagent 能力时保留 next unit 为 pending 并停止，不允许 coordinator 退化为全文读取。写 `unit-processing-report.md`，只记录 metadata、transport、Packet（如有）、状态、错误和恢复点。
     input: wiki-context.json + page-contract.json + 已验证 job.json；动态调用 wiki-source-text 与 wiki-packet-integrate
     output: 持续原子更新的 Job/Packets/page-or-staged artifacts + unit-processing-report.md
-    check: 对账 Job 和 Packet 状态，确认 extracting 数从未超过配置上限、每个 extraction subagent 仅见一个文档的一个 range、同 source 并行 Packet 无重复、integration 严格按序串行、direct/staged 计数分离且 coordinator 未读取 source body
+    check: 对账 Job、transport 和 Packet 状态，确认 inline unit 没有 packet_path/Packet 文件，packet extracting 数从未超过配置上限、每个 extraction subagent 仅见一个文档的一个 range、同 source 并行 Packet 无重复、所有 integration 严格按序串行、direct/staged 计数分离且 coordinator 未读取 source body
     on_pass: finalize_completed_sources
     on_fail: process_documents
     max_fail_count: 10
 
   - id: finalize_completed_sources
-    desc: Packet sweep 后一次性提交所有 live-complete sources
+    desc: transport integration sweep 后一次性提交所有 live-complete sources
     workflow: wiki-finalize-sources
-    input: wiki-context.json + page-contract.json + 最新 job.json + 全部 Packet integration reports
+    input: wiki-context.json + page-contract.json + 最新 job.json + 全部 transport integration reports
     output: source-finalization-report.md + source-finalization-report.json
     inputs:
       event_type: INGEST

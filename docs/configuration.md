@@ -118,6 +118,7 @@ incomplete Job.
 | Variable | What it does | Default |
 |---|---|---|
 | `WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS` | Maximum concurrent isolated unit-to-Packet extraction workers per Job; the host may impose a lower limit | `4` |
+| `WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES` | Complete sources at or below this size use serial inline extraction/integration without a Packet file; `0` disables | smaller of `16000` and the hard maximum |
 | `WIKI_TEXT_CHUNK_TARGET_BYTES` | Preferred UTF-8 byte size for each planned text unit | `48000` |
 | `WIKI_TEXT_CHUNK_MIN_BYTES` | Minimum accumulated size before a heading becomes a preferred split point | half the target (`24000` by default) |
 | `WIKI_TEXT_CHUNK_HARD_MAX_BYTES` | Absolute UTF-8 byte cap for each planned text unit | `64000` |
@@ -125,7 +126,9 @@ incomplete Job.
 | `WIKI_TEXT_CHUNK_OPTIONS` | JSON object passed to the selected strategy | `{}` |
 
 The three budgets must be positive integers, minimum ≤ target ≤ hard maximum, and the workflow hard
-maximum cannot exceed 64,000 bytes. `adaptive_sections` merges adjacent short sections until the
+maximum cannot exceed 64,000 bytes. The direct-extraction threshold must be a non-negative integer
+no larger than the hard maximum. Inline sources retain one logical unit for provenance, staged
+review, resumability, and finalization, but do not create a Packet file. `adaptive_sections` merges adjacent short sections until the
 minimum is reached and may merge a small tail above target when it remains within the hard maximum.
 `strict_sections` preserves the legacy behavior where every heading-path change ends a unit. For
 direct CLI use, the corresponding flags override command defaults per invocation.
@@ -134,8 +137,8 @@ Custom strategy names come from trusted installed Python packages using the
 `obsidian_wiki.text_chunk_strategies` entry-point group. Selecting one executes that package's code;
 do not configure an untrusted extension.
 
-Extraction concurrency applies across the whole Job, including multiple units from the same source
-document. Workers write distinct Packet files and never mutate shared wiki state. Completed Packets
+Extraction concurrency applies across packet units in the whole Job, including multiple units from
+the same source document. Workers write distinct Packet files and never mutate shared wiki state. Completed Packets
 are buffered and integrated serially in stable source/unit order, so increasing this value speeds up
 extraction without making page writes concurrent.
 
@@ -187,7 +190,7 @@ QMD_CLI_SEARCH_MODE=quality
 **What changes when it's on:**
 
 - `wiki-query` runs a semantic pass (lex+vec) against your wiki collection before falling back to Grep — finds conceptually related pages even when the exact terms don't match.
-- `wiki-folder-ingest` coordinates Packet integration against your papers collection before writing a new page — surfacing related sources, spotting contradictions, and deciding whether to create a new page or merge into an existing one.
+- `wiki-folder-ingest` coordinates Packet or inline transport integration against your papers collection before writing a new page — surfacing related sources, spotting contradictions, and deciding whether to create a new page or merge into an existing one.
 
 Both degrade gracefully: with the collection names unset, they skip the QMD step silently and use Grep.
 

@@ -1257,6 +1257,7 @@ def cmd_text_ingest_plan(args: argparse.Namespace) -> int:
             min_budget=args.min_budget,
             chunk_strategy=args.chunk_strategy,
             strategy_options=strategy_options,
+            direct_extract_max_bytes=args.direct_extract_max_bytes,
             write_mode=args.write_mode,
         )
         result = summarize_job(job_dir, job)
@@ -1316,6 +1317,8 @@ def _load_bound_packet(job_dir: Path, packet_arg: str) -> tuple[dict, dict, dict
     if target_index is None:
         raise PipelineContractError("Packet unit is not present in the Job")
     unit = units[target_index]
+    if unit.get("transport", "packet") != "packet":
+        raise PipelineContractError("Job unit is not planned for Packet transport")
     expected_path = resolve_packet_path(directory, unit.get("packet_path", ""))
     if packet_path != expected_path:
         raise PipelineContractError("Packet path does not match the planned Job unit")
@@ -1398,6 +1401,92 @@ def cmd_text_ingest_unit_advance(args: argparse.Namespace) -> int:
         }
         _emit_workflow_json(result, pretty=args.pretty, output=args.output)
     except (OSError, ValueError, json.JSONDecodeError, PipelineContractError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _load_bound_inline_unit(
+    job_dir: Path, source_id: str, unit_id: str
+) -> tuple[dict, dict, dict]:
+    from obsidian_wiki.ingest_pipeline import bind_inline_unit, load_job
+
+    job = load_job(job_dir)
+    source, unit = bind_inline_unit(job, source_id, unit_id)
+    return job, source, unit
+
+
+def cmd_text_ingest_inline_check(args: argparse.Namespace) -> int:
+    from obsidian_wiki.ingest_pipeline import PipelineContractError
+
+    try:
+        job_dir = Path(args.job).expanduser().resolve()
+        job, source, unit = _load_bound_inline_unit(
+            job_dir, args.source_id, args.unit_id
+        )
+        result = {
+            "status": "valid",
+            "job_id": job.get("job_id"),
+            "write_mode": job.get("write_mode", "direct"),
+            "transport": "inline",
+            "source_id": source.get("source_id"),
+            "source_path": source.get("path"),
+            "content_hash": source.get("content_hash"),
+            "unit_id": unit.get("unit_id"),
+            "range": {
+                key: unit.get(key)
+                for key in ("start_line", "end_line", "start_byte", "end_byte")
+            },
+        }
+        _emit_workflow_json(result, pretty=args.pretty, output=args.output)
+    except (OSError, ValueError, PipelineContractError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_text_ingest_inline_advance(args: argparse.Namespace) -> int:
+    from obsidian_wiki.ingest_pipeline import (
+        PipelineContractError,
+        mark_unit_integrated,
+        mark_unit_staged,
+        summarize_job,
+        write_job,
+    )
+
+    try:
+        job_dir = Path(args.job).expanduser().resolve()
+        job, source, unit = _load_bound_inline_unit(
+            job_dir, args.source_id, args.unit_id
+        )
+        write_mode = job.get("write_mode", "direct")
+        if args.mode != write_mode:
+            raise PipelineContractError(
+                f"advance mode {args.mode!r} does not match Job write_mode {write_mode!r}"
+            )
+        if args.mode == "direct":
+            if args.artifact:
+                raise PipelineContractError(
+                    "direct inline advance does not accept staged artifacts"
+                )
+            mark_unit_integrated(
+                job, str(source.get("source_id")), str(unit.get("unit_id"))
+            )
+        else:
+            mark_unit_staged(
+                job, str(source.get("source_id")), str(unit.get("unit_id")), args.artifact
+            )
+        write_job(job_dir, job)
+        result = summarize_job(job_dir, job)
+        result["advanced"] = {
+            "source_id": source.get("source_id"),
+            "unit_id": unit.get("unit_id"),
+            "status": unit.get("status"),
+            "transport": "inline",
+            "artifacts": list(args.artifact),
+        }
+        _emit_workflow_json(result, pretty=args.pretty, output=args.output)
+    except (OSError, ValueError, PipelineContractError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return 0
@@ -2334,6 +2423,13 @@ def build_parser() -> argparse.ArgumentParser:
     tip.add_argument("--write-mode", choices=("direct", "staged"), default="direct")
     tip.add_argument("--target-budget", type=int, default=48_000)
     tip.add_argument("--hard-budget", type=int, default=64_000)
+    tip.add_argument(
+        "--direct-extract-max-bytes", type=int,
+        help=(
+            "inline-extract complete sources at or below this size; 0 disables "
+            "(default: min(16000, hard budget))"
+        ),
+    )
     _add_chunk_strategy_args(tip)
     tip.add_argument("--output", help="atomically write the JSON summary to this artifact path")
     tip.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
@@ -2372,6 +2468,33 @@ def build_parser() -> argparse.ArgumentParser:
     tiua.add_argument("--output", help="atomically write the JSON result to this artifact path")
     tiua.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
     tiua.set_defaults(func=cmd_text_ingest_unit_advance)
+
+    tiic = sub.add_parser(
+        "text-ingest-inline-check",
+        help="validate one full-source inline unit without creating a Packet",
+    )
+    tiic.add_argument("job", help="ingest Job directory")
+    tiic.add_argument("--source-id", required=True, help="planned inline source identifier")
+    tiic.add_argument("--unit-id", required=True, help="planned logical unit identifier")
+    tiic.add_argument("--output", help="atomically write the JSON result to this artifact path")
+    tiic.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    tiic.set_defaults(func=cmd_text_ingest_inline_check)
+
+    tiia = sub.add_parser(
+        "text-ingest-inline-advance",
+        help="atomically advance one validated inline unit after page validation succeeds",
+    )
+    tiia.add_argument("job", help="ingest Job directory")
+    tiia.add_argument("--source-id", required=True, help="planned inline source identifier")
+    tiia.add_argument("--unit-id", required=True, help="planned logical unit identifier")
+    tiia.add_argument("--mode", choices=("direct", "staged"), required=True)
+    tiia.add_argument(
+        "--artifact", action="append", default=[],
+        help="staged review artifact path; repeat for multiple artifacts",
+    )
+    tiia.add_argument("--output", help="atomically write the JSON result to this artifact path")
+    tiia.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    tiia.set_defaults(func=cmd_text_ingest_inline_advance)
 
     wcr = sub.add_parser(
         "wiki-context-resolve",

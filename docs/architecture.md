@@ -25,13 +25,18 @@ reads neighboring ranges or writes wiki pages. Multiple workers, including worke
 the same document, may extract concurrently up to `WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS`;
 the host may impose a lower limit.
 
+Small complete sources (16,000 bytes by default, configurable with
+`WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES`) take an inline fast path: the serial integration worker reads
+and extracts the single full-source unit in memory, without creating a Packet file. The logical unit
+and source-hash checks remain, preserving provenance, review state, retries, and manifest finalization.
+
 Each page also gets a 1–2 sentence `summary:` in its frontmatter at write time — later queries use this to preview pages without opening them.
 
 ### 3. Merge
 
-`wiki-packet-integrate` validates and integrates Packets serially in source order. New knowledge merges
-against what's already there; contradictions and exact source locators are retained. Packet
-boundaries never become page boundaries.
+`wiki-packet-integrate` validates and integrates Packet or inline transports serially in source
+order. New knowledge merges against what's already there; contradictions and exact source locators
+are retained. Transport boundaries never become page boundaries.
 
 ### 4. Schema
 

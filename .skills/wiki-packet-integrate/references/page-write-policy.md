@@ -1,6 +1,6 @@
-# Packet Integration Page-Write Policy
+# Text Transport Integration Page-Write Policy
 
-Read this policy before changing any knowledge page. Packet integration has two write modes, but
+Read this policy before changing any knowledge page. Packet and inline integration have two write modes, but
 both produce the same final page content and apply the same schema, provenance, validation, and
 cross-reference rules.
 
@@ -13,7 +13,7 @@ Use the `WIKI_STAGED_WRITES` value from the same resolved vault config used for
 - `true`: write review artifacts under `_staging/` and leave live knowledge pages unchanged.
 
 Do not infer the mode from whether `_staging/` happens to contain files. Record the selected mode in
-the Job so every Packet for that Job follows the same path.
+the Job so every transport for that Job follows the same path.
 
 ## Plan page changes
 
@@ -22,12 +22,12 @@ new page, or omit non-durable noise. Apply tier-aware filtering to existing page
 
 | Existing tier | Update rule |
 |---|---|
-| `core` | Update when the Packet is even marginally relevant |
+| `core` | Update when the extracted transport is even marginally relevant |
 | `supporting` or missing | Update only for clear new claims or useful provenance |
 | `peripheral` | Update only when the source is primarily about that page |
 
 Project-specific knowledge uses the active vault layout under `projects/<project>/`; general
-knowledge uses the global category directories. Packet boundaries never determine page boundaries.
+knowledge uses the global category directories. Transport boundaries never determine page boundaries.
 
 ## Build complete final page content
 
@@ -70,11 +70,11 @@ that effective schema rather than blindly overwriting it with framework defaults
 - Keep `^[inferred]` and `^[ambiguous]` markers inline; extracted claims need no marker.
 - Add `visibility/internal` or `visibility/pii` only when clearly warranted. Visibility tags do not
   count toward the normal five-tag limit.
-- Preserve exact Packet locators in claim provenance. Add the source to `sources:` once, without
+- Preserve exact source/unit locators in claim provenance. Add the source to `sources:` once, without
   duplicating existing entries.
 
 For an existing page, read the current page first and merge into its narrative. Do not append a
-Packet dump. Preserve owner fields, update `updated`, refresh a meaningfully changed `summary`, and
+extraction dump. Preserve owner fields, update `updated`, refresh a meaningfully changed `summary`, and
 record unresolved contradictions rather than erasing either position.
 
 For `_raw/` sources, inherit `sources:` and `capture_source` from the raw file's frontmatter. The
@@ -103,13 +103,15 @@ staged_write:
   final_path: concepts/page.md
   job_id: 20260826-143012-a81f
   packet_ids: [pkt_a, pkt_b]
+  transport_ids: [packet:pkt_a, packet:pkt_b]
   source_ids: [src_a13f9c]
   unit_ids: [unit-a, unit-b]
   ingested_at: 2026-08-26T15:30:00+08:00
 ```
 
-If a later Packet updates the same not-yet-live page, merge into this staged page and append its
-Packet/unit IDs instead of creating another artifact.
+For inline transport, omit `packet_ids` and record `transport_ids: [inline:<source-id>:<unit-id>]`.
+If a later transport updates the same not-yet-live page, merge into this staged page and append its
+transport/unit IDs instead of creating another artifact.
 
 ### Updates to live pages
 
@@ -121,6 +123,7 @@ title: Page Title
 patch_target: concepts/page.md
 job_id: 20260826-143012-a81f
 packet_ids: [pkt_a]
+transport_ids: [packet:pkt_a]
 source_ids: [src_a13f9c]
 unit_ids: [unit-a]
 ingested_at: 2026-08-26T15:30:00+08:00
@@ -138,8 +141,9 @@ target_updated_at_plan: 2026-08-25
 <summary, updated, sources, provenance, confidence, relationships, and other changed fields>
 ```
 
-Merge later Packets targeting the same page into the existing patch and append their IDs. Never
-overwrite an earlier Packet's proposed changes. Stage reciprocal-link edits as page patches too;
+For inline transport, omit `packet_ids` and use its `inline:<source-id>:<unit-id>` transport ID.
+Merge later transports targeting the same page into the existing patch and append their IDs. Never
+overwrite an earlier transport's proposed changes. Stage reciprocal-link edits as page patches too;
 staged mode must not smuggle cross-reference changes into live pages.
 
 Validate complete staged pages with the normal page validator. Validate patches for required
@@ -170,4 +174,4 @@ After drafting page content, inspect every new wikilink:
    units.
 
 The coordinator still runs `cross-linker` once after the complete Job becomes live. This local pass
-ensures links introduced by the current Packet are coherent before integration is considered done.
+ensures links introduced by the current transport are coherent before integration is considered done.
