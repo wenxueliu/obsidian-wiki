@@ -48,7 +48,17 @@ The completed text entry includes:
   "content_hash": "sha256:<hex>",
   "source_type": "text",
   "project": null,
-  "chunker_version": 1,
+  "chunker_version": 2,
+  "budget": {
+    "mode": "utf8_bytes",
+    "target": 48000,
+    "min": 24000,
+    "hard_max": 64000
+  },
+  "chunking": {
+    "strategy": "adaptive_sections",
+    "options": {}
+  },
   "units_total": 12,
   "units_integrated": 12,
   "pages_created": ["concepts/new-page.md"],
@@ -58,9 +68,11 @@ The completed text entry includes:
 }
 ```
 
-`content_hash`, `last_ingested`, and `pages_produced` are compatibility-critical. The created and
-updated lists support precise re-ingest and status reporting. Omit `project` only when no project
-scope applies. Recompute `stats.total_sources_ingested` from manifest entries and
+`content_hash`, `last_ingested`, `pages_produced`, `chunker_version`, `budget`, and `chunking` are
+compatibility-critical. Copy the latter three fields from the finalized Job source so a later run
+can distinguish unchanged content planned with a different strategy, option set, or budget. The
+created and updated lists support precise re-ingest and status reporting. Omit `project` only when
+no project scope applies. Recompute `stats.total_sources_ingested` from manifest entries and
 `stats.total_pages` from live wiki knowledge pages; do not blindly increment either counter, so a
 retry remains idempotent.
 

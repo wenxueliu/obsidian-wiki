@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from obsidian_wiki.text_chunker import CHUNKER_VERSION, DEFAULT_CHUNK_STRATEGY
 from obsidian_wiki.ingest_pipeline import (
     PipelineContractError,
     classify_source,
@@ -70,7 +71,10 @@ def test_matching_complete_manifest_source_is_unchanged(tmp_path):
     import hashlib
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     (vault / ".manifest.json").write_text(json.dumps({"sources": [{
-        "path": str(source), "content_hash": f"sha256:{digest}", "chunker_version": 1,
+        "path": str(source), "content_hash": f"sha256:{digest}",
+        "chunker_version": CHUNKER_VERSION,
+        "budget": {"mode": "utf8_bytes", "target": 48_000, "hard_max": 64_000, "min": 24_000},
+        "chunking": {"strategy": DEFAULT_CHUNK_STRATEGY, "options": {}},
         "units_total": 1, "units_integrated": 1,
     }]}), encoding="utf-8")
 
@@ -140,6 +144,40 @@ def test_resume_matching_job_and_invalidate_changed_source(tmp_path):
     assert resumed is False
     assert new_dir != first_dir
     assert json.loads((first_dir / "job.json").read_text())["status"] == "invalidated"
+
+
+def test_job_resume_is_bound_to_chunk_strategy_and_options(tmp_path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    source = tmp_path / "source.md"
+    source.write_text("## One\n\nshort\n\n## Two\n\nshort\n", encoding="utf-8")
+
+    adaptive_dir, adaptive_job, resumed = create_or_resume_job(
+        source,
+        vault,
+        target_budget=100,
+        hard_budget=120,
+        min_budget=50,
+        chunk_strategy="adaptive_sections",
+        strategy_options={"label": "first"},
+    )
+    assert resumed is False
+    source_record = adaptive_job["sources"][0]
+    assert source_record["chunking"]["strategy"] == "adaptive_sections"
+    assert source_record["chunking"]["options"] == {"label": "first"}
+
+    strict_dir, _, resumed = create_or_resume_job(
+        source,
+        vault,
+        target_budget=100,
+        hard_budget=120,
+        min_budget=50,
+        chunk_strategy="strict_sections",
+    )
+
+    assert resumed is False
+    assert strict_dir != adaptive_dir
+    assert json.loads((adaptive_dir / "job.json").read_text())["status"] == "invalidated"
 
 
 def test_job_resume_is_bound_to_write_mode(tmp_path):

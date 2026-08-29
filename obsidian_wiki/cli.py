@@ -1177,16 +1177,28 @@ def cmd_text_chunk_plan(args: argparse.Namespace) -> int:
     from obsidian_wiki.text_chunker import TextChunkError, plan_text_chunks
 
     try:
+        strategy_options = _load_strategy_options(args)
         plan = plan_text_chunks(
             Path(args.source),
             target_budget=args.target_budget,
             hard_budget=args.hard_budget,
+            min_budget=args.min_budget,
+            chunk_strategy=args.chunk_strategy,
+            strategy_options=strategy_options,
             allow_unsafe_hard_budget=args.allow_unsafe_hard_budget,
         )
-    except (OSError, TextChunkError) as exc:
+    except (OSError, ValueError, TextChunkError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(plan.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))
+    return 0
+
+
+def cmd_text_chunk_strategies(args: argparse.Namespace) -> int:
+    from obsidian_wiki.text_chunker import available_chunk_strategies
+
+    result = {"strategies": list(available_chunk_strategies())}
+    print(json.dumps(result, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0
 
 
@@ -1237,10 +1249,14 @@ def cmd_text_ingest_plan(args: argparse.Namespace) -> int:
     )
 
     try:
+        strategy_options = _load_strategy_options(args)
         job_dir, job, resumed = create_or_resume_job(
             Path(args.source), Path(args.vault),
             target_budget=args.target_budget,
             hard_budget=args.hard_budget,
+            min_budget=args.min_budget,
+            chunk_strategy=args.chunk_strategy,
+            strategy_options=strategy_options,
             write_mode=args.write_mode,
         )
         result = summarize_job(job_dir, job)
@@ -2047,6 +2063,46 @@ def cmd_info(args: argparse.Namespace) -> int:
 
 
 # ── Argument parsing ─────────────────────────────────────────────────────────
+def _json_object(value: str) -> dict:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise argparse.ArgumentTypeError(f"invalid JSON object: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise argparse.ArgumentTypeError("value must be a JSON object")
+    return parsed
+
+
+def _load_strategy_options(args: argparse.Namespace) -> dict:
+    path = getattr(args, "strategy_options_file", None)
+    if path is None:
+        return getattr(args, "strategy_options", None) or {}
+    value = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("chunk strategy options file must contain a JSON object")
+    return value
+
+
+def _add_chunk_strategy_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--min-budget", type=int,
+        help="preferred minimum unit size before a heading split (default: half target)",
+    )
+    parser.add_argument(
+        "--chunk-strategy", default="adaptive_sections",
+        help="built-in or installed custom chunk strategy (default: adaptive_sections)",
+    )
+    options = parser.add_mutually_exclusive_group()
+    options.add_argument(
+        "--strategy-options", type=_json_object, metavar="JSON",
+        help="JSON object passed to the selected chunk strategy",
+    )
+    options.add_argument(
+        "--strategy-options-file", metavar="PATH",
+        help="path to a JSON object passed to the selected chunk strategy",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="obsidian-wiki",
@@ -2243,10 +2299,18 @@ def build_parser() -> argparse.ArgumentParser:
                      help="preferred UTF-8 byte size per unit (default: 48000)")
     tcp.add_argument("--hard-budget", type=int, default=64_000,
                      help="absolute UTF-8 byte cap per unit (default: 64000)")
+    _add_chunk_strategy_args(tcp)
     tcp.add_argument("--allow-unsafe-hard-budget", action="store_true",
                      help="explicitly allow a hard cap above the documented 64000-byte maximum")
     tcp.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
     tcp.set_defaults(func=cmd_text_chunk_plan)
+
+    tcs = sub.add_parser(
+        "text-chunk-strategies",
+        help="list built-in, registered, and installed text chunk strategies",
+    )
+    tcs.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    tcs.set_defaults(func=cmd_text_chunk_strategies)
 
     tcr = sub.add_parser(
         "text-chunk-read",
@@ -2270,6 +2334,7 @@ def build_parser() -> argparse.ArgumentParser:
     tip.add_argument("--write-mode", choices=("direct", "staged"), default="direct")
     tip.add_argument("--target-budget", type=int, default=48_000)
     tip.add_argument("--hard-budget", type=int, default=64_000)
+    _add_chunk_strategy_args(tip)
     tip.add_argument("--output", help="atomically write the JSON summary to this artifact path")
     tip.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
     tip.set_defaults(func=cmd_text_ingest_plan)

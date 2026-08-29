@@ -118,11 +118,20 @@ incomplete Job.
 | Variable | What it does | Default |
 |---|---|---|
 | `WIKI_TEXT_CHUNK_TARGET_BYTES` | Preferred UTF-8 byte size for each planned text unit | `48000` |
+| `WIKI_TEXT_CHUNK_MIN_BYTES` | Minimum accumulated size before a heading becomes a preferred split point | half the target (`24000` by default) |
 | `WIKI_TEXT_CHUNK_HARD_MAX_BYTES` | Absolute UTF-8 byte cap for each planned text unit | `64000` |
+| `WIKI_TEXT_CHUNK_STRATEGY` | `adaptive_sections`, `strict_sections`, or an installed custom strategy name | `adaptive_sections` |
+| `WIKI_TEXT_CHUNK_OPTIONS` | JSON object passed to the selected strategy | `{}` |
 
-Both values must be positive integers, the target cannot exceed the hard maximum, and the workflow
-hard maximum cannot exceed 64,000 bytes. For direct CLI use, `--target-budget` and `--hard-budget`
-override the command defaults per invocation.
+The three budgets must be positive integers, minimum ≤ target ≤ hard maximum, and the workflow hard
+maximum cannot exceed 64,000 bytes. `adaptive_sections` merges adjacent short sections until the
+minimum is reached and may merge a small tail above target when it remains within the hard maximum.
+`strict_sections` preserves the legacy behavior where every heading-path change ends a unit. For
+direct CLI use, the corresponding flags override command defaults per invocation.
+
+Custom strategy names come from trusted installed Python packages using the
+`obsidian_wiki.text_chunk_strategies` entry-point group. Selecting one executes that package's code;
+do not configure an untrusted extension.
 
 PageIndex is not a V1 dependency. A future PDF pipeline may use it only as a structure provider
 behind the local hard-budget splitter; PDFs remain explicitly unsupported until that pipeline exists.

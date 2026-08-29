@@ -19,7 +19,9 @@ BOOL_KEYS = {"WIKI_STAGED_WRITES"}
 POSITIVE_INT_KEYS = {
     "WIKI_TEXT_CHUNK_TARGET_BYTES",
     "WIKI_TEXT_CHUNK_HARD_MAX_BYTES",
+    "WIKI_TEXT_CHUNK_MIN_BYTES",
 }
+JSON_OBJECT_KEYS = {"WIKI_TEXT_CHUNK_OPTIONS"}
 
 
 def parse_bool(value: str) -> bool:
@@ -38,6 +40,16 @@ def parse_positive_int(key: str, value: str) -> int:
         raise ValueError(f"{key} must be a positive integer, got: {value!r}") from exc
     if parsed <= 0:
         raise ValueError(f"{key} must be a positive integer, got: {value!r}")
+    return parsed
+
+
+def parse_json_object(key: str, value: str) -> dict[str, Any]:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{key} must be a JSON object: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{key} must be a JSON object")
     return parsed
 
 
@@ -119,6 +131,15 @@ def write_outputs(output_dir: Path, context: dict[str, Any]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "wiki-context.json").write_text(
         json.dumps(context, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (output_dir / "text-chunk-options.json").write_text(
+        json.dumps(
+            context.get("text_chunking", {}).get("options", {}),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        ) + "\n",
+        encoding="utf-8",
     )
     lines = [
         "# Wiki Context", "",
@@ -206,8 +227,29 @@ def main() -> int:
                     values[key] = parse_bool(str(raw))
                 elif key in POSITIVE_INT_KEYS:
                     values[key] = parse_positive_int(key, str(raw))
+                elif key in JSON_OBJECT_KEYS:
+                    values[key] = parse_json_object(key, str(raw))
                 else:
                     values[key] = raw
+
+        chunk_target = int(values.get("WIKI_TEXT_CHUNK_TARGET_BYTES", 48_000))
+        chunk_hard = int(values.get("WIKI_TEXT_CHUNK_HARD_MAX_BYTES", 64_000))
+        chunk_min = int(values.get("WIKI_TEXT_CHUNK_MIN_BYTES", max(1, chunk_target // 2)))
+        if chunk_min > chunk_target:
+            raise ValueError("WIKI_TEXT_CHUNK_MIN_BYTES cannot exceed WIKI_TEXT_CHUNK_TARGET_BYTES")
+        if chunk_target > chunk_hard:
+            raise ValueError(
+                "WIKI_TEXT_CHUNK_TARGET_BYTES cannot exceed WIKI_TEXT_CHUNK_HARD_MAX_BYTES"
+            )
+        if chunk_hard > 64_000:
+            raise ValueError("WIKI_TEXT_CHUNK_HARD_MAX_BYTES cannot exceed 64000")
+        text_chunking = {
+            "strategy": str(values.get("WIKI_TEXT_CHUNK_STRATEGY", "adaptive_sections")),
+            "target_bytes": chunk_target,
+            "hard_max_bytes": chunk_hard,
+            "min_bytes": chunk_min,
+            "options": values.get("WIKI_TEXT_CHUNK_OPTIONS", {}),
+        }
 
         owner_path = vault / "AGENTS.md"
         owner_rules = owner_path.read_text(encoding="utf-8") if owner_path.is_file() else None
@@ -278,6 +320,7 @@ def main() -> int:
             "requested_values": values, "setup_mode": setup_mode,
             "write_mode": "staged" if values.get("WIKI_STAGED_WRITES") is True else "direct",
             "link_format": values.get("OBSIDIAN_LINK_FORMAT", "wikilink"),
+            "text_chunking": text_chunking,
             "qmd": {"available": shutil.which("qmd") is not None,
                     "transport": values.get("QMD_TRANSPORT"),
                     "wiki_collection": values.get("QMD_WIKI_COLLECTION"),

@@ -122,7 +122,10 @@ def test_context_resolver_types_text_chunk_budget_config(tmp_path: Path) -> None
     (tmp_path / ".env").write_text(
         f"OBSIDIAN_VAULT_PATH={vault}\n"
         "WIKI_TEXT_CHUNK_TARGET_BYTES=12000\n"
-        "WIKI_TEXT_CHUNK_HARD_MAX_BYTES=16000\n",
+        "WIKI_TEXT_CHUNK_MIN_BYTES=7000\n"
+        "WIKI_TEXT_CHUNK_HARD_MAX_BYTES=16000\n"
+        "WIKI_TEXT_CHUNK_STRATEGY=custom_sections\n"
+        'WIKI_TEXT_CHUNK_OPTIONS={"mode":"compact"}\n',
         encoding="utf-8",
     )
 
@@ -130,7 +133,11 @@ def test_context_resolver_types_text_chunk_budget_config(tmp_path: Path) -> None
         tmp_path,
         vault,
         setup_mode="false",
-        requested_keys="WIKI_TEXT_CHUNK_TARGET_BYTES,WIKI_TEXT_CHUNK_HARD_MAX_BYTES",
+        requested_keys=(
+            "WIKI_TEXT_CHUNK_TARGET_BYTES,WIKI_TEXT_CHUNK_MIN_BYTES,"
+            "WIKI_TEXT_CHUNK_HARD_MAX_BYTES,WIKI_TEXT_CHUNK_STRATEGY,"
+            "WIKI_TEXT_CHUNK_OPTIONS"
+        ),
     )
 
     assert result.returncode == 0, result.stderr
@@ -138,7 +145,18 @@ def test_context_resolver_types_text_chunk_budget_config(tmp_path: Path) -> None
         (tmp_path / "artifacts-false" / "wiki-context.json").read_text(encoding="utf-8")
     )
     assert context["requested_values"]["WIKI_TEXT_CHUNK_TARGET_BYTES"] == 12000
+    assert context["requested_values"]["WIKI_TEXT_CHUNK_MIN_BYTES"] == 7000
     assert context["requested_values"]["WIKI_TEXT_CHUNK_HARD_MAX_BYTES"] == 16000
+    assert context["text_chunking"] == {
+        "strategy": "custom_sections",
+        "target_bytes": 12000,
+        "hard_max_bytes": 16000,
+        "min_bytes": 7000,
+        "options": {"mode": "compact"},
+    }
+    assert json.loads(
+        (tmp_path / "artifacts-false" / "text-chunk-options.json").read_text()
+    ) == {"mode": "compact"}
 
 
 def test_context_resolver_reads_vault_from_nearest_env(tmp_path: Path) -> None:

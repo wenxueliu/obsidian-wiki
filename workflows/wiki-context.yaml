@@ -33,7 +33,7 @@ steps:
   - id: resolve_context
     desc: 调用随包发布的 resolver 生成 Wiki 共享上下文
     do: |
-      使用已批准的 `vault-input.json` 和调用方 inputs 生成 `wiki-context.json` 与 `wiki-context.md`：
+      使用已批准的 `vault-input.json` 和调用方 inputs 生成 `wiki-context.json`、`wiki-context.md` 与仅含非秘密策略选项的 `text-chunk-options.json`：
 
       ```bash
       obsidian-wiki wiki-context-resolve \
@@ -45,10 +45,10 @@ steps:
         --output-dir "{{artifacts_dir}}"
       ```
 
-      console script 不在 PATH 时使用等价的 `python3 -m obsidian_wiki wiki-context-resolve ...`。config mode 严格按 `@name` 指定 config、从 source CWD 向上找第一个含 `OBSIDIAN_VAULT_PATH` 的 `.env`、再到全局 `~/.obsidian-wiki/config` 的顺序解析；都缺失时要求运行 wiki-setup。resolver 将 effective config、owner/Writing Profile metadata、requested optional metadata、active layout 状态及 retrieval order 写入声明的两个 artifacts。
+      console script 不在 PATH 时使用等价的 `python3 -m obsidian_wiki wiki-context-resolve ...`。config mode 严格按 `@name` 指定 config、从 source CWD 向上找第一个含 `OBSIDIAN_VAULT_PATH` 的 `.env`、再到全局 `~/.obsidian-wiki/config` 的顺序解析；都缺失时要求运行 wiki-setup。resolver 将 effective config、owner/Writing Profile metadata、requested optional metadata、active layout 状态、text chunking 配置及 retrieval order 写入声明的 artifacts。
     input: vault-input.json + 调用方传入的 source_cwd、requested_keys、optional_reads、setup_mode
-    output: wiki-context.json + wiki-context.md
-    check: 解析 context artifacts，核对 approved canonical vault、唯一 config source、requested keys 与 mode；请求 layout 时确认 marker status/hash 和 frozen routing 存在，skipped 时不带 config/vault 内容；确认除 artifacts 外零写入
+    output: wiki-context.json + wiki-context.md + text-chunk-options.json
+    check: 解析 context artifacts，核对 approved canonical vault、唯一 config source、requested keys 与 mode；核对 text-chunk-options.json 与 context 中的非秘密 chunk options 一致；请求 layout 时确认 marker status/hash 和 frozen routing 存在，skipped 时不带 config/vault 内容；确认除 artifacts 外零写入
     on_pass: done
     on_fail: collect_vault
     max_fail_count: 3

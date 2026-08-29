@@ -9,17 +9,23 @@ from __future__ import annotations
 
 import codecs
 import hashlib
+import json
 import re
+from collections import deque
 from dataclasses import dataclass, field
+from importlib import metadata
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any, Callable, Iterable, Iterator, Mapping
 
 
-CHUNK_PLAN_VERSION = 1
-CHUNKER_VERSION = 1
+CHUNK_PLAN_VERSION = 2
+CHUNKER_VERSION = 2
 DEFAULT_TARGET_BUDGET = 48_000
 DEFAULT_HARD_BUDGET = 64_000
 MAX_SAFE_HARD_BUDGET = DEFAULT_HARD_BUDGET
+DEFAULT_CHUNK_STRATEGY = "adaptive_sections"
+STRICT_CHUNK_STRATEGY = "strict_sections"
+CHUNK_STRATEGY_ENTRY_POINT_GROUP = "obsidian_wiki.text_chunk_strategies"
 SUPPORTED_EXTENSIONS = frozenset({".md", ".markdown", ".mdx", ".txt", ".rst"})
 
 
@@ -43,6 +49,7 @@ class SourceChangedError(TextChunkError):
 class ChunkUnit:
     unit_id: str
     heading_path: tuple[str, ...]
+    heading_paths: tuple[tuple[str, ...], ...]
     start_line: int
     end_line: int
     start_byte: int
@@ -59,6 +66,7 @@ class ChunkUnit:
         result: dict[str, Any] = {
             "unit_id": self.unit_id,
             "heading_path": list(self.heading_path),
+            "heading_paths": [list(path) for path in self.heading_paths],
             "start_line": self.start_line,
             "end_line": self.end_line,
             "start_byte": self.start_byte,
@@ -73,9 +81,15 @@ class ChunkUnit:
 
     @classmethod
     def from_dict(cls, value: dict[str, Any], *, source_hash: str | None = None) -> "ChunkUnit":
+        heading_path = tuple(str(part) for part in value.get("heading_path", []))
+        heading_paths = tuple(
+            tuple(str(part) for part in path)
+            for path in value.get("heading_paths", [heading_path])
+        )
         return cls(
             unit_id=str(value["unit_id"]),
-            heading_path=tuple(str(part) for part in value.get("heading_path", [])),
+            heading_path=heading_path,
+            heading_paths=heading_paths,
             start_line=int(value["start_line"]),
             end_line=int(value["end_line"]),
             start_byte=int(value["start_byte"]),
@@ -97,6 +111,9 @@ class ChunkPlan:
     line_count: int
     target_budget: int
     hard_budget: int
+    min_budget: int
+    chunk_strategy: str
+    strategy_options: dict[str, Any]
     units: tuple[ChunkUnit, ...]
     warnings: tuple[str, ...] = ()
     chunk_plan_version: int = CHUNK_PLAN_VERSION
@@ -117,6 +134,11 @@ class ChunkPlan:
                 "mode": "utf8_bytes",
                 "target": self.target_budget,
                 "hard_max": self.hard_budget,
+                "min": self.min_budget,
+            },
+            "chunking": {
+                "strategy": self.chunk_strategy,
+                "options": self.strategy_options,
             },
             "units": [unit.to_dict() for unit in self.units],
         }
@@ -128,6 +150,7 @@ class ChunkPlan:
     def from_dict(cls, value: dict[str, Any]) -> "ChunkPlan":
         source = value["source"]
         budget = value["budget"]
+        chunking = value.get("chunking", {})
         source_hash = str(source["content_hash"])
         return cls(
             source_path=str(source["path"]),
@@ -137,6 +160,9 @@ class ChunkPlan:
             line_count=int(source["line_count"]),
             target_budget=int(budget["target"]),
             hard_budget=int(budget["hard_max"]),
+            min_budget=int(budget.get("min", max(1, int(budget["target"]) // 2))),
+            chunk_strategy=str(chunking.get("strategy", STRICT_CHUNK_STRATEGY)),
+            strategy_options=dict(chunking.get("options", {})),
             units=tuple(
                 ChunkUnit.from_dict(unit, source_hash=source_hash)
                 for unit in value.get("units", [])
@@ -163,6 +189,30 @@ class _Block:
         return self.end_byte - self.start_byte
 
 
+# Public alias used by custom strategy entry points. The leading-underscore
+# implementation name is retained internally to keep the parser code compact.
+TextBlock = _Block
+
+
+@dataclass(frozen=True)
+class ChunkStrategyContext:
+    """Frozen inputs supplied to a built-in or custom chunk strategy."""
+
+    content_hash: str
+    target_budget: int
+    hard_budget: int
+    min_budget: int
+    options: Mapping[str, Any]
+
+
+ChunkStrategy = Callable[
+    [Iterable[TextBlock], ChunkStrategyContext],
+    Iterable[Iterable[TextBlock]],
+]
+
+_CUSTOM_CHUNK_STRATEGIES: dict[str, ChunkStrategy] = {}
+
+
 _ATX_HEADING = re.compile(r"^[ \t]{0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$")
 _FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})")
 _RST_UNDERLINE = re.compile(r"^[ \t]*([=\-~^\"'`:+*#<>_])\1{2,}[ \t]*$")
@@ -186,10 +236,16 @@ def _validate_source(source: Path) -> Path:
 
 
 def _validate_budgets(
-    target_budget: int, hard_budget: int, *, allow_unsafe_hard_budget: bool
+    target_budget: int,
+    hard_budget: int,
+    *,
+    min_budget: int,
+    allow_unsafe_hard_budget: bool,
 ) -> None:
-    if target_budget <= 0 or hard_budget <= 0:
-        raise TextChunkError("target_budget and hard_budget must be positive")
+    if target_budget <= 0 or hard_budget <= 0 or min_budget <= 0:
+        raise TextChunkError("min_budget, target_budget, and hard_budget must be positive")
+    if min_budget > target_budget:
+        raise TextChunkError("min_budget cannot exceed target_budget")
     if target_budget > hard_budget:
         raise TextChunkError("target_budget cannot exceed hard_budget")
     if hard_budget > MAX_SAFE_HARD_BUDGET and not allow_unsafe_hard_budget:
@@ -197,6 +253,81 @@ def _validate_budgets(
             f"hard_budget exceeds the documented safe maximum of {MAX_SAFE_HARD_BUDGET} bytes; "
             "an explicit unsafe-budget override is required"
         )
+
+
+def effective_min_budget(target_budget: int, min_budget: int | None) -> int:
+    return max(1, target_budget // 2) if min_budget is None else min_budget
+
+
+def canonicalize_strategy_options(options: Mapping[str, Any] | None) -> dict[str, Any]:
+    value = {} if options is None else dict(options)
+    try:
+        return json.loads(json.dumps(value, ensure_ascii=False, sort_keys=True))
+    except (TypeError, ValueError) as exc:
+        raise TextChunkError("chunk strategy options must be JSON-serializable") from exc
+
+
+def _validate_strategy_name(name: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", name):
+        raise TextChunkError(f"invalid chunk strategy name: {name!r}")
+    return name
+
+
+def normalize_chunk_settings(
+    *,
+    target_budget: int,
+    hard_budget: int,
+    min_budget: int | None,
+    chunk_strategy: str,
+    strategy_options: Mapping[str, Any] | None,
+    allow_unsafe_hard_budget: bool = False,
+) -> tuple[int, str, dict[str, Any]]:
+    """Validate and canonicalize settings before planning or Job mutation."""
+    effective_min = effective_min_budget(target_budget, min_budget)
+    options = canonicalize_strategy_options(strategy_options)
+    strategy_name = _validate_strategy_name(chunk_strategy)
+    _validate_budgets(
+        target_budget,
+        hard_budget,
+        min_budget=effective_min,
+        allow_unsafe_hard_budget=allow_unsafe_hard_budget,
+    )
+    _resolve_chunk_strategy(strategy_name)
+    return effective_min, strategy_name, options
+
+
+def register_chunk_strategy(name: str, strategy: ChunkStrategy) -> None:
+    """Register a trusted in-process custom strategy.
+
+    CLI extensions should normally use the
+    ``obsidian_wiki.text_chunk_strategies`` entry-point group instead.
+    """
+    name = _validate_strategy_name(name)
+    if name in {DEFAULT_CHUNK_STRATEGY, STRICT_CHUNK_STRATEGY}:
+        raise TextChunkError(f"cannot replace built-in chunk strategy: {name}")
+    if name in _CUSTOM_CHUNK_STRATEGIES:
+        raise TextChunkError(f"chunk strategy is already registered: {name}")
+    if not callable(strategy):
+        raise TextChunkError("chunk strategy must be callable")
+    _CUSTOM_CHUNK_STRATEGIES[name] = strategy
+
+
+def unregister_chunk_strategy(name: str) -> None:
+    """Remove an in-process custom strategy; built-ins cannot be removed."""
+    _CUSTOM_CHUNK_STRATEGIES.pop(name, None)
+
+
+def _strategy_entry_points() -> list[Any]:
+    discovered = metadata.entry_points()
+    if hasattr(discovered, "select"):
+        return list(discovered.select(group=CHUNK_STRATEGY_ENTRY_POINT_GROUP))
+    return list(discovered.get(CHUNK_STRATEGY_ENTRY_POINT_GROUP, ()))
+
+
+def available_chunk_strategies() -> tuple[str, ...]:
+    names = {DEFAULT_CHUNK_STRATEGY, STRICT_CHUNK_STRATEGY, *_CUSTOM_CHUNK_STRATEGIES}
+    names.update(point.name for point in _strategy_entry_points())
+    return tuple(sorted(names))
 
 
 def _decode_line(raw: bytes, path: Path, byte_offset: int) -> str:
@@ -444,10 +575,12 @@ def _unit_id(content_hash: str, start_byte: int, end_byte: int) -> str:
 def _make_unit(blocks: list[_Block], content_hash: str) -> ChunkUnit:
     first, last = blocks[0], blocks[-1]
     forced_kinds = [block.kind.split(":", 1)[1] for block in blocks if block.kind.startswith("forced:")]
+    heading_paths = tuple(dict.fromkeys(block.heading_path for block in blocks))
     size = last.end_byte - first.start_byte
     return ChunkUnit(
         unit_id=_unit_id(content_hash, first.start_byte, last.end_byte),
         heading_path=first.heading_path,
+        heading_paths=heading_paths,
         start_line=first.start_line,
         end_line=last.end_line,
         start_byte=first.start_byte,
@@ -459,49 +592,230 @@ def _make_unit(blocks: list[_Block], content_hash: str) -> ChunkUnit:
     )
 
 
-def _pack_blocks(
-    blocks: Iterable[_Block], content_hash: str, target_budget: int, hard_budget: int
-) -> tuple[ChunkUnit, ...]:
-    units: list[ChunkUnit] = []
+def _strict_section_groups(
+    blocks: Iterable[TextBlock], context: ChunkStrategyContext
+) -> Iterator[tuple[TextBlock, ...]]:
     pending: list[_Block] = []
     pending_size = 0
     pending_top: int | None = None
     pending_heading: tuple[str, ...] | None = None
 
-    def flush() -> None:
+    def take_pending() -> tuple[TextBlock, ...] | None:
         nonlocal pending, pending_size, pending_top, pending_heading
-        if pending:
-            units.append(_make_unit(pending, content_hash))
+        result = tuple(pending) if pending else None
         pending, pending_size, pending_top, pending_heading = [], 0, None, None
+        return result
 
-    for original in blocks:
-        for block in _split_block(original, hard_budget):
-            crosses_top_section = (
-                pending_top is not None
-                and block.top_section != pending_top
-                and block.top_section > 0
-                and pending_top > 0
+    for block in blocks:
+        crosses_top_section = (
+            pending_top is not None
+            and block.top_section != pending_top
+            and block.top_section > 0
+            and pending_top > 0
+        )
+        crosses_heading = pending_heading is not None and block.heading_path != pending_heading
+        if pending and (
+            pending_size + block.size > context.target_budget
+            or crosses_top_section
+            or crosses_heading
+        ):
+            group = take_pending()
+            if group is not None:
+                yield group
+        if block.size > context.target_budget or block.kind.startswith("forced:"):
+            group = take_pending()
+            if group is not None:
+                yield group
+            yield (block,)
+            continue
+        if not pending:
+            pending_top = block.top_section
+            pending_heading = block.heading_path
+        pending.append(block)
+        pending_size += block.size
+    group = take_pending()
+    if group is not None:
+        yield group
+
+
+def _group_size(group: Iterable[TextBlock]) -> int:
+    values = tuple(group)
+    return values[-1].end_byte - values[0].start_byte
+
+
+def _group_has_forced_block(group: Iterable[TextBlock]) -> bool:
+    return any(block.kind.startswith("forced:") for block in group)
+
+
+def _rebalance_small_groups(
+    groups: Iterable[tuple[TextBlock, ...]], context: ChunkStrategyContext
+) -> Iterator[tuple[TextBlock, ...]]:
+    previous: tuple[TextBlock, ...] | None = None
+    for group in groups:
+        if previous is not None:
+            combined_size = group[-1].end_byte - previous[0].start_byte
+            should_merge = (
+                _group_size(previous) < context.min_budget
+                or _group_size(group) < context.min_budget
             )
-            crosses_heading = pending_heading is not None and block.heading_path != pending_heading
-            if pending and (
-                pending_size + block.size > target_budget
-                or crosses_top_section
-                or crosses_heading
-            ):
-                flush()
-            # A natural block between target and hard is a valid unit. A forced
-            # piece is kept isolated so its warning remains unambiguous.
-            if block.size > target_budget or block.kind.startswith("forced:"):
-                flush()
-                units.append(_make_unit([block], content_hash))
+            can_merge = (
+                combined_size <= context.hard_budget
+                and not _group_has_forced_block(previous)
+                and not _group_has_forced_block(group)
+            )
+            if should_merge and can_merge:
+                previous = previous + group
                 continue
+            yield previous
+        previous = group
+    if previous is not None:
+        yield previous
+
+
+def _adaptive_section_groups(
+    blocks: Iterable[TextBlock], context: ChunkStrategyContext
+) -> Iterator[tuple[TextBlock, ...]]:
+    def preferred_groups() -> Iterator[tuple[TextBlock, ...]]:
+        pending: list[TextBlock] = []
+        pending_size = 0
+        pending_heading: tuple[str, ...] | None = None
+
+        for block in blocks:
+            if block.kind.startswith("forced:") or block.size > context.target_budget:
+                if pending:
+                    yield tuple(pending)
+                    pending, pending_size, pending_heading = [], 0, None
+                yield (block,)
+                continue
+            crosses_heading = (
+                pending_heading is not None and block.heading_path != pending_heading
+            )
+            if pending and (
+                pending_size + block.size > context.target_budget
+                or (crosses_heading and pending_size >= context.min_budget)
+            ):
+                yield tuple(pending)
+                pending, pending_size, pending_heading = [], 0, None
             if not pending:
-                pending_top = block.top_section
                 pending_heading = block.heading_path
             pending.append(block)
             pending_size += block.size
-    flush()
-    return tuple(units)
+        if pending:
+            yield tuple(pending)
+
+    yield from _rebalance_small_groups(preferred_groups(), context)
+
+
+def _resolve_chunk_strategy(name: str) -> ChunkStrategy:
+    name = _validate_strategy_name(name)
+    builtins: dict[str, ChunkStrategy] = {
+        DEFAULT_CHUNK_STRATEGY: _adaptive_section_groups,
+        STRICT_CHUNK_STRATEGY: _strict_section_groups,
+    }
+    if name in builtins:
+        return builtins[name]
+    if name in _CUSTOM_CHUNK_STRATEGIES:
+        return _CUSTOM_CHUNK_STRATEGIES[name]
+    matching = [point for point in _strategy_entry_points() if point.name == name]
+    if len(matching) > 1:
+        raise TextChunkError(f"multiple chunk strategy entry points are named {name!r}")
+    if matching:
+        try:
+            strategy = matching[0].load()
+        except Exception as exc:
+            raise TextChunkError(f"cannot load chunk strategy {name!r}: {exc}") from exc
+        if not callable(strategy):
+            raise TextChunkError(f"chunk strategy entry point {name!r} is not callable")
+        return strategy
+    available = ", ".join(available_chunk_strategies())
+    raise TextChunkError(f"unknown chunk strategy {name!r}; available: {available}")
+
+
+def _units_from_strategy_groups(
+    blocks: Iterable[TextBlock],
+    groups: Iterable[Iterable[TextBlock]],
+    context: ChunkStrategyContext,
+) -> tuple[ChunkUnit, ...]:
+    expected = iter(blocks)
+    units: list[ChunkUnit] = []
+    for raw_group in groups:
+        try:
+            group = tuple(raw_group)
+        except (TypeError, ValueError) as exc:
+            raise TextChunkError(f"chunk strategy returned an invalid group: {exc}") from exc
+        if not group:
+            raise TextChunkError("chunk strategy returned an empty group")
+        for block in group:
+            try:
+                expected_block = next(expected)
+            except StopIteration as exc:
+                raise TextChunkError("chunk strategy duplicated or invented a block") from exc
+            if block != expected_block:
+                raise TextChunkError(
+                    "chunk strategy must return every prepared block exactly once in source order"
+                )
+        size = group[-1].end_byte - group[0].start_byte
+        if size > context.hard_budget:
+            raise TextChunkError("chunk strategy returned a group above hard_budget")
+        if _group_has_forced_block(group) and len(group) != 1:
+            raise TextChunkError("forced-split blocks must remain isolated")
+        units.append(_make_unit(list(group), context.content_hash))
+    try:
+        next(expected)
+    except StopIteration:
+        return tuple(units)
+    raise TextChunkError("chunk strategy omitted one or more prepared blocks")
+
+
+def _pack_blocks(
+    blocks: Iterable[_Block],
+    content_hash: str,
+    target_budget: int,
+    hard_budget: int,
+    min_budget: int,
+    chunk_strategy: str,
+    strategy_options: Mapping[str, Any],
+) -> tuple[ChunkUnit, ...]:
+    prepared = (
+        block
+        for original in blocks
+        for block in _split_block(original, hard_budget)
+    )
+    context = ChunkStrategyContext(
+        content_hash=content_hash,
+        target_budget=target_budget,
+        hard_budget=hard_budget,
+        min_budget=min_budget,
+        options=strategy_options,
+    )
+    strategy = _resolve_chunk_strategy(chunk_strategy)
+    try:
+        # tee is intentionally avoided: strategies must stream the exact input
+        # blocks back in source order, and the validating wrapper compares each
+        # returned block as it advances the same source iterator.
+        def observed_blocks() -> Iterator[TextBlock]:
+            for block in prepared:
+                observed.append(block)
+                yield block
+
+        observed: deque[TextBlock] = deque()
+        proposed = strategy(observed_blocks(), context)
+
+        def expected_blocks() -> Iterator[TextBlock]:
+            while True:
+                if observed:
+                    yield observed.popleft()
+                    continue
+                try:
+                    observed.append(next(prepared))
+                except StopIteration:
+                    return
+
+        return _units_from_strategy_groups(expected_blocks(), proposed, context)
+    except TextChunkError:
+        raise
+    except Exception as exc:
+        raise TextChunkError(f"chunk strategy {chunk_strategy!r} failed: {exc}") from exc
 
 
 def _validate_plan(plan: ChunkPlan, *, coverage_start: int) -> None:
@@ -529,9 +843,11 @@ def validate_chunk_plan(plan: ChunkPlan) -> None:
     if not plan.content_hash.startswith("sha256:"):
         raise TextChunkError("chunk plan source hash must use the sha256: prefix")
     _validate_budgets(
-        plan.target_budget, plan.hard_budget,
+        plan.target_budget, plan.hard_budget, min_budget=plan.min_budget,
         allow_unsafe_hard_budget=plan.hard_budget > MAX_SAFE_HARD_BUDGET,
     )
+    _validate_strategy_name(plan.chunk_strategy)
+    canonicalize_strategy_options(plan.strategy_options)
     coverage_start = 3 if plan.encoding == "utf-8-sig" else 0
     try:
         _validate_plan(plan, coverage_start=coverage_start)
@@ -547,12 +863,19 @@ def plan_text_chunks(
     *,
     target_budget: int = DEFAULT_TARGET_BUDGET,
     hard_budget: int = DEFAULT_HARD_BUDGET,
+    min_budget: int | None = None,
+    chunk_strategy: str = DEFAULT_CHUNK_STRATEGY,
+    strategy_options: Mapping[str, Any] | None = None,
     allow_unsafe_hard_budget: bool = False,
 ) -> ChunkPlan:
     """Plan deterministic, exhaustive ranges for one supported UTF-8 file."""
     path = _validate_source(source)
-    _validate_budgets(
-        target_budget, hard_budget,
+    effective_min_value, strategy_name, options = normalize_chunk_settings(
+        target_budget=target_budget,
+        hard_budget=hard_budget,
+        min_budget=min_budget,
+        chunk_strategy=chunk_strategy,
+        strategy_options=strategy_options,
         allow_unsafe_hard_budget=allow_unsafe_hard_budget,
     )
     digest = hashlib.sha256()
@@ -575,11 +898,21 @@ def plan_text_chunks(
         blocks = _plain_or_rst_blocks(
             path, start_offset, rst=path.suffix.lower() == ".rst", stats=stats
         )
-    units = _pack_blocks(blocks, content_hash, target_budget, hard_budget)
+    units = _pack_blocks(
+        blocks,
+        content_hash,
+        target_budget,
+        hard_budget,
+        effective_min_value,
+        strategy_name,
+        options,
+    )
     plan = ChunkPlan(
         source_path=str(path), content_hash=content_hash, encoding="utf-8-sig" if bom else "utf-8",
         size_bytes=size, line_count=stats["line_count"], target_budget=target_budget,
-        hard_budget=hard_budget, units=units, warnings=tuple(warnings),
+        hard_budget=hard_budget, min_budget=effective_min_value,
+        chunk_strategy=strategy_name, strategy_options=options,
+        units=units, warnings=tuple(warnings),
     )
     _validate_plan(plan, coverage_start=start_offset)
     return plan
@@ -626,7 +959,7 @@ def unit_for_range(
         )
     expected_hash = _normalise_hash(expected_hash)
     return ChunkUnit(
-        unit_id=_unit_id(expected_hash, start_byte, end_byte), heading_path=(),
+        unit_id=_unit_id(expected_hash, start_byte, end_byte), heading_path=(), heading_paths=((),),
         start_line=start_line, end_line=end_line, start_byte=start_byte,
         end_byte=end_byte, size_bytes=size, _source_hash=expected_hash,
     )

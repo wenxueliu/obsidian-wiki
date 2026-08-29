@@ -39,7 +39,8 @@ Before creating a Job, look for the newest incomplete Job with the same canonica
 
 - matching source path/hash/chunker version: resume its first pending or failed unit;
 - changed hash: invalidate pending ranges and create a new plan;
-- completed manifest entry with matching hash and `chunker_version: 1`: mark unchanged;
+- completed manifest entry with matching hash, `chunker_version: 2`, budgets, strategy, and options:
+  mark unchanged;
 - missing source: report potentially stale pages but never delete them.
 
 Use the deterministic package command for discovery, hashing, chunk planning, and atomic Job
@@ -49,7 +50,10 @@ creation or resume:
 obsidian-wiki text-ingest-plan <source-root> \
   --vault <resolved-vault> --write-mode direct|staged \
   --target-budget <configured-or-48000> \
+  --min-budget <configured-or-half-target> \
   --hard-budget <configured-or-64000> \
+  --chunk-strategy <configured-or-adaptive_sections> \
+  --strategy-options-file <artifacts-dir>/text-chunk-options.json \
   --output <artifacts-dir>/job-plan.json --pretty
 ```
 
@@ -62,12 +66,17 @@ warnings, and Packet paths—never source bodies.
 ## Plan changed text sources
 
 `text-ingest-plan` invokes the same deterministic chunk planner used by `text-chunk-plan`. Resolve
-`WIKI_TEXT_CHUNK_TARGET_BYTES` and `WIKI_TEXT_CHUNK_HARD_MAX_BYTES` through `wiki-context`; use a
-48,000-byte target and a 64,000-byte absolute hard cap when they are unset. Both values must be
-positive integers, the target cannot exceed the hard cap, and the workflow hard cap cannot exceed
-64,000 bytes. Pass both effective values explicitly so they are frozen in the durable Job. A budget
-change invalidates an incomplete plan instead of resuming it. Invalid UTF-8 is a failed source with
-conversion guidance; do not guess encoding.
+`WIKI_TEXT_CHUNK_TARGET_BYTES`, `WIKI_TEXT_CHUNK_MIN_BYTES`,
+`WIKI_TEXT_CHUNK_HARD_MAX_BYTES`, `WIKI_TEXT_CHUNK_STRATEGY`, and
+`WIKI_TEXT_CHUNK_OPTIONS` through `wiki-context`. Defaults are a 48,000-byte target, a minimum of
+half the target, a 64,000-byte absolute hard cap, and `adaptive_sections`. That strategy merges
+short adjacent sections, prefers headings as split points once the minimum is reached, and merges a
+small tail back when the result remains under the hard cap. `strict_sections` preserves the legacy
+heading-per-unit behavior. Installed packages may expose trusted custom callables through the
+`obsidian_wiki.text_chunk_strategies` entry-point group. Pass every effective setting explicitly so
+it is frozen in the durable Job. Any strategy, option, or budget change invalidates an incompatible
+incomplete plan instead of resuming it. Invalid UTF-8 is a failed source with conversion guidance;
+do not guess encoding.
 
 Resolve `wiki-context` once and generate one `wiki-page-contract` for the whole Job before dispatch.
 Pass those frozen artifacts to every Packet integrator. A Packet worker must validate their

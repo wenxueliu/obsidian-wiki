@@ -145,6 +145,11 @@ def build_core(templates_dir: Path, layouts_dir: Path, output_dir: Path) -> None
             "QMD_PAPERS_COLLECTION": None,
             "WIKI_TOKEN_WARN_THRESHOLD": 100000,
             "WIKI_STAGED_WRITES": False,
+            "WIKI_TEXT_CHUNK_TARGET_BYTES": 48000,
+            "WIKI_TEXT_CHUNK_MIN_BYTES": 24000,
+            "WIKI_TEXT_CHUNK_HARD_MAX_BYTES": 64000,
+            "WIKI_TEXT_CHUNK_STRATEGY": "adaptive_sections",
+            "WIKI_TEXT_CHUNK_OPTIONS": {},
         },
         "writing_profile": {
             "unix_path": "~/.obsidian-wiki/WRITING.md",

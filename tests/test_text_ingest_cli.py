@@ -32,11 +32,19 @@ def test_text_ingest_plan_and_status_are_cwd_independent(tmp_path: Path) -> None
     vault.mkdir()
     artifacts = tmp_path / "artifacts"
     plan_path = artifacts / "job-plan.json"
+    options_path = artifacts / "chunk-options.json"
+    options_path.parent.mkdir()
+    options_path.write_text('{"owner":"workflow"}', encoding="utf-8")
 
     planned = run_cli(
         "text-ingest-plan", str(source_dir),
         "--vault", str(vault),
         "--write-mode", "staged",
+        "--target-budget", "16",
+        "--min-budget", "8",
+        "--hard-budget", "24",
+        "--chunk-strategy", "strict_sections",
+        "--strategy-options-file", str(options_path),
         "--output", str(plan_path),
         "--pretty",
         cwd=tmp_path,
@@ -47,6 +55,14 @@ def test_text_ingest_plan_and_status_are_cwd_independent(tmp_path: Path) -> None
     assert plan["write_mode"] == "staged"
     assert plan["source_counts"]["unsupported"] == 1
     assert plan["next_unit"]["source_path"].endswith("one.md")
+    job = json.loads(Path(plan["job_path"]).read_text(encoding="utf-8"))
+    planned_source = next(source for source in job["sources"] if "budget" in source)
+    assert planned_source["budget"] == {
+        "mode": "utf8_bytes", "target": 16, "min": 8, "hard_max": 24,
+    }
+    assert planned_source["chunking"] == {
+        "strategy": "strict_sections", "options": {"owner": "workflow"},
+    }
 
     status_path = artifacts / "job-status.json"
     status = run_cli(
@@ -67,9 +83,15 @@ def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> 
 
     assert "obsidian-wiki text-ingest-plan" in workflow
     assert "WIKI_TEXT_CHUNK_TARGET_BYTES" in workflow
+    assert "WIKI_TEXT_CHUNK_MIN_BYTES" in workflow
     assert "WIKI_TEXT_CHUNK_HARD_MAX_BYTES" in workflow
-    assert '--target-budget "<configured-or-48000>"' in workflow
-    assert '--hard-budget "<configured-or-64000>"' in workflow
+    assert "WIKI_TEXT_CHUNK_STRATEGY" in workflow
+    assert "WIKI_TEXT_CHUNK_OPTIONS" in workflow
+    assert '--target-budget "<text_chunking.target_bytes>"' in workflow
+    assert '--min-budget "<text_chunking.min_bytes>"' in workflow
+    assert '--hard-budget "<text_chunking.hard_max_bytes>"' in workflow
+    assert '--chunk-strategy "<text_chunking.strategy>"' in workflow
+    assert "--strategy-options-file" in workflow
     assert "obsidian-wiki text-ingest-status" in workflow
     assert "wiki/" not in workflow
     assert ".cac/" not in workflow
@@ -81,7 +103,9 @@ def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> 
     assert "wiki-packet-integrate" in workflow
     assert "obsidian-wiki text-ingest-plan" in skill
     assert "WIKI_TEXT_CHUNK_TARGET_BYTES" in skill
+    assert "WIKI_TEXT_CHUNK_MIN_BYTES" in skill
     assert "WIKI_TEXT_CHUNK_HARD_MAX_BYTES" in skill
+    assert "WIKI_TEXT_CHUNK_STRATEGY" in skill
     assert ".cac/" not in skill
     assert "`wiki/" not in skill
     assert not (ROOT / "workflows" / "wiki-ingest.yaml").exists()

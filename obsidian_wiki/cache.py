@@ -34,8 +34,14 @@ import re
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator, TypedDict
+from typing import Any, Iterator, TypedDict
 
+from obsidian_wiki.text_chunker import (
+    CHUNKER_VERSION,
+    DEFAULT_CHUNK_STRATEGY,
+    DEFAULT_HARD_BUDGET,
+    DEFAULT_TARGET_BUDGET,
+)
 from obsidian_wiki.workflow_layout import iter_content_pages
 
 
@@ -308,7 +314,9 @@ def update_completed_text_source(
     pages_created: list[str] | None = None,
     pages_updated: list[str] | None = None,
     project: str | None = None,
-    chunker_version: int = 1,
+    chunker_version: int = CHUNKER_VERSION,
+    budget: dict[str, Any] | None = None,
+    chunking: dict[str, Any] | None = None,
 ) -> str:
     """Atomically commit a completed text source and compatibility metadata.
 
@@ -325,6 +333,16 @@ def update_completed_text_source(
     created = unique(pages_created)
     updated = unique(pages_updated)
     produced = unique((pages_produced or []) + created + updated)
+    effective_budget = budget if budget is not None else {
+        "mode": "utf8_bytes",
+        "target": DEFAULT_TARGET_BUDGET,
+        "min": DEFAULT_TARGET_BUDGET // 2,
+        "hard_max": DEFAULT_HARD_BUDGET,
+    }
+    effective_chunking = chunking if chunking is not None else {
+        "strategy": DEFAULT_CHUNK_STRATEGY,
+        "options": {},
+    }
     current_hash = compute_hash(source_path)
     now = datetime.now(timezone.utc).isoformat()
     manifest = _load_raw(vault)
@@ -358,6 +376,8 @@ def update_completed_text_source(
         "last_ingested": now,
         "source_type": "text",
         "chunker_version": chunker_version,
+        "budget": effective_budget,
+        "chunking": effective_chunking,
         "units_total": units_total,
         "units_integrated": units_integrated,
         "pages_created": created,

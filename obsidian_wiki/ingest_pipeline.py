@@ -19,9 +19,11 @@ from obsidian_wiki.batch import SKIP_DIRS
 from obsidian_wiki.cache import compute_hash
 from obsidian_wiki.text_chunker import (
     CHUNKER_VERSION,
+    DEFAULT_CHUNK_STRATEGY,
     DEFAULT_HARD_BUDGET,
     DEFAULT_TARGET_BUDGET,
     SUPPORTED_EXTENSIONS,
+    normalize_chunk_settings,
     plan_text_chunks,
 )
 
@@ -157,6 +159,9 @@ def create_job(
     *,
     target_budget: int = DEFAULT_TARGET_BUDGET,
     hard_budget: int = DEFAULT_HARD_BUDGET,
+    min_budget: int | None = None,
+    chunk_strategy: str = DEFAULT_CHUNK_STRATEGY,
+    strategy_options: dict[str, Any] | None = None,
     write_mode: str = "direct",
     now: datetime | None = None,
 ) -> tuple[Path, dict[str, Any]]:
@@ -170,6 +175,20 @@ def create_job(
     if write_mode not in {"direct", "staged"}:
         raise PipelineContractError("write_mode must be direct or staged")
     timestamp = now or datetime.now(timezone.utc)
+    effective_min_budget, chunk_strategy, effective_options = normalize_chunk_settings(
+        target_budget=target_budget,
+        hard_budget=hard_budget,
+        min_budget=min_budget,
+        chunk_strategy=chunk_strategy,
+        strategy_options=strategy_options,
+    )
+    expected_budget = {
+        "mode": "utf8_bytes", "target": target_budget,
+        "hard_max": hard_budget, "min": effective_min_budget,
+    }
+    expected_chunking = {
+        "strategy": chunk_strategy, "options": effective_options,
+    }
     job_id = _job_id(timestamp, root)
     job_dir = vault / JOBS_RELATIVE_DIR / job_id
     sources: list[dict[str, Any]] = []
@@ -191,6 +210,8 @@ def create_job(
             existing_hash == content_hash
             and existing is not None
             and existing.get("chunker_version") == CHUNKER_VERSION
+            and existing.get("budget") == expected_budget
+            and existing.get("chunking") == expected_chunking
         ):
             sources.append({
                 "source_id": _source_id(str(path)), "path": str(path),
@@ -199,7 +220,14 @@ def create_job(
             })
             continue
         try:
-            plan = plan_text_chunks(path, target_budget=target_budget, hard_budget=hard_budget)
+            plan = plan_text_chunks(
+                path,
+                target_budget=target_budget,
+                hard_budget=hard_budget,
+                min_budget=min_budget,
+                chunk_strategy=chunk_strategy,
+                strategy_options=effective_options,
+            )
         except (OSError, ValueError) as exc:
             sources.append({
                 "source_id": _source_id(str(path)), "path": str(path),
@@ -220,7 +248,9 @@ def create_job(
             "content_hash": content_hash, "kind": classified["kind"],
             "status": "processing" if units else "ready_to_commit",
             "chunker_version": CHUNKER_VERSION,
-            "budget": plan.to_dict()["budget"], "units": units,
+            "budget": plan.to_dict()["budget"],
+            "chunking": plan.to_dict()["chunking"],
+            "units": units,
             "chunk_plan": {
                 "units_total": len(units), "units_integrated": 0,
                 "next_unit": units[0]["unit_id"] if units else None,
@@ -300,6 +330,9 @@ def find_resumable_job(
     *,
     target_budget: int | None = None,
     hard_budget: int | None = None,
+    min_budget: int | None = None,
+    chunk_strategy: str | None = None,
+    strategy_options: dict[str, Any] | None = None,
     write_mode: str | None = None,
 ) -> tuple[Path, dict[str, Any]] | None:
     """Find the newest incomplete, source-compatible Job for one canonical root."""
@@ -327,6 +360,20 @@ def find_resumable_job(
             source["budget"].get("hard_max") != hard_budget for source in planned_sources
         ):
             continue
+        if min_budget is not None and any(
+            source["budget"].get("min") != min_budget for source in planned_sources
+        ):
+            continue
+        if chunk_strategy is not None and any(
+            source.get("chunking", {}).get("strategy") != chunk_strategy
+            for source in planned_sources
+        ):
+            continue
+        if strategy_options is not None and any(
+            source.get("chunking", {}).get("options", {}) != strategy_options
+            for source in planned_sources
+        ):
+            continue
         if _job_matches_current_sources(job):
             return job_file.parent, job
     return None
@@ -338,6 +385,9 @@ def create_or_resume_job(
     *,
     target_budget: int = DEFAULT_TARGET_BUDGET,
     hard_budget: int = DEFAULT_HARD_BUDGET,
+    min_budget: int | None = None,
+    chunk_strategy: str = DEFAULT_CHUNK_STRATEGY,
+    strategy_options: dict[str, Any] | None = None,
     write_mode: str = "direct",
 ) -> tuple[Path, dict[str, Any], bool]:
     """Resume a compatible Job, otherwise create a fresh source-version plan.
@@ -346,8 +396,17 @@ def create_or_resume_job(
     """
     if write_mode not in {"direct", "staged"}:
         raise PipelineContractError("write_mode must be direct or staged")
+    effective_min_budget, chunk_strategy, effective_options = normalize_chunk_settings(
+        target_budget=target_budget,
+        hard_budget=hard_budget,
+        min_budget=min_budget,
+        chunk_strategy=chunk_strategy,
+        strategy_options=strategy_options,
+    )
     resumable = find_resumable_job(
         source_root, vault, target_budget=target_budget, hard_budget=hard_budget,
+        min_budget=effective_min_budget, chunk_strategy=chunk_strategy,
+        strategy_options=effective_options,
         write_mode=write_mode,
     )
     if resumable is not None:
@@ -366,12 +425,15 @@ def create_or_resume_job(
             ):
                 previous["status"] = "invalidated"
                 previous["invalidated_reason"] = (
-                    "source path, content hash, chunker version, or write mode changed after planning"
+                    "source path, content hash, chunk settings, chunker version, "
+                    "or write mode changed after planning"
                 )
                 write_job(job_file.parent, previous)
                 break
     job_dir, job = create_job(
         source_root, vault, target_budget=target_budget, hard_budget=hard_budget,
+        min_budget=effective_min_budget, chunk_strategy=chunk_strategy,
+        strategy_options=effective_options,
         write_mode=write_mode,
     )
     return job_dir, job, False

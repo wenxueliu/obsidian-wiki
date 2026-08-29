@@ -13,9 +13,9 @@ steps:
     desc: 复用共享子 workflow 解析 vault、write mode 与 owner 规则
     workflow: wiki-context
     input: 用户 invocation、source CWD 与所需配置字段
-    output: wiki-context.json + wiki-context.md
+    output: wiki-context.json + wiki-context.md + text-chunk-options.json
     inputs:
-      requested_keys: OBSIDIAN_VAULT_PATH,WIKI_STAGED_WRITES,OBSIDIAN_LINK_FORMAT,WIKI_TEXT_CHUNK_TARGET_BYTES,WIKI_TEXT_CHUNK_HARD_MAX_BYTES,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_CLI_SEARCH_MODE
+      requested_keys: OBSIDIAN_VAULT_PATH,WIKI_STAGED_WRITES,OBSIDIAN_LINK_FORMAT,WIKI_TEXT_CHUNK_TARGET_BYTES,WIKI_TEXT_CHUNK_HARD_MAX_BYTES,WIKI_TEXT_CHUNK_MIN_BYTES,WIKI_TEXT_CHUNK_STRATEGY,WIKI_TEXT_CHUNK_OPTIONS,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_CLI_SEARCH_MODE
       optional_reads: owner AGENTS,taxonomy,index,manifest,active layout,writing profile
       setup_mode: "false"
     on_pass: plan_job
@@ -25,19 +25,22 @@ steps:
   - id: plan_job
     desc: 用确定性 CLI 发现文档并原子创建或恢复 Job
     do: |
-      读取 `wiki-context.json` 中已确认的 vault、write mode 和 `requested_values`。分片 target 使用 `WIKI_TEXT_CHUNK_TARGET_BYTES`（未配置时 48000），hard max 使用 `WIKI_TEXT_CHUNK_HARD_MAX_BYTES`（未配置时 64000）。两者必须是正整数，target 不得大于 hard max，hard max 不得超过 64000。然后只运行 package CLI：
+      读取 `wiki-context.json` 中已确认的 vault、write mode 和 `text_chunking`。默认使用 `adaptive_sections`，target=48000、min=target/2、hard max=64000；配置值由 resolver 完成类型与大小关系验证。然后只运行 package CLI：
 
       ```bash
       obsidian-wiki text-ingest-plan "<source-root>" \
         --vault "<wiki-context.json vault_path>" \
         --write-mode "<direct-or-staged>" \
-        --target-budget "<configured-or-48000>" \
-        --hard-budget "<configured-or-64000>" \
+        --target-budget "<text_chunking.target_bytes>" \
+        --min-budget "<text_chunking.min_bytes>" \
+        --hard-budget "<text_chunking.hard_max_bytes>" \
+        --chunk-strategy "<text_chunking.strategy>" \
+        --strategy-options-file "{{artifacts_dir}}/text-chunk-options.json" \
         --output "{{artifacts_dir}}/job-plan.json" \
         --pretty
       ```
 
-      CLI 负责 canonical discovery、unsupported inventory、streaming SHA-256、UTF-8 validation、按 effective budgets 分片、resume/replan 判断、Packet path boundary 和原子 `job.json` 写入。不得再调用 workflow-relative helper 或由 agent 手工复现这些规则。若 console script 不在 PATH，使用 `python3 -m obsidian_wiki text-ingest-plan ...`。
+      CLI 负责 canonical discovery、unsupported inventory、streaming SHA-256、UTF-8 validation、按 effective strategy/budgets 分片、resume/replan 判断、Packet path boundary 和原子 `job.json` 写入。`adaptive_sections` 把标题当作优先边界，合并短章节并在 hard cap 内回并小尾块；`strict_sections` 保留标题变化即分片的旧行为。自定义名称必须是已安装的 `obsidian_wiki.text_chunk_strategies` entry point。不得再调用 workflow-relative helper 或由 agent 手工复现这些规则。若 console script 不在 PATH，使用 `python3 -m obsidian_wiki text-ingest-plan ...`。
 
       Coordinator 只读取 `job-plan.json` 与 Job metadata，不读取 source body。active layout 必须为 matched；URL、缺失或未授权 source 直接失败。unsupported 文件保留在 Job 和最终报告中。
     input: wiki-context.json + 用户给定的本地文本文件或文件夹

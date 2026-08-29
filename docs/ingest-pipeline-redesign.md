@@ -228,8 +228,8 @@ returns only that unit. This avoids duplicated sensitive data and accidental wik
 
 ```json
 {
-  "chunk_plan_version": 1,
-  "chunker_version": 1,
+  "chunk_plan_version": 2,
+  "chunker_version": 2,
   "source": {
     "path": "/data/large-document.md",
     "content_hash": "sha256:9e9f...",
@@ -240,12 +240,18 @@ returns only that unit. This avoids duplicated sensitive data and accidental wik
   "budget": {
     "mode": "utf8_bytes",
     "target": 48000,
+    "min": 24000,
     "hard_max": 64000
+  },
+  "chunking": {
+    "strategy": "adaptive_sections",
+    "options": {}
   },
   "units": [
     {
       "unit_id": "unit-0001",
       "heading_path": ["Part I", "Background"],
+      "heading_paths": [["Part I", "Background"], ["Part I", "Motivation"]],
       "start_line": 1,
       "end_line": 318,
       "start_byte": 0,
@@ -266,7 +272,7 @@ Invariants:
 - no unit exceeds `hard_max`;
 - byte positions fall on valid UTF-8 boundaries;
 - line ranges agree with byte ranges;
-- identical input, version, and budgets produce identical output;
+- identical input, version, budgets, strategy, and options produce identical output;
 - materialization fails if the source hash changed after planning.
 
 ### 5.9 Stable unit IDs
@@ -408,7 +414,9 @@ source order in V1. Without workers, the Job exposes the next pending unit for a
   "path": "/data/notes/large.md",
   "content_hash": "sha256:9e9f...",
   "source_type": "text",
-  "chunker_version": 1,
+  "chunker_version": 2,
+  "budget": {"mode": "utf8_bytes", "target": 48000, "min": 24000, "hard_max": 64000},
+  "chunking": {"strategy": "adaptive_sections", "options": {}},
   "units_total": 12,
   "units_integrated": 12,
   "pages_produced": ["concepts/example.md"],
@@ -418,7 +426,7 @@ source order in V1. Without workers, the Job exposes the next pending unit for a
 
 Rules:
 
-- matching hash and compatible chunker version: unchanged;
+- matching hash, chunker version, budgets, strategy, and options: unchanged;
 - changed hash: create a new plan and reprocess;
 - incomplete Job with matching hash: resume the next pending unit;
 - source changed after planning: invalidate pending ranges and replan;

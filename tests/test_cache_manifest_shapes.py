@@ -22,6 +22,7 @@ from obsidian_wiki.cache import (
     _load_raw,
     _manifest_path,
 )
+from obsidian_wiki.text_chunker import CHUNKER_VERSION, DEFAULT_CHUNK_STRATEGY
 
 
 @pytest.fixture
@@ -168,7 +169,11 @@ def test_text_source_manifest_advances_only_when_all_units_integrated(vault, raw
     entry = next(iter(manifest["sources"].values()))
     assert manifest["version"] == 1
     assert entry["source_type"] == "text"
-    assert entry["chunker_version"] == 1
+    assert entry["chunker_version"] == CHUNKER_VERSION
+    assert entry["budget"] == {
+        "mode": "utf8_bytes", "target": 48_000, "min": 24_000, "hard_max": 64_000,
+    }
+    assert entry["chunking"] == {"strategy": DEFAULT_CHUNK_STRATEGY, "options": {}}
     assert entry["units_total"] == entry["units_integrated"] == 3
     assert entry["pages_created"] == ["concepts/foo.md"]
     assert entry["pages_updated"] == ["skills/bar.md", "concepts/foo.md"]

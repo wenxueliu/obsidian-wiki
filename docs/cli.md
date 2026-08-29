@@ -159,6 +159,7 @@ Available for automation, scripting, and debugging. Skills call some of these in
 | `cache-update <vault> <source>` | Record a source's SHA-256 in `.manifest.json` after ingest |
 | `cache-hash <path>` | Compute a file or directory hash (no manifest I/O) |
 | `text-chunk-plan <source>` | Plan deterministic, exhaustive UTF-8 byte ranges for one supported text source |
+| `text-chunk-strategies` | List built-in, registered, and installed custom chunk strategies |
 | `text-chunk-read <source>` | Verify the source hash and materialize exactly one planned byte range |
 | `text-ingest-plan <source>` | Discover sources and atomically create or resume a metadata-only text-ingest Job |
 | `text-ingest-status <job>` | Report deterministic source/unit counts, next unit, and the cross-link gate |
@@ -176,12 +177,15 @@ obsidian-wiki graph-analyse /path/to/vault --top 30 --pretty
 obsidian-wiki batch-plan /path/to/vault ~/research --max-mb 4 --max-files 30
 obsidian-wiki cache-check /path/to/vault ~/research/*.pdf
 obsidian-wiki cache-update /path/to/vault ~/research/paper.pdf --pages concepts/attention.md
-obsidian-wiki text-chunk-plan ~/research/large.md --pretty
+obsidian-wiki text-chunk-plan ~/research/large.md \
+  --chunk-strategy adaptive_sections --min-budget 24000 --pretty
+obsidian-wiki text-chunk-strategies --pretty
 obsidian-wiki text-chunk-read ~/research/large.md \
   --start-byte 0 --end-byte 47231 --expect-hash sha256:9e9f...
 obsidian-wiki text-ingest-plan ~/research \
   --vault ~/brain --write-mode direct \
-  --target-budget 48000 --hard-budget 64000 \
+  --target-budget 48000 --min-budget 24000 --hard-budget 64000 \
+  --chunk-strategy adaptive_sections --strategy-options-file /tmp/chunk-options.json \
   --output /tmp/job-plan.json --pretty
 obsidian-wiki text-ingest-status ~/brain/_meta/ingest-jobs/<job-id> --pretty
 obsidian-wiki text-ingest-packet-check ~/brain/_meta/ingest-jobs/<job-id> packets/<packet>.json
@@ -195,8 +199,11 @@ obsidian-wiki ast-extract ./src --pretty
 ```
 
 `text-chunk-plan` accepts `.md`, `.markdown`, `.mdx`, `.txt`, and `.rst` encoded as UTF-8 or
-UTF-8 with BOM. `--target-budget` defaults to 48,000 bytes and `--hard-budget` to 64,000 bytes;
-the latter is the documented safe maximum and an absolute cap for every planned unit. Raising it
+UTF-8 with BOM. `--target-budget` defaults to 48,000 bytes, `--min-budget` to half the target, and
+`--hard-budget` to 64,000 bytes; the latter is the documented safe maximum and an absolute cap for
+every planned unit. The default `adaptive_sections` strategy merges short adjacent sections;
+`strict_sections` retains heading-per-unit splitting. `--strategy-options` accepts an inline JSON
+object and `--strategy-options-file` accepts the same object from a file. Raising the hard maximum
 requires the explicit `--allow-unsafe-hard-budget` override. `text-chunk-read` writes the exact
 range without adding a newline and fails if the source changed after planning.
 
@@ -206,8 +213,37 @@ source detection, and atomic Job creation/resume. `text-ingest-status` and
 before atomically changing exactly one unit; staged mode requires at least one `--artifact` and
 never increments the integrated count. These commands keep deterministic coordination in code
 while extraction remains isolated per document/range and Packet integration remains serial.
-`wiki-folder-ingest` supplies these two budgets from `WIKI_TEXT_CHUNK_TARGET_BYTES` and
-`WIKI_TEXT_CHUNK_HARD_MAX_BYTES` in the resolved vault config, falling back to the CLI defaults.
+`wiki-folder-ingest` supplies the effective budgets, strategy, and options from the resolved vault
+config and freezes them in the Job and completed manifest entry.
+
+### Custom text chunk strategies
+
+A trusted extension package registers an entry point in its `pyproject.toml`:
+
+```toml
+[project.entry-points."obsidian_wiki.text_chunk_strategies"]
+my_sections = "my_wiki_extension.chunking:pack_sections"
+```
+
+The target is a callable with this contract:
+
+```python
+from collections.abc import Iterable
+from obsidian_wiki.text_chunker import ChunkStrategyContext, TextBlock
+
+def pack_sections(
+    blocks: Iterable[TextBlock], context: ChunkStrategyContext
+) -> Iterable[Iterable[TextBlock]]:
+    # Stream groups in source order. This example deliberately emits one block per unit.
+    for block in blocks:
+        yield (block,)
+```
+
+The callable must return every supplied block exactly once and in order. Every group must stay at
+or below `context.hard_budget`, and a `forced:` block must remain isolated. The planner validates
+these invariants before persisting a Job. Options from `WIKI_TEXT_CHUNK_OPTIONS` are available as
+`context.options`. Embedded callers may alternatively use `register_chunk_strategy()` before
+calling `plan_text_chunks()`.
 
 `wiki-context-resolve`, `wiki-setup-contract-build`, `wiki-layout-apply`, and
 `wiki-route-resolve` locate their helper scripts and bundled resources inside the installed package
