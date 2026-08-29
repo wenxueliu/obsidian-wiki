@@ -13,6 +13,16 @@ WORKFLOWS = (
 VALIDATION_TERMS = ("验证", "校验", "检查", "核对", "审计", "重算")
 
 
+def test_workflow_agents_codifies_producer_verifier_boundary() -> None:
+    instructions = (ROOT / "workflows" / "AGENTS.md").read_text(encoding="utf-8")
+
+    assert "Step 单一职责" in instructions
+    assert "`do` 是 Producer" in instructions
+    assert "`check` 是 Verifier" in instructions
+    assert "每个包含本地 `do` 的 step 必须提供 `check` 或 `check_voting`" in instructions
+    assert "不得通过再次运行同一个生成器" in instructions
+
+
 def step_blocks(text: str) -> list[str]:
     starts = [match.start() for match in re.finditer(r"^  - id: ", text, re.MULTILINE)]
     return [
