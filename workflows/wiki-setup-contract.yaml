@@ -6,10 +6,11 @@ adversarial_check:
   timeout_ms: 3600000
   system_prompt: |
     你是 Wiki Setup Contract 的只读审计者。独立读取模板和 artifacts 并重算 hash，不得调用 contract 生成脚本作为验证方法，不得创建或修改 vault、config、hook、QMD collection、Git 仓库或远端。
+    每个 step 的 do 只生成声明的 contract artifacts；所有模板、结构、hash、路径和副作用判断都在 check_voting 中完成。
 
 steps:
   - id: build_core_contract
-    desc: 从外部模板冻结配置、Writing Profile、layout 与核心文件契约
+    desc: 生成冻结的 setup core contract
     do: |
       运行 workflow-local builder 的 `core` phase：
 
@@ -18,17 +19,17 @@ steps:
         --output-dir "{{artifacts_dir}}"
       ```
 
-      若 console script 不在 PATH，使用等价的 `python3 -m obsidian_wiki wiki-setup-contract-build core ...`。该入口从安装包或源码 checkout 定位 workflow scripts、templates 和 layouts，不依赖调用方 CWD，也不得退回 `.cac/...` 相对路径。
+      console script 不在 PATH 时使用等价的 `python3 -m obsidian_wiki wiki-setup-contract-build core ...`。
 
-      模板是 authoring source of truth，位于随包发布的 `workflows/templates/wiki-setup/`：`WRITING.md`、`index.md`、`log.md`、`hot.md`、`manifest.json`、`app.json`、`appearance.json`。builder 必须验证 Markdown/JSON 结构、只允许预定义占位符，并将每个模板的 source path、完整正文、allowed placeholders 和 SHA-256 冻结到 core artifacts。
+      builder 从随包发布的 `workflows/templates/wiki-setup/` 收集 `WRITING.md`、`index.md`、`log.md`、`hot.md`、`manifest.json`、`app.json`、`appearance.json`，将 source path、完整正文、allowed placeholders 和 SHA-256 写入 core artifacts。
 
-      允许的动态值仅为 `TIMESTAMP`、`VAULT_PATH`、`CATEGORY_LIST`、`INDEX_SECTIONS`。新建文件从冻结模板渲染；repair 只允许 minimal repair，保留 owner frontmatter、历史、manifest data 和未知 JSON keys。WRITING.md 只在缺失时创建，永不覆盖。
+      core artifacts 同时写入动态值声明、config defaults、Writing Profile create-only 策略、core file create/minimal-repair 策略，以及每个 workflow layout 的 manifest、routing、prompt、vault inventory 和对应 hashes。
 
-      同时扫描随包发布的 `workflows/layouts/<name>/layout.json`、`routing.json`、`routing.md` 和对应 `vault/` 树，冻结每个 layout 的多级目录、预制文件 hash、categories、路由规则/分类提示及 inventory hash。`routing.json` 只允许安全相对模板和 allowlisted placeholders，所有 route 必须位于 content_roots；`routing.md` 是 layout-specific 分类提示，不能授权路径。layout 必须是 missing-only，拒绝 symlink、路径逃逸、超限文件和 index/log/hot/manifest/app/appearance 等核心保留目标。
+      只生成 `setup-core-contract.json` 与其 Markdown readout，不修改 vault、home 或外部系统。
     input: 父 workflow 的 non-secret invocation metadata（仅用于 provenance，不改变模板）
     output: setup-core-contract.json + setup-core-contract.md
     check_voting:
-      - check: 不运行 build_setup_contract.py；逐文件读取 templates/wiki-setup，独立校验 UTF-8、Markdown frontmatter/headings、JSON parse 与 allowed placeholders，确认文件集无缺失
+      - check: 不运行生成脚本；确认入口从安装包或源码 checkout 定位 scripts/templates/layouts，不依赖调用方 CWD 或 `.cac/...`；逐文件读取 templates/wiki-setup，独立校验 UTF-8、Markdown frontmatter/headings、JSON parse 与 allowed placeholders，确认文件集无缺失
       - check: 独立重算每个 template SHA-256 和 core contract hash，确认 artifact 内容与磁盘模板逐字一致，default render 无未替换占位符
       - check: 独立遍历 layouts/<name>，重算 manifest/routing/prompt/file/inventory hashes，核对路由占位符/content roots、多级目录与预制文件完整，无 symlink、reserved target 或 path escape
       - check: 核对 config defaults、Writing Profile create-only、default/system dirs、atomic/timezone-aware/minimal-repair 规则完整，且除 artifacts 外零写入
@@ -37,20 +38,20 @@ steps:
     max_fail_count: 3
 
   - id: build_integration_contract
-    desc: 合并 QMD、Stop hook、Git sync、verification 和 handoff 并冻结最终契约
+    desc: 生成冻结的 setup final contract
     do: |
-      只在 core contract 已验证后运行 builder 的 `finalize` phase：
+      使用已通过上一 step check 的 core contract 生成 final contract：
 
       ```bash
       obsidian-wiki wiki-setup-contract-build finalize \
         --output-dir "{{artifacts_dir}}"
       ```
 
-      若 console script 不在 PATH，使用等价的 `python3 -m obsidian_wiki wiki-setup-contract-build finalize ...`；资源解析规则与 core phase 相同。
+      console script 不在 PATH 时使用等价的 `python3 -m obsidian_wiki wiki-setup-contract-build finalize ...`。
 
-      `integrations.json` 是可选集成与 handoff 的 authoring source，必须冻结 QMD `_raw/**` exclusion/disjoint/update 规则、Stop hook 的 Unix/Windows path/URL/JSON merge/sentinel/uninstall/单次开关、Git sync CLI/fallback/private/status source、doctor/等价 required checks、Dataview/Graph Analysis/Templater/Obsidian Git 四个手动插件，以及 Open Vault、status、ingest、Claude history、Codex history、再次 status 六个 next steps。
+      builder 将 `integrations.json` 中的 QMD、Stop hook、Git sync、required checks、manual plugins 和 next steps 合并进 core contract，写出 `setup-contract.json` 与 `setup-contract.md`。
 
-      最终 `setup-contract.json/md` 必须携带 core hash、integration source hash 和 final contract hash。父 `wiki-setup` 只消费该冻结 artifact，不直接回读 authoring templates。
+      只生成最终 contract artifacts，不修改 vault、home 或外部系统。
     input: 已验证的 setup-core-contract.json/md + templates/wiki-setup/integrations.json
     output: setup-contract.json + setup-contract.md
     check_voting:

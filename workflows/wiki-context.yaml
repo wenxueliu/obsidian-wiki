@@ -9,20 +9,25 @@ adversarial_check:
   timeout_ms: 3600000
   system_prompt: |
     你是 Wiki Context 的只读审计者。必须独立检查输入、文件系统和 artifacts，不得调用 context 生成脚本作为验证方法，不得修改 vault 或执行后续业务流程。
+    每个 step 的 do 只生成声明的 artifact；所有路径、配置、hash、安全边界和副作用判断都在 check/check_voting 中完成。
 
 steps:
   - id: collect_vault
-    desc: 交互式收集并确认 vault 绝对路径
+    desc: 交互式生成 vault 输入 artifact
     do: |
       只生成 `vault-input.json`，不读取 config 或 vault 内容。
 
       若调用方 inputs 含 `run_condition` 且父报告证明条件不成立，不向用户询问，直接写 `{"mode":"skipped","reason":"...","evidence":"..."}`。
 
-      否则，从当前交互中获取 vault 路径：如用户尚未给出，明确请其输入。拒绝以 `@` 开头的值和相对路径；必须是展开 `~` 后的绝对路径。同时允许用户填写调用方 `requested_keys` 中的非秘密 overrides。
+      否则，从当前交互中获取 vault 路径；如用户尚未给出，明确请其输入。展开 `~`，并收集调用方 `requested_keys` 中用户提供的非秘密 overrides。
 
-      将确认结果写为 `{"mode":"interactive","vault_path":"<absolute path>","overrides":{...}}`。本步骤由用户检查后运行 `/ralphflow-continue` 放行；准备好后输出 `<promise>done</promise>`。
+      将结果写为 `{"mode":"interactive","vault_path":"<expanded path>","overrides":{...}}`，展示给用户后等待 `/ralphflow-continue`；准备好后输出 `<promise>done</promise>`。
     input: 调用方 invocation、run_condition（如有）、requested_keys 和用户输入
     output: vault-input.json
+    check_voting:
+      - check: mode=skipped 时 reason/evidence 与父报告一致且没有交互；mode=interactive 时 vault_path 为用户批准的展开后绝对路径、不是 `@name`，overrides 仅含 requested_keys 中的非秘密键
+      - check: vault-input.json 是合法 JSON，字段类型和 mode 对应结构完整，用户已通过人工门批准当前内容
+      - check: 文件系统审计确认本步骤只写 vault-input.json，未读取 config/vault 内容且未修改 vault/home/QMD/Git 状态
     on_pass: resolve_context
     on_fail: collect_vault
     max_fail_count: 3
@@ -30,7 +35,7 @@ steps:
   - id: resolve_context
     desc: 调用随包发布的 resolver 生成 Wiki 共享上下文
     do: |
-      通过 `obsidian-wiki wiki-context-resolve` 运行随包发布的 resolver，参数来自已批准的 `vault-input.json` 和调用方 inputs。不得使用依赖当前工作目录的 `.cac/...` 相对脚本路径：
+      使用已批准的 `vault-input.json` 和调用方 inputs 生成 `wiki-context.json` 与 `wiki-context.md`：
 
       ```bash
       obsidian-wiki wiki-context-resolve \
@@ -42,16 +47,13 @@ steps:
         --output-dir "{{artifacts_dir}}"
       ```
 
-      若 console script 不在 PATH，可用等价的 `python3 -m obsidian_wiki wiki-context-resolve ...`；两种入口都从已安装 package 或源码 checkout 定位 resolver 和 layouts，不以调用方 CWD 解析 workflow 资源。
-
-      vault 始终来自人工确认的输入；脚本不支持 named config 或 `@name`。它只从 source CWD 向 HOME/root 查找包含 requested non-vault key 的最近 `.env`，完全未命中时才读取全局 config，为其他 requested keys 提供默认值。用户 overrides 优先，不混入第二个 config source。当前 keys 均不是秘密值，artifacts 写入 effective values。
-
-      脚本只读 owner `AGENTS.md`、Writing Profile 和 optional metadata，不读 knowledge page body。请求 active layout 时，它读取 `_meta/layout.json`，按 name 加载随 workflow 发布的 layout，重算 manifest/inventory/routing/prompt hashes，并输出 matched/stale/missing 状态、完整冻结 routing rules/prompt/content roots；绝不根据 vault 目录猜测 layout。所有依赖 layout scope 或写页面的下游 workflow 必须要求 status=matched，其他状态 fail closed 并引导 setup repair/migration。只写 artifacts 中的 `wiki-context.json/md`。
+      console script 不在 PATH 时使用等价的 `python3 -m obsidian_wiki wiki-context-resolve ...`。resolver 将 effective config、owner/Writing Profile metadata、requested optional metadata、active layout 状态及 retrieval order 写入声明的两个 artifacts。
     input: vault-input.json + 调用方传入的 source_cwd、requested_keys、optional_reads、setup_mode
     output: wiki-context.json + wiki-context.md
     check_voting:
-      - check: 不运行 resolve_wiki_context.py；直接读 vault-input.json 和 wiki-context.json，用文件系统 realpath 独立核对 vault 是已批准的绝对路径、非 `@` 值，setup_mode=false 时存在且为目录
-      - check: 不运行生成脚本；独立解析报告的唯一 config source 与 requested non-vault keys，核对 overrides 优先、boolean 类型、owner/Writing Profile、optional metadata 和 retrieval order；请求 active layout 时独立重算 marker 与四类 hash，确认没有目录推断
+      - check: 不运行生成脚本；直接读 vault-input.json 和 wiki-context.json，用文件系统 realpath 独立核对 vault 是已批准的绝对路径、非 `@` 值，setup_mode=false 时存在且为目录；入口资源来自安装包或源码 checkout 而非调用方 CWD/.cac 相对路径
+      - check: 独立解析唯一 config source 与 requested non-vault keys，核对 source-CWD 向上查找优先于 global config、overrides 优先、boolean 类型、owner/Writing Profile、optional metadata 和 retrieval order；未请求的值与 knowledge page body 未进入 artifact
+      - check: 请求 active layout 时独立重算 marker 的 manifest/inventory/routing/prompt hashes 和完整 frozen routing；matched/stale/missing 状态准确，未根据 vault 目录推断 layout，依赖 layout 的下游在非 matched 状态 fail closed
       - check: 文件系统审计确认除 artifacts 外零写入，vault/config/QMD/state/log 未改变；mode=skipped 时没有读取 config 或 vault
     on_pass: done
     on_fail: resolve_context
