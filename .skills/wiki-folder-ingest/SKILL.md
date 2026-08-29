@@ -48,6 +48,8 @@ creation or resume:
 ```bash
 obsidian-wiki text-ingest-plan <source-root> \
   --vault <resolved-vault> --write-mode direct|staged \
+  --target-budget <configured-or-48000> \
+  --hard-budget <configured-or-64000> \
   --output <artifacts-dir>/job-plan.json --pretty
 ```
 
@@ -59,8 +61,12 @@ warnings, and Packet paths—never source bodies.
 
 ## Plan changed text sources
 
-`text-ingest-plan` invokes the same deterministic chunk planner used by `text-chunk-plan`. Defaults
-are a 48,000-byte target and a 64,000-byte absolute hard cap. Invalid UTF-8 is a failed source with
+`text-ingest-plan` invokes the same deterministic chunk planner used by `text-chunk-plan`. Resolve
+`WIKI_TEXT_CHUNK_TARGET_BYTES` and `WIKI_TEXT_CHUNK_HARD_MAX_BYTES` through `wiki-context`; use a
+48,000-byte target and a 64,000-byte absolute hard cap when they are unset. Both values must be
+positive integers, the target cannot exceed the hard cap, and the workflow hard cap cannot exceed
+64,000 bytes. Pass both effective values explicitly so they are frozen in the durable Job. A budget
+change invalidates an incomplete plan instead of resuming it. Invalid UTF-8 is a failed source with
 conversion guidance; do not guess encoding.
 
 Resolve `wiki-context` once and generate one `wiki-page-contract` for the whole Job before dispatch.

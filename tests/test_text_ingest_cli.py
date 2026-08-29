@@ -66,6 +66,10 @@ def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> 
     packet = (ROOT / "workflows" / "wiki-packet-integrate.yaml").read_text(encoding="utf-8")
 
     assert "obsidian-wiki text-ingest-plan" in workflow
+    assert "WIKI_TEXT_CHUNK_TARGET_BYTES" in workflow
+    assert "WIKI_TEXT_CHUNK_HARD_MAX_BYTES" in workflow
+    assert '--target-budget "<configured-or-48000>"' in workflow
+    assert '--hard-budget "<configured-or-64000>"' in workflow
     assert "obsidian-wiki text-ingest-status" in workflow
     assert "wiki/" not in workflow
     assert ".cac/" not in workflow
@@ -76,6 +80,8 @@ def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> 
     assert workflow.count("workflow: wiki-finalize-sources") == 1
     assert "wiki-packet-integrate" in workflow
     assert "obsidian-wiki text-ingest-plan" in skill
+    assert "WIKI_TEXT_CHUNK_TARGET_BYTES" in skill
+    assert "WIKI_TEXT_CHUNK_HARD_MAX_BYTES" in skill
     assert ".cac/" not in skill
     assert "`wiki/" not in skill
     assert not (ROOT / "workflows" / "wiki-ingest.yaml").exists()

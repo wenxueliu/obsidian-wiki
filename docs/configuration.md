@@ -111,9 +111,18 @@ off.
 ## Text ingest budgets
 
 Text ingest V1 uses dependency-free UTF-8 byte budgets rather than a model-specific tokenizer.
-`obsidian-wiki text-chunk-plan` defaults to a 48,000-byte target and a 64,000-byte hard cap. Lower
-them per invocation with `--target-budget` and `--hard-budget`; they are intentionally not global
-configuration because the exact values are recorded in each durable Job.
+`wiki-folder-ingest` resolves these values from the target vault's config and records the effective
+values in each durable Job. A changed budget creates a new plan instead of resuming an incompatible
+incomplete Job.
+
+| Variable | What it does | Default |
+|---|---|---|
+| `WIKI_TEXT_CHUNK_TARGET_BYTES` | Preferred UTF-8 byte size for each planned text unit | `48000` |
+| `WIKI_TEXT_CHUNK_HARD_MAX_BYTES` | Absolute UTF-8 byte cap for each planned text unit | `64000` |
+
+Both values must be positive integers, the target cannot exceed the hard maximum, and the workflow
+hard maximum cannot exceed 64,000 bytes. For direct CLI use, `--target-budget` and `--hard-budget`
+override the command defaults per invocation.
 
 PageIndex is not a V1 dependency. A future PDF pipeline may use it only as a structure provider
 behind the local hard-budget splitter; PDFs remain explicitly unsupported until that pipeline exists.

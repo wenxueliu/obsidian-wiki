@@ -180,7 +180,9 @@ obsidian-wiki text-chunk-plan ~/research/large.md --pretty
 obsidian-wiki text-chunk-read ~/research/large.md \
   --start-byte 0 --end-byte 47231 --expect-hash sha256:9e9f...
 obsidian-wiki text-ingest-plan ~/research \
-  --vault ~/brain --write-mode direct --output /tmp/job-plan.json --pretty
+  --vault ~/brain --write-mode direct \
+  --target-budget 48000 --hard-budget 64000 \
+  --output /tmp/job-plan.json --pretty
 obsidian-wiki text-ingest-status ~/brain/_meta/ingest-jobs/<job-id> --pretty
 obsidian-wiki text-ingest-packet-check ~/brain/_meta/ingest-jobs/<job-id> packets/<packet>.json
 obsidian-wiki text-ingest-unit-advance ~/brain/_meta/ingest-jobs/<job-id> packets/<packet>.json \
@@ -204,10 +206,15 @@ source detection, and atomic Job creation/resume. `text-ingest-status` and
 before atomically changing exactly one unit; staged mode requires at least one `--artifact` and
 never increments the integrated count. These commands keep deterministic coordination in code
 while extraction remains isolated per document/range and Packet integration remains serial.
+`wiki-folder-ingest` supplies these two budgets from `WIKI_TEXT_CHUNK_TARGET_BYTES` and
+`WIKI_TEXT_CHUNK_HARD_MAX_BYTES` in the resolved vault config, falling back to the CLI defaults.
 
 `wiki-context-resolve`, `wiki-setup-contract-build`, `wiki-layout-apply`, and
 `wiki-route-resolve` locate their helper scripts and bundled resources inside the installed package
 or source checkout. Workflows therefore do not depend on a `.cac/...` path or the caller's current
-working directory.
+working directory. A `vault-input.json` with `{"mode":"config"}` makes `wiki-context-resolve`
+load the vault configured by wiki-setup: an optional named `profile` first, otherwise the nearest
+`.env` containing `OBSIDIAN_VAULT_PATH`, then `~/.obsidian-wiki/config`. An explicit approved vault
+path uses `{"mode":"interactive","vault_path":"/absolute/path"}`.
 
 Most commands accept `--json` and/or `--pretty` for machine-readable output.

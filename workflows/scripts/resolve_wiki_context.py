@@ -16,6 +16,10 @@ sys.dont_write_bytecode = True
 from apply_wiki_layout import inventory as layout_inventory
 
 BOOL_KEYS = {"WIKI_STAGED_WRITES"}
+POSITIVE_INT_KEYS = {
+    "WIKI_TEXT_CHUNK_TARGET_BYTES",
+    "WIKI_TEXT_CHUNK_HARD_MAX_BYTES",
+}
 
 
 def parse_bool(value: str) -> bool:
@@ -25,6 +29,16 @@ def parse_bool(value: str) -> bool:
     if lowered == "false":
         return False
     raise ValueError(f"boolean value must be true or false, got: {value!r}")
+
+
+def parse_positive_int(key: str, value: str) -> int:
+    try:
+        parsed = int(value.strip())
+    except ValueError as exc:
+        raise ValueError(f"{key} must be a positive integer, got: {value!r}") from exc
+    if parsed <= 0:
+        raise ValueError(f"{key} must be a positive integer, got: {value!r}")
+    return parsed
 
 
 def parse_config(path: Path) -> dict[str, str]:
@@ -41,23 +55,49 @@ def parse_config(path: Path) -> dict[str, str]:
     return values
 
 
-def walk_config(source_cwd: Path, requested: set[str]) -> tuple[Path | None, dict[str, str]]:
-    relevant = requested - {"OBSIDIAN_VAULT_PATH"}
-    if not relevant:
-        return None, {}
+def config_home() -> Path:
+    return (
+        Path(os.environ.get("LOCALAPPDATA", ""))
+        if os.name == "nt"
+        else Path.home()
+    ).resolve()
+
+
+def available_profiles(base: Path) -> list[str]:
+    config_dir = base / ".obsidian-wiki"
+    if not config_dir.is_dir():
+        return []
+    return sorted(
+        path.name.removeprefix("config.")
+        for path in config_dir.glob("config.*")
+        if path.is_file() and path.name != "config"
+    )
+
+
+def resolve_config(source_cwd: Path, profile: str | None = None) -> tuple[Path | None, dict[str, str]]:
+    base = config_home()
+    if profile is not None:
+        if not profile or any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for character in profile):
+            raise ValueError(f"invalid vault profile name: {profile!r}")
+        named_config = base / ".obsidian-wiki" / f"config.{profile}"
+        if named_config.is_file():
+            return named_config, parse_config(named_config)
+        profiles = available_profiles(base)
+        suffix = f"; available profiles: {', '.join(profiles)}" if profiles else "; no named profiles found"
+        raise ValueError(f"named vault config does not exist: {named_config}{suffix}")
+
     current = source_cwd.resolve()
     home = Path.home().resolve()
     while True:
         candidate = current / ".env"
         if candidate.is_file():
             values = parse_config(candidate)
-            if relevant.intersection(values):
+            if "OBSIDIAN_VAULT_PATH" in values:
                 return candidate, values
         if current == current.parent or current == home:
             break
         current = current.parent
 
-    base = Path(os.environ.get("LOCALAPPDATA", "")) if os.name == "nt" else home
     global_config = base / ".obsidian-wiki" / "config"
     if global_config.is_file():
         return global_config, parse_config(global_config)
@@ -127,15 +167,33 @@ def main() -> int:
             })
             return 0
 
-        vault = canonical_path(str(supplied.get("vault_path", "")))
-        if not setup_mode and not vault.is_dir():
-            raise ValueError(f"vault does not exist or is not a directory: {vault}")
         requested = csv_set(args.requested_keys)
         optional_reads = csv_set(args.optional_reads)
-        config_path, config_values = walk_config(args.source_cwd, requested)
         overrides = supplied.get("overrides", {})
         if not isinstance(overrides, dict):
             raise ValueError("overrides must be a JSON object")
+        input_mode = str(supplied.get("mode", "config"))
+        if input_mode not in {"config", "interactive"}:
+            raise ValueError(f"unsupported vault input mode: {input_mode!r}")
+        profile_value = supplied.get("profile")
+        profile = str(profile_value) if profile_value is not None else None
+        config_path, config_values = resolve_config(args.source_cwd, profile)
+
+        if input_mode == "config":
+            if config_path is None:
+                raise ValueError("No config found. Run `wiki-setup` to initialize your wiki.")
+            raw_vault = config_values.get("OBSIDIAN_VAULT_PATH", "")
+            if not raw_vault.strip():
+                raise ValueError(f"OBSIDIAN_VAULT_PATH is empty in config: {config_path}")
+            vault = canonical_path(raw_vault)
+        else:
+            vault = canonical_path(str(supplied.get("vault_path", "")))
+            configured_vault = config_values.get("OBSIDIAN_VAULT_PATH")
+            if configured_vault is None or canonical_path(configured_vault) != vault:
+                config_path, config_values = None, {}
+
+        if not setup_mode and not vault.is_dir():
+            raise ValueError(f"vault does not exist or is not a directory: {vault}")
 
         values: dict[str, Any] = {}
         for key in requested:
@@ -144,7 +202,12 @@ def main() -> int:
                 continue
             raw = overrides.get(key, config_values.get(key))
             if raw is not None:
-                values[key] = parse_bool(str(raw)) if key in BOOL_KEYS else raw
+                if key in BOOL_KEYS:
+                    values[key] = parse_bool(str(raw))
+                elif key in POSITIVE_INT_KEYS:
+                    values[key] = parse_positive_int(key, str(raw))
+                else:
+                    values[key] = raw
 
         owner_path = vault / "AGENTS.md"
         owner_rules = owner_path.read_text(encoding="utf-8") if owner_path.is_file() else None
@@ -209,7 +272,7 @@ def main() -> int:
 
         context = {
             "version": 1, "generated_at": datetime.now(timezone.utc).isoformat(),
-            "mode": "interactive", "vault_path": str(vault),
+            "mode": input_mode, "vault_path": str(vault),
             "source_cwd": str(args.source_cwd.resolve()),
             "config_source": str(config_path) if config_path else None,
             "requested_values": values, "setup_mode": setup_mode,
