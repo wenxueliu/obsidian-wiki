@@ -21,12 +21,11 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from obsidian_wiki.layout import load_layout
+from obsidian_wiki.workflow_layout import LAYOUT_MARKER, iter_content_pages
 
-TRUST_LEDGER_RELATIVE_PATH = load_layout().trust_ledger_path()
+TRUST_LEDGER_RELATIVE_PATH = LAYOUT_MARKER.parent / "trust-ledger.json"
 TRUST_LEDGER_SCHEMA_VERSION = 1
 TRUST_REVIEW_METHOD = "manual-lineage-and-claim-coverage-v1"
-TRUST_SKIP_DIRS = load_layout().skip_dirs
 TRUST_RESERVED_STEMS = frozenset({"index", "log", "hot", "_insights"})
 ALLOWED_LIFECYCLES = frozenset({"draft", "reviewed", "verified", "disputed", "archived"})
 TRUST_REQUIRED_FIELD_ALLOWLIST = frozenset(
@@ -259,10 +258,7 @@ def _parse_confidence(
 def iter_trust_pages(vault: Path) -> list[Path]:
     """Return every non-reserved content page that must participate in trust review."""
     pages: list[Path] = []
-    for path in vault.rglob("*.md"):
-        rel = path.relative_to(vault)
-        if any(part in TRUST_SKIP_DIRS for part in rel.parts):
-            continue
+    for path in iter_content_pages(vault):
         if path.stem in TRUST_RESERVED_STEMS:
             continue
         pages.append(path)

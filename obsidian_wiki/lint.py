@@ -8,7 +8,7 @@ from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
-from obsidian_wiki.layout import load_layout
+from obsidian_wiki.workflow_layout import iter_content_pages
 from obsidian_wiki.trust import (
     ALLOWED_LIFECYCLES,
     TRUST_LEDGER_RELATIVE_PATH,
@@ -16,7 +16,6 @@ from obsidian_wiki.trust import (
     validate_trust_metadata,
 )
 
-SKIP_DIRS = load_layout().skip_dirs
 REQUIRED_FRONTMATTER = (
     "title",
     "category",
@@ -74,10 +73,7 @@ def _slug(text: str) -> str:
 
 
 def _iter_pages(vault: Path) -> list[Path]:
-    return [
-        path for path in vault.rglob("*.md")
-        if not any(part in SKIP_DIRS for part in path.relative_to(vault).parts)
-    ]
+    return list(iter_content_pages(vault))
 
 
 def _parse_frontmatter_values(frontmatter: str) -> dict[str, str]:

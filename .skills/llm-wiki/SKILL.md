@@ -52,7 +52,7 @@ The vault has two levels of structure: **categories** (what kind of knowledge) a
 
 ### Categories
 
-Organize pages into category directories as defined in `vault-layout.yaml` (or the built-in default):
+Organize pages using the active workflow layout recorded in `_meta/layout.json`. The default layout defines:
 
 | Category | Purpose | Example |
 |---|---|---|
@@ -63,7 +63,7 @@ Organize pages into category directories as defined in `vault-layout.yaml` (or t
 | `synthesis/` | Cross-cutting analysis across sources | `synthesis/scaling-laws-debate.md` |
 | `journal/` | Timestamped observations, session logs | `journal/2024-03-15.md` |
 
-**Custom layouts:** Run `python3 -c "from obsidian_wiki.layout import load_layout; print(load_layout().categories)"` for the actual category names. Nested subdirectories use dot-separated paths (e.g. `concepts.patterns` → `concepts/patterns/`). Browse available layouts with `obsidian-wiki setup --list-layouts`. The table above shows the built-in defaults.
+**Other layouts:** Browse bundled contracts with `obsidian-wiki setup --list-layouts`. Resolve the marker through `wiki-context` and use its frozen `routing.content_roots` and `routes`; never infer a layout from existing directories.
 
 ### Projects
 
@@ -88,7 +88,7 @@ $OBSIDIAN_VAULT_PATH/
 └── ...
 ```
 
-**Custom layouts:** The subdirectories under each project are defined by `project_subdirs` in the vault layout. Check the active layout with `python3 -c "from obsidian_wiki.layout import load_layout; print(load_layout().project_subdirs)"`. Defaults: `concepts`, `skills`, `references`.
+**Other layouts:** Project placement is defined by the active layout's `project_*` routes. The tree above describes the bundled `default` layout only.
 
 **When knowledge is project-specific** (a debugging technique that only applies to one codebase, a project-specific architecture decision), put it under `projects/<project-name>/<category>/`.
 
@@ -691,7 +691,6 @@ The wiki is configured through environment variables (see `.env.example`). The o
 
 - `OBSIDIAN_VAULT_PATH` — Where the wiki lives **(required)**
 - `OBSIDIAN_SOURCES_DIR` — Where raw source documents are
-- `OBSIDIAN_CATEGORIES` — Comma-separated list of categories
 - `WIKI_SKIP_PROJECTS` — Comma-separated substrings; any project dir whose name contains one is excluded from history ingest (scan + delta + manifest). See the "Project Scoping" step in the history-ingest skills.
 - `CLAUDE_HISTORY_PATH` — Where to find Claude conversation data
 - `CODEX_HISTORY_PATH` — Where to find Codex session data

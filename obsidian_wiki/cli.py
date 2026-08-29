@@ -16,12 +16,19 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
 
 from obsidian_wiki import __version__
-from obsidian_wiki.layout import VaultLayout, load_layout
+from obsidian_wiki.workflow_layout import (
+    LayoutContractError,
+    WorkflowLayout,
+    layouts_dir,
+    list_layouts,
+    load_layout,
+)
 from obsidian_wiki.validate import validate_vault_pages, print_report
 from obsidian_wiki.verify import (
     verify_completeness,
@@ -356,20 +363,38 @@ def ensure_global_writing_profile() -> Path:
     return target
 
 
-def scaffold_vault(vault_path: Path, layout: VaultLayout | None = None) -> bool:
+def scaffold_vault(vault_path: Path, layout: WorkflowLayout | None = None) -> bool:
     """Create the vault directory structure and special files if they don't exist yet.
 
     Idempotent: existing files/dirs are left untouched. Returns True if the vault
     directory itself had to be created (i.e. this is a brand new vault).
     """
     if layout is None:
-        layout = load_layout()
+        layout = load_layout("default")
 
     created = not vault_path.is_dir()
-    for name in layout.all_dirs:
-        (vault_path / name).mkdir(parents=True, exist_ok=True)
-    # .obsidian is Obsidian's own config dir — always created, not configurable
-    (vault_path / ".obsidian").mkdir(parents=True, exist_ok=True)
+    copier = workflows_dir() / "scripts" / "apply_wiki_layout.py"
+    with tempfile.TemporaryDirectory(prefix="obsidian-wiki-layout-") as output_dir:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(copier),
+                "apply",
+                "--layouts-dir",
+                str(layouts_dir()),
+                "--layout",
+                layout.name,
+                "--vault",
+                str(vault_path.expanduser().resolve()),
+                "--output-dir",
+                output_dir,
+            ],
+            capture_output=True,
+            text=True,
+        )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
+        raise LayoutContractError(f"could not apply workflow layout: {detail}")
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -777,28 +802,25 @@ def _maybe_configure_sync(vault_path: Path, remote_arg: str | None) -> bool:
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
-    from obsidian_wiki.layout import list_layouts, select_layout
-
     if args.list_layouts:
         layouts = list_layouts()
         if not layouts:
-            print("No layouts found in vault-layout/ directories.")
+            print("No workflow layouts found.")
         else:
             print("\nAvailable vault layouts:\n")
-            for name, (desc, path) in sorted(layouts.items()):
-                marker = " ← built-in" if "site-packages" in str(path) or "_data" in str(path) else ""
-                print(f"  {name:20s}  {desc}{marker}")
+            for name, layout in sorted(layouts.items()):
+                print(f"  {name:20s}  {layout.description} ← workflow")
             print(f"\nUse: obsidian-wiki setup --layout <name>")
         return 0
 
     if args.layout:
         try:
-            layout = select_layout(args.layout)
-        except FileNotFoundError as e:
+            layout = load_layout(args.layout)
+        except LayoutContractError as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
     else:
-        layout = None  # use default resolution
+        layout = load_layout("default")
 
     mode = "symlink" if (not _IS_WINDOWS and not args.copy) else "copy"
     print("\n╔══════════════════════════════════════════════════╗")
@@ -814,8 +836,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     else:
         vault_dir = Path(vault_path).expanduser()
         vault_created = scaffold_vault(vault_dir, layout=layout)
-        if layout:
-            print(f"   Layout: {args.layout}")
+        print(f"   Layout: {layout.name}")
         if vault_created:
             print(f"✅  Vault created at {vault_dir}")
         else:
@@ -1387,6 +1408,69 @@ def cmd_wiki_context_resolve(args: argparse.Namespace) -> int:
     ]
     if args.layouts_dir is not None:
         command.extend(["--layouts-dir", args.layouts_dir])
+    return subprocess.run(command, check=False).returncode
+
+
+def cmd_wiki_setup_contract_build(args: argparse.Namespace) -> int:
+    """Build the setup contract from bundled workflow resources."""
+    try:
+        root = workflows_dir()
+        script = root / "scripts" / "build_setup_contract.py"
+        templates = root / "templates" / "wiki-setup"
+        layouts = root / "layouts"
+        if not script.is_file():
+            raise FileNotFoundError(f"bundled setup contract builder is missing: {script}")
+        if not templates.is_dir():
+            raise FileNotFoundError(f"bundled setup templates are missing: {templates}")
+        if not layouts.is_dir():
+            raise FileNotFoundError(f"bundled workflow layouts are missing: {layouts}")
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    command = [
+        sys.executable,
+        str(script),
+        args.phase,
+        "--templates-dir",
+        str(templates),
+        "--layouts-dir",
+        str(layouts),
+        "--output-dir",
+        args.output_dir,
+    ]
+    return subprocess.run(command, check=False).returncode
+
+
+def cmd_wiki_layout_apply(args: argparse.Namespace) -> int:
+    """Apply one bundled workflow layout without depending on the caller's CWD."""
+    try:
+        root = workflows_dir()
+        script = root / "scripts" / "apply_wiki_layout.py"
+        layouts = root / "layouts"
+        if not script.is_file():
+            raise FileNotFoundError(f"bundled layout copier is missing: {script}")
+        if not layouts.is_dir():
+            raise FileNotFoundError(f"bundled workflow layouts are missing: {layouts}")
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    command = [
+        sys.executable,
+        str(script),
+        "apply",
+        "--layouts-dir",
+        str(layouts),
+        "--layout",
+        args.layout,
+        "--vault",
+        args.vault,
+        "--output-dir",
+        args.output_dir,
+    ]
+    if args.refresh_layout_marker:
+        command.append("--refresh-layout-marker")
     return subprocess.run(command, check=False).returncode
 
 
@@ -2237,6 +2321,28 @@ def build_parser() -> argparse.ArgumentParser:
     wcr.add_argument("--output-dir", required=True, help="artifact output directory")
     wcr.set_defaults(func=cmd_wiki_context_resolve)
 
+    wsc = sub.add_parser(
+        "wiki-setup-contract-build",
+        help="build setup contracts from bundled workflow templates and layouts",
+    )
+    wsc.add_argument("phase", choices=("core", "finalize"))
+    wsc.add_argument("--output-dir", required=True, help="artifact output directory")
+    wsc.set_defaults(func=cmd_wiki_setup_contract_build)
+
+    wla = sub.add_parser(
+        "wiki-layout-apply",
+        help="apply a bundled workflow layout independently of the current directory",
+    )
+    wla.add_argument("--layout", required=True, help="bundled workflow layout name")
+    wla.add_argument("--vault", required=True, help="absolute target vault path")
+    wla.add_argument("--output-dir", required=True, help="artifact output directory")
+    wla.add_argument(
+        "--refresh-layout-marker",
+        action="store_true",
+        help="refresh hashes for the same layout name; cannot switch layouts",
+    )
+    wla.set_defaults(func=cmd_wiki_layout_apply)
+
     wrr = sub.add_parser(
         "wiki-route-resolve",
         help="resolve one declared page type with the bundled deterministic router",
@@ -2563,7 +2669,7 @@ def _add_setup_args(sp: argparse.ArgumentParser) -> None:
     sp.add_argument(
         "--layout",
         metavar="NAME",
-        help="use a named layout from vault-layout/ (run with --list-layouts to see options)",
+        help="use a workflow layout (run with --list-layouts to see options)",
     )
     sp.add_argument(
         "--list-layouts",

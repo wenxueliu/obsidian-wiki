@@ -76,12 +76,13 @@ steps:
       用 setup contract 冻结的 layout inventory 验证用户选择，然后运行 workflow-local copier：
 
       ```bash
-      python3 .cac/ralph-flow/workflows/wiki/scripts/apply_wiki_layout.py apply \
-        --layouts-dir .cac/ralph-flow/workflows/wiki/layouts \
+      obsidian-wiki wiki-layout-apply \
         --layout "<approved-layout>" \
         --vault "<canonical-vault>" \
         --output-dir "{{artifacts_dir}}"
       ```
+
+      若 console script 不在 PATH，使用等价的 `python3 -m obsidian_wiki wiki-layout-apply ...`。该入口从安装包或源码 checkout 定位 copier 和 layouts，不依赖调用方 CWD，也不得退回 `.cac/...` 相对脚本路径。
 
       copier 递归复制 `layouts/<name>/vault/` 的多级目录和预制文件，并原子创建 `_meta/layout.json`，绑定 layout name/version、manifest/inventory/routing/prompt hashes；新 vault 创建全部内容，repair 只创建缺失项，现有文件始终 preserved，不删除 custom dirs。已有 marker 必须逐项匹配，否则停止，不能根据目录猜测或静默换 layout。若同名 layout 仅因发布包规则升级而 stale，必须在 approved plan 明确列出 routing diff 和影响，并额外传 `--refresh-layout-marker`；该参数只刷新同名 marker，不能切换 layout。切换 layout 涉及页面迁移，不属于普通 repair。`layout-apply-report.json` 必须与 approved layout inventory hash 一致且 `overwritten_files=[]`。若 QMD 已配置，只按获批范围验证/修复 collection：先确保 wiki/papers disjoint，并按契约安全编辑 index.yml 以排除 `_raw/**`（最好也排除 log.md）；不得使用不存在的 ignore flag，也不得对已有路径重复 collection add。
 

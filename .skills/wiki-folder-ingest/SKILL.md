@@ -22,7 +22,7 @@ paths and ensure Job/Packet-derived writes remain beneath
 ## Discover and create or resume a Job
 
 Apply the established skip-directory rules (`.git`, hidden directories, `node_modules`, build and
-cache directories, plus vault-layout skip dirs). Classify every remaining file without decoding it.
+cache directories, plus the active workflow layout's skip dirs). Classify every remaining file without decoding it.
 
 V1 supports only:
 

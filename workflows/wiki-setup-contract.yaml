@@ -14,17 +14,17 @@ steps:
       运行 workflow-local builder 的 `core` phase：
 
       ```bash
-      python3 .cac/ralph-flow/workflows/wiki/scripts/build_setup_contract.py core \
-        --templates-dir .cac/ralph-flow/workflows/wiki/templates/wiki-setup \
-        --layouts-dir .cac/ralph-flow/workflows/wiki/layouts \
+      obsidian-wiki wiki-setup-contract-build core \
         --output-dir "{{artifacts_dir}}"
       ```
 
-      模板是 authoring source of truth，位于 `.cac/ralph-flow/workflows/wiki/templates/wiki-setup/`：`WRITING.md`、`index.md`、`log.md`、`hot.md`、`manifest.json`、`app.json`、`appearance.json`。builder 必须验证 Markdown/JSON 结构、只允许预定义占位符，并将每个模板的 source path、完整正文、allowed placeholders 和 SHA-256 冻结到 core artifacts。
+      若 console script 不在 PATH，使用等价的 `python3 -m obsidian_wiki wiki-setup-contract-build core ...`。该入口从安装包或源码 checkout 定位 workflow scripts、templates 和 layouts，不依赖调用方 CWD，也不得退回 `.cac/...` 相对路径。
+
+      模板是 authoring source of truth，位于随包发布的 `workflows/templates/wiki-setup/`：`WRITING.md`、`index.md`、`log.md`、`hot.md`、`manifest.json`、`app.json`、`appearance.json`。builder 必须验证 Markdown/JSON 结构、只允许预定义占位符，并将每个模板的 source path、完整正文、allowed placeholders 和 SHA-256 冻结到 core artifacts。
 
       允许的动态值仅为 `TIMESTAMP`、`VAULT_PATH`、`CATEGORY_LIST`、`INDEX_SECTIONS`。新建文件从冻结模板渲染；repair 只允许 minimal repair，保留 owner frontmatter、历史、manifest data 和未知 JSON keys。WRITING.md 只在缺失时创建，永不覆盖。
 
-      同时扫描 `.cac/ralph-flow/workflows/wiki/layouts/<name>/layout.json`、`routing.json`、`routing.md` 和对应 `vault/` 树，冻结每个 layout 的多级目录、预制文件 hash、categories、路由规则/分类提示及 inventory hash。`routing.json` 只允许安全相对模板和 allowlisted placeholders，所有 route 必须位于 content_roots；`routing.md` 是 layout-specific 分类提示，不能授权路径。layout 必须是 missing-only，拒绝 symlink、路径逃逸、超限文件和 index/log/hot/manifest/app/appearance 等核心保留目标。
+      同时扫描随包发布的 `workflows/layouts/<name>/layout.json`、`routing.json`、`routing.md` 和对应 `vault/` 树，冻结每个 layout 的多级目录、预制文件 hash、categories、路由规则/分类提示及 inventory hash。`routing.json` 只允许安全相对模板和 allowlisted placeholders，所有 route 必须位于 content_roots；`routing.md` 是 layout-specific 分类提示，不能授权路径。layout 必须是 missing-only，拒绝 symlink、路径逃逸、超限文件和 index/log/hot/manifest/app/appearance 等核心保留目标。
     input: 父 workflow 的 non-secret invocation metadata（仅用于 provenance，不改变模板）
     output: setup-core-contract.json + setup-core-contract.md
     check_voting:
@@ -42,11 +42,11 @@ steps:
       只在 core contract 已验证后运行 builder 的 `finalize` phase：
 
       ```bash
-      python3 .cac/ralph-flow/workflows/wiki/scripts/build_setup_contract.py finalize \
-        --templates-dir .cac/ralph-flow/workflows/wiki/templates/wiki-setup \
-        --layouts-dir .cac/ralph-flow/workflows/wiki/layouts \
+      obsidian-wiki wiki-setup-contract-build finalize \
         --output-dir "{{artifacts_dir}}"
       ```
+
+      若 console script 不在 PATH，使用等价的 `python3 -m obsidian_wiki wiki-setup-contract-build finalize ...`；资源解析规则与 core phase 相同。
 
       `integrations.json` 是可选集成与 handoff 的 authoring source，必须冻结 QMD `_raw/**` exclusion/disjoint/update 规则、Stop hook 的 Unix/Windows path/URL/JSON merge/sentinel/uninstall/单次开关、Git sync CLI/fallback/private/status source、doctor/等价 required checks、Dataview/Graph Analysis/Templater/Obsidian Git 四个手动插件，以及 Open Vault、status、ingest、Claude history、Codex history、再次 status 六个 next steps。
 

@@ -13,6 +13,18 @@ After resolving, skills also read `$OBSIDIAN_VAULT_PATH/AGENTS.md` if it exists.
 
 Both `~/.obsidian-wiki/config` and `.env` use the same `KEY=value` format. Start from [`.env.example`](../.env.example).
 
+## Vault layout
+
+Vault layout is not an environment setting. Setup selects a bundled contract from
+`workflows/layouts/<name>/` and records its identity and integrity hashes in
+`$OBSIDIAN_VAULT_PATH/_meta/layout.json`. That marker travels with the vault and is the source of
+truth for its content roots, system directories, and page routes. Subsequent workflows reload the
+named bundled contract and fail closed when the recorded hashes are stale.
+
+Use `obsidian-wiki setup --list-layouts` to inspect available layouts and select one during setup.
+Changing an existing vault to another layout requires a content-aware migration; editing `.env`,
+renaming directories, or changing the marker by hand is not a supported switch mechanism.
+
 ## Global wiki writing profile
 
 Setup creates `~/.obsidian-wiki/WRITING.md` on POSIX systems, or
@@ -47,10 +59,8 @@ The deterministic `lint`, `trust-record`, and `trust-check` commands use the sam
 | `OBSIDIAN_VAULT_PATH` | **Required.** Absolute path to your vault | — |
 | `OBSIDIAN_WIKI_REPO` | Where this repo is cloned (set by setup; used for skill/asset lookups) | *auto* |
 | `OBSIDIAN_SOURCES_DIR` | Comma-separated source directories to ingest documents from | *(empty)* |
-| `OBSIDIAN_CATEGORIES` | Wiki page categories (directories created in the vault) | `concepts,entities,skills,references,synthesis,journal` |
 | `OBSIDIAN_MAX_PAGES_PER_INGEST` | Max pages created or updated per ingest | `15` |
 | `OBSIDIAN_LINK_FORMAT` | `wikilink` → `[[concepts/foo]]`, or `markdown` → `` [text](path.md) ``. Affects future writes only — existing content is never migrated | `wikilink` |
-| `OBSIDIAN_RAW_DIR` | Staging directory inside the vault for unprocessed drafts | `_raw` |
 | `LINT_SCHEDULE` | Health-check frequency: `daily` \| `weekly` \| `manual` | `weekly` |
 
 Local git repo clones work in `OBSIDIAN_SOURCES_DIR` (public or private, any host). Clone locally, then add the path. Repo directories are auto-detected via a `.git` folder and enumerated with `git ls-files`, so whatever the repo's own `.gitignore` excludes — `node_modules`, build output, venvs, secrets — is skipped automatically rather than relying on a hardcoded skip-list.
@@ -177,7 +187,7 @@ To promote everything waiting there:
 /wiki-folder-ingest promote my raw pages
 ```
 
-The directory is created automatically by `wiki-setup`. The path is configurable via `OBSIDIAN_RAW_DIR`.
+The directory is created automatically by the selected workflow layout during `wiki-setup`.
 
 ### Browser capture extension
 

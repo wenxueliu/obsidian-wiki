@@ -75,25 +75,9 @@ Before creating directories, determine which layout to use:
 # List available layouts
 obsidian-wiki setup --list-layouts
 
-# Or from Python:
-python3 -c "from obsidian_wiki.layout import list_layouts; [print(f'{k}: {v[0]}') for k,v in list_layouts().items()]"
 ```
 
-Ask the user which layout they prefer (or use the default). Then get the directory list for the chosen layout:
-
-```bash
-python3 -c "from obsidian_wiki.layout import load_layout; print(' '.join(load_layout().all_dirs))"
-```
-
-Create all directories (the layout already includes nested subdirectories like `concepts/patterns/`):
-
-```bash
-DIRS=$(python3 -c "from obsidian_wiki.layout import load_layout; print(' '.join(load_layout().all_dirs))")
-for d in $DIRS; do mkdir -p "$OBSIDIAN_VAULT_PATH/$d"; done
-mkdir -p "$OBSIDIAN_VAULT_PATH/.obsidian"
-```
-
-If the layout module is unavailable, fall back to the default listed in `vault-layout/default.yaml` at the repo root. The CLI `obsidian-wiki setup --layout <name>` automates all of this.
+Ask the user which layout they prefer (or use `default`). Apply it through the workflow setup contract or `obsidian-wiki setup --layout <name>`; both use `workflows/layouts/<name>/` with missing-only copy semantics and create `_meta/layout.json`. Never select a layout through `.env` or infer it from existing directories.
 
 **Directory purposes:**
 - `.obsidian/` — Obsidian's own config. Creates vault recognition.
@@ -216,7 +200,7 @@ Tell the user about these recommended community plugins (they install manually):
 ## Step 6: Verify Setup
 
 Run a quick sanity check:
-- [ ] Vault directory exists with all directories from `vault-layout.yaml` (default: `concepts/`, `entities/`, `skills/`, `references/`, `synthesis/`, `journal/`, `projects/`, plus system dirs `_archives/`, `_raw/`, `_meta/`, `_readouts/`)
+- [ ] Vault directory matches the selected workflow layout and `_meta/layout.json` hashes validate
 - [ ] `index.md` exists at vault root
 - [ ] `log.md` exists at vault root
 - [ ] `hot.md` exists at vault root

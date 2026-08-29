@@ -38,7 +38,6 @@ import os
 import subprocess
 from pathlib import Path
 
-from obsidian_wiki.layout import load_layout
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -66,7 +65,7 @@ _GENERAL_SKIP_DIRS = frozenset(
     "node_modules .git __pycache__ .pytest_cache dist build target "
     ".venv venv env .mypy_cache .ruff_cache coverage .tox".split()
 )
-SKIP_DIRS = _GENERAL_SKIP_DIRS | load_layout().skip_dirs
+SKIP_DIRS = _GENERAL_SKIP_DIRS
 
 
 def _classify(path: Path) -> str:

@@ -28,7 +28,7 @@ Trigger when invoked as `/wiki-capture --quick`, by "quick capture" / "capture t
 
 **Speed contract:** Inline only. No subagents. No QMD. No manifest/`index.md`/`log.md`/`hot.md` writes. Target: <60 seconds. Promotion to full wiki pages happens later via `/wiki-folder-ingest`.
 
-1. **Resolve config** (Config Resolution Protocol in `llm-wiki/SKILL.md`): get `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_RAW_DIR` (default: `$OBSIDIAN_VAULT_PATH/_raw`). Ensure `$OBSIDIAN_RAW_DIR` exists; create it if not.
+1. **Resolve config and layout** (Config Resolution Protocol in `llm-wiki/SKILL.md`): get `OBSIDIAN_VAULT_PATH`, validate its active workflow layout, and use the framework `_raw/` staging directory. Ensure it exists; create it if missing.
 
    Capture does not independently reinterpret validator schema inputs. When `OBSIDIAN_ALLOWED_LIFECYCLES`, `OBSIDIAN_ALLOWED_RELATIONSHIP_TYPES`, `OBSIDIAN_REQUIRED_TRUST_FIELDS`, or `OBSIDIAN_SCHEMA_SOURCE` is present, preserve it for the downstream lint/trust consumer: CLI values take precedence over environment/config values, which take precedence over framework defaults, and explicit blank or whitespace-only values fail closed. Omit a variable to use defaults.
 
@@ -43,7 +43,7 @@ Trigger when invoked as `/wiki-capture --quick`, by "quick capture" / "capture t
 
 5. **Infer project context** from repo names, file paths, framework mentions, error messages. Use the most specific name you can reliably infer; else `null`.
 
-6. **Write raw files** — for each cluster, write `$OBSIDIAN_RAW_DIR/<ISO-date>-<slug>.md`. Read `references/RAW-FORMAT.md` for the full frontmatter spec, finding-block body structure, and provenance/confidence calibration. Per-cluster fields that vary: `title`, `tags` (2–4 from taxonomy), `summary` (≤200 chars), `project` (inferred or `null`), `base_confidence` (0.6 discussed → 0.75 fix applied → 0.9 test confirmed), `provenance.extracted`/`provenance.inferred` (sum to 1.0), `lifecycle_changed` (today), `sources` (`"<project> session (<YYYY-MM-DD>)"`).
+6. **Write raw files** — for each cluster, write `$OBSIDIAN_VAULT_PATH/_raw/<ISO-date>-<slug>.md`. Read `references/RAW-FORMAT.md` for the full frontmatter spec, finding-block body structure, and provenance/confidence calibration. Per-cluster fields that vary: `title`, `tags` (2–4 from taxonomy), `summary` (≤200 chars), `project` (inferred or `null`), `base_confidence` (0.6 discussed → 0.75 fix applied → 0.9 test confirmed), `provenance.extracted`/`provenance.inferred` (sum to 1.0), `lifecycle_changed` (today), `sources` (`"<project> session (<YYYY-MM-DD>)"`).
 
 7. **Confirm** — list staged files and tell the user to run `/wiki-folder-ingest` to promote them:
    ```
@@ -136,7 +136,7 @@ Assign one of five types — this determines the target folder and tone:
 | `decision` | A strategic, architectural, or design choice and its rationale | `synthesis/` |
 | `session` | A complete discussion summary when the conversation spans multiple topics | `journal/` |
 
-**Custom layouts:** The folder names above are the built-in defaults. If the vault uses a custom layout, resolve the active categories with `python3 -c "from obsidian_wiki.layout import load_layout; print(load_layout().flat_categories)"`. Nested subdirectories (e.g. `skills/how-to/`) appear as dot-separated paths in the full `categories` list; write pages to the most specific matching directory.
+**Other layouts:** The folder names above are the bundled defaults. Resolve `_meta/layout.json` through `wiki-context`, classify with the frozen routing prompt, and validate the selected route with `resolve_wiki_route.py`.
 
 If the content clearly belongs to a specific project (detected from context or user mention), place it under `projects/<project-name>/<category>/` instead.
 

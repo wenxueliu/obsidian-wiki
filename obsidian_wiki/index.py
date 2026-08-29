@@ -25,7 +25,7 @@ import re
 from pathlib import Path
 from typing import Any, Iterator
 
-from obsidian_wiki.layout import load_layout
+from obsidian_wiki.workflow_layout import iter_content_pages
 
 # ── Shared parsing (consolidated from graph.py / graphrag.py / graph_analysis.py) ──
 
@@ -42,9 +42,6 @@ _BLOCK_SCALAR_RE = re.compile(r"^[>|][+-]?\d*$")
 INDEX_VERSION = 1
 INDEX_FILENAME = "frontmatter-index.json"
 
-SKIP_DIRS = load_layout().skip_dirs
-
-
 def _slug(s: str) -> str:
     return s.strip().lower().replace(" ", "-")
 
@@ -54,11 +51,8 @@ def _index_path(vault: Path) -> Path:
 
 
 def iter_pages(vault: Path) -> Iterator[Path]:
-    """Yield vault ``.md`` page paths, skipping layout-configured dirs."""
-    for p in vault.rglob("*.md"):
-        if any(part in SKIP_DIRS for part in p.relative_to(vault).parts):
-            continue
-        yield p
+    """Yield pages declared live by the vault's workflow layout."""
+    yield from iter_content_pages(vault)
 
 
 def _extract_scalar(front: str, key: str) -> str:

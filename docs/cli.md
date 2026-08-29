@@ -165,6 +165,8 @@ Available for automation, scripting, and debugging. Skills call some of these in
 | `text-ingest-packet-check <job> <packet>` | Validate one Packet's Job/source/unit/path binding before page integration |
 | `text-ingest-unit-advance <job> <packet>` | Atomically advance one validated direct or staged unit after page validation |
 | `wiki-context-resolve` | Run the bundled workflow context resolver without depending on the current directory |
+| `wiki-setup-contract-build <phase>` | Build the setup contract from bundled templates and layouts |
+| `wiki-layout-apply` | Apply a bundled workflow layout without depending on the current directory |
 | `wiki-route-resolve` | Resolve a declared page type through the bundled deterministic layout router |
 | `ast-extract <path>` | Extract classes, functions, and imports from code — no LLM, no API calls |
 
@@ -183,6 +185,8 @@ obsidian-wiki text-ingest-status ~/brain/_meta/ingest-jobs/<job-id> --pretty
 obsidian-wiki text-ingest-packet-check ~/brain/_meta/ingest-jobs/<job-id> packets/<packet>.json
 obsidian-wiki text-ingest-unit-advance ~/brain/_meta/ingest-jobs/<job-id> packets/<packet>.json \
   --mode staged --artifact _staging/concepts/example.md
+obsidian-wiki wiki-setup-contract-build core --output-dir /tmp/wiki-setup
+obsidian-wiki wiki-layout-apply --layout default --vault ~/brain --output-dir /tmp/wiki-setup
 obsidian-wiki wiki-route-resolve --routing page-contract.json \
   --page-type concept --slug example
 obsidian-wiki ast-extract ./src --pretty
@@ -201,8 +205,9 @@ before atomically changing exactly one unit; staged mode requires at least one `
 never increments the integrated count. These commands keep deterministic coordination in code
 while extraction remains isolated per document/range and Packet integration remains serial.
 
-`wiki-context-resolve` and `wiki-route-resolve` locate their helper scripts inside the installed
-package or source checkout. Workflows therefore do not depend on a `.cac/...` path or the caller's
-current working directory.
+`wiki-context-resolve`, `wiki-setup-contract-build`, `wiki-layout-apply`, and
+`wiki-route-resolve` locate their helper scripts and bundled resources inside the installed package
+or source checkout. Workflows therefore do not depend on a `.cac/...` path or the caller's current
+working directory.
 
 Most commands accept `--json` and/or `--pretty` for machine-readable output.

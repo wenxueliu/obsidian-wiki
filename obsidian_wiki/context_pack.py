@@ -13,9 +13,7 @@ from typing import Any, Iterable
 DEFAULT_BUDGET = 8_000
 MIN_BUDGET = 256
 MAX_BUDGET = 100_000
-from obsidian_wiki.layout import load_layout
-
-SKIP_DIRS = load_layout().skip_dirs
+from obsidian_wiki.workflow_layout import iter_content_pages
 SKIP_FILES = frozenset({"AGENTS.md", "CLAUDE.md", "GEMINI.md", "hot.md", "index.md", "log.md", "_insights.md"})
 BLOCKED_PUBLIC_TAGS = frozenset({"visibility/internal", "visibility/pii"})
 TIER_ORDER = {"core": 0, "supporting": 1, "peripheral": 2}
@@ -191,9 +189,8 @@ def load_pages(vault: Path, *, public_only: bool = False) -> list[PageRecord]:
     if not vault.is_dir():
         raise ContextError("vault_not_found", f"vault not found: {vault}")
     pages: list[PageRecord] = []
-    for path in sorted(vault.rglob("*.md")):
-        relative = path.relative_to(vault)
-        if path.name in SKIP_FILES or any(part in SKIP_DIRS for part in relative.parts):
+    for path in sorted(iter_content_pages(vault)):
+        if path.name in SKIP_FILES:
             continue
         page = _page_from_path(path, vault)
         if not public_only or not BLOCKED_PUBLIC_TAGS.intersection(page.tags):

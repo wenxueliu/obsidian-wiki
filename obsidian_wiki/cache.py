@@ -36,7 +36,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, TypedDict
 
-from obsidian_wiki.layout import load_layout
+from obsidian_wiki.workflow_layout import iter_content_pages
 
 
 class SourceEntry(TypedDict, total=False):
@@ -371,15 +371,13 @@ def update_completed_text_source(
     stats = manifest.get("stats") if isinstance(manifest.get("stats"), dict) else {}
     stats["total_sources_ingested"] = sum(1 for _ in _iter_entries(sources))
 
-    layout = load_layout()
     total_pages = 0
     if vault.exists():
-        for page in vault.rglob("*.md"):
+        for page in iter_content_pages(vault):
             relative = page.relative_to(vault)
-            if any(part in layout.skip_dirs for part in relative.parts):
-                continue
             if len(relative.parts) == 1 and (
-                page.stem in layout.reserved_stems or page.name == "AGENTS.md"
+                page.stem in {"index", "log", "hot", "_insights"}
+                or page.name == "AGENTS.md"
             ):
                 continue
             total_pages += 1

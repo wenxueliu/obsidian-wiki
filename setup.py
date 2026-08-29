@@ -151,21 +151,20 @@ def run_owiki(*args):
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="obsidian-wiki setup")
-    parser.add_argument("--layout", metavar="NAME", help="use a named layout from vault-layout/")
+    parser.add_argument("--layout", metavar="NAME", help="use a workflow layout")
     parser.add_argument("--list-layouts", action="store_true", help="list available layouts and exit")
     args = parser.parse_args()
 
     if args.list_layouts:
         sys.path.insert(0, str(SCRIPT_DIR))
-        from obsidian_wiki.layout import list_layouts as _list_layouts
+        from obsidian_wiki.workflow_layout import list_layouts as _list_layouts
         layouts = _list_layouts()
         if not layouts:
-            print("No layouts found in vault-layout/ directories.")
+            print("No workflow layouts found.")
         else:
             print("\nAvailable vault layouts:\n")
-            for name, (desc, path) in sorted(layouts.items()):
-                marker = " ← built-in" if "site-packages" in str(path) or "_data" in str(path) else ""
-                print(f"  {name:20s}  {desc}{marker}")
+            for name, layout in sorted(layouts.items()):
+                print(f"  {name:20s}  {layout.description} ← workflow")
             print(f"\nUse: python3 setup.py --layout <name>")
         return
 
