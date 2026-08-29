@@ -10,7 +10,7 @@ adversarial_check:
   system_prompt: |
     你是 Wiki Setup 的安全审计者。批准前不得写文件；批准后不得覆盖 owner 现有配置、Writing Profile、vault 内容或 hooks。
     网络、Git sync、全局 hook 等可选外部变更只能执行 setup plan 中明确获批的项目。
-    每个 step 的 do 只生成该 step 声明的状态或 artifact；所有结构、路径、hash、权限、安全边界、完整性和副作用判断都在 check/check_voting 中完成。
+    每个 step 的 do 只生成该 step 声明的状态或 artifact；check 只验收本步目标、preserve 边界和必要副作用，不重复全量推理。
 
 steps:
   - id: resolve_existing_context
@@ -47,8 +47,7 @@ steps:
       在 `setup-plan.md` 列出 exact targets、每项 create/preserve/minimal-repair、原子写策略、required checks，以及所有需要 home/network/git/QMD 变更的 optional approvals。现有 `.env`、WRITING.md、core files、hooks、custom dirs 和 owner data 默认 preserve；此步骤零写入。
     input: wiki-context.json + setup-contract.json/md + 用户的初始化/修复请求与配置选择
     output: setup-plan.md（exact paths、defaults、create/preserve/repair、optional approvals、contract version/hash）
-    check: |
-      对照 context、contract 与磁盘事实复核：vault path 为绝对路径，layout 可加载，sources/history/QMD/staged/token 设置明确，所有现有文件有 preserve/minimal-repair 策略，可选 hook/Git/network 动作均有明确选择。确认尚未写本地或外部状态。
+    check: 核对 plan 的绝对 vault path、layout、必需配置、preserve/repair 策略和可选动作选择均已明确；确认零写入
     on_pass: approve_setup
     on_fail: plan_setup
     max_fail_count: 3
@@ -61,8 +60,7 @@ steps:
       用户运行 /ralphflow-continue 表示批准当前 binding；如修改选择，先更新 plan/binding 再重新等待。拒绝则取消 workflow。批准前不得创建目录、配置、QMD collection、hook、Git repo 或 remote。准备好后输出 <promise>done</promise>。
     input: setup-plan.md + 用户批准/修改/拒绝
     output: approval-request.md + approved-setup.json
-    check: |
-      确认 plan/contract hash、vault/config paths 与用户选择精确绑定，optional actions 未被默认扩大；用户已经过人工门明确批准，且此前本地和外部状态零变更。
+    check: 核对 approved binding 的 plan/contract hash、targets 和 optional actions 与用户明确批准一致；确认批准前零变更
     on_pass: write_config
     on_fail: approve_setup
     max_fail_count: 3
@@ -75,10 +73,7 @@ steps:
       写 `config-report.md`，记录 target、created/preserved/repaired、effective non-secret values 和秘密值的 configured/unconfigured 状态。
     input: approved-setup.json + setup-contract.json/md + wiki-context.json + 现有 config（如有）
     output: config + config-report.md
-    check_voting:
-      - check: 对照 approved binding 核对唯一 config target、canonical absolute vault path、defaults/overrides、boolean/number 类型与 required keys
-      - check: 对 repair diff 核对未知字段、注释和秘密值均保留，report 不含秘密明文，写入使用 sibling temp 和原子替换
-      - check: 文件系统审计确认本步骤只改变 approved config target 和 config-report.md，未创建 vault/layout/core/hook/Git/QMD 状态
+    check: 解析目标 config，核对 approved path、required typed values 和 report；repair 时确认未知字段、注释和秘密值保留，且未改变其他 setup 状态
     on_pass: initialize_writing_profile
     on_fail: write_config
     max_fail_count: 4
@@ -91,10 +86,7 @@ steps:
       写 `writing-profile-report.md`，记录 target 与 created/preserved 状态。
     input: approved-setup.json + setup-contract.json/md + config-report.md + 现有 WRITING.md（如有）
     output: WRITING.md（仅缺失时）+ writing-profile-report.md
-    check_voting:
-      - check: 新建内容与冻结模板逐字一致；已有目标的 bytes、mtime 和权限未改变
-      - check: target 使用契约声明的平台路径，report 状态与磁盘事实一致且不包含额外 owner 内容
-      - check: 文件系统审计确认本步骤只可能创建 WRITING.md 并写 report，未修改 config/vault/hook/Git/QMD 状态
+    check: 核对平台 target 与 report；新建时内容匹配冻结模板，已存在时保持原文；确认未改变其他 setup 状态
     on_pass: apply_layout
     on_fail: initialize_writing_profile
     max_fail_count: 3
@@ -116,10 +108,7 @@ steps:
       copier 按 missing-only policy 生成 layout 目录、预制文件、`_meta/layout.json` 和 `layout-apply-report.json`。
     input: approved-setup.json + setup-contract.json/md + config-report.md + canonical vault
     output: vault layout tree + _meta/layout.json + layout-apply-report.json
-    check_voting:
-      - check: 入口从安装包或源码 checkout 定位 copier/layouts，不依赖调用方 CWD 或 `.cac/...`；vault path 为 approved canonical absolute path且无 path escape/symlink target
-      - check: 从 frozen inventory 独立重算 manifest/inventory/routing/prompt/file hashes，核对 marker name/version/hashes、全部缺失项和 report，overwritten_files 为空
-      - check: 现有文件、custom dirs 和不同 layout marker 未被覆盖、删除或静默切换；refresh 仅作用于 approved 的同名 layout contract
+    check: 解析 layout marker/report，核对 approved vault、layout name/version 和 contract hashes，确认 required inventory 存在、overwritten_files 为空，且无 path escape 或未批准 layout 切换
     on_pass: initialize_core
     on_fail: apply_layout
     max_fail_count: 4
@@ -132,10 +121,7 @@ steps:
       缺失文件按模板创建；repair 对现有内容做 minimal patch，保留 pages、manifest/log/index/hot 历史、owner frontmatter 和未知 Obsidian JSON keys。使用 sibling temp 原子替换，写 `core-files-report.md` 记录逐文件 created/preserved/repaired、diff 摘要和 contract hash。
     input: approved-setup.json + setup-contract.json/md + config-report.md + writing-profile-report.md + layout-apply-report.json + 现有 core files
     output: 完整 core files/.obsidian config + core-files-report.md
-    check_voting:
-      - check: 逐字核对新建文件与 contract template，确认 manifest newline、INIT/category/vault、timezone-aware timestamp 和 app/appearance 的类型和值准确
-      - check: 对 repair diff 逐项审计，确认 owner fields、历史内容、manifest 与未知 Obsidian settings 未被覆盖或删除
-      - check: 确认 atomic writes、JSON parse、Markdown frontmatter/headings 有效，除 approved targets 外没有文件变化
+    check: 核对 report 中的 approved core targets；确认 JSON 可解析、Markdown 具备必需 frontmatter/headings，新建文件包含契约动态值，repair 保留 owner 字段、历史和未知 settings
     on_pass: configure_stop_hook
     on_fail: initialize_core
     max_fail_count: 4
@@ -148,10 +134,7 @@ steps:
       写 `stop-hook-report.md`，记录 installed/skipped/failed、目标路径、command、sentinel、卸载方式和 HIVEMIND_CAPTURE 单次开关。
     input: approved-setup.json + setup-contract.json/md + 现有 hook/settings 状态
     output: Stop hook 配置（如获批）+ stop-hook-report.md
-    check_voting:
-      - check: 对照 approval 与平台 contract 核对 script source/hash、settings target、Stop command、JSON parse 和 sentinel 行为
-      - check: 原有 settings/hooks 与 tracked project registration 均保留，无 duplicate entry；未获批时磁盘与网络状态未改变
-      - check: report 的 installed/skipped/failed、uninstall 和 single-session switch 与最终状态一致且不含秘密
+    check: 对照 approval 核对 report 与最终 Stop hook entry；installed 时 command/sentinel 正确且保留旧 hooks，skipped 时状态未改变
     on_pass: configure_git_sync
     on_fail: configure_stop_hook
     max_fail_count: 3
@@ -164,10 +147,7 @@ steps:
       写 `git-sync-report.md`，记录 configured/skipped/failed、vault root、remote、所用入口和后续 sync 命令；秘密仅记录 configured/unconfigured。
     input: approved-setup.json + setup-contract.json/md + canonical vault + 现有 Git 状态
     output: Vault Git sync 配置（如获批）+ git-sync-report.md
-    check_voting:
-      - check: 对照 approval 核对 canonical vault、准确 remote URL、首选/fallback 入口和 private/public 权限边界，无未授权 repo 或 remote
-      - check: 独立读取 vault Git 状态核对 repo root、origin 与 report；未获批时 Git 状态未改变
-      - check: report 不泄露 credential/token，并包含准确的后续 sync 与可逆说明
+    check: 对照 approval 核对 report、vault Git root 和 origin；configured 时 remote 精确且无 credential 泄露，skipped 时 Git 状态未改变
     on_pass: configure_qmd_collection
     on_fail: configure_git_sync
     max_fail_count: 3
@@ -180,10 +160,7 @@ steps:
       写 `qmd-collection-report.md`，记录 configured/skipped/failed、collection names、paths、patterns 和 exclusions。
     input: approved-setup.json + setup-contract.json/md + canonical vault + 现有 QMD config
     output: QMD collection 配置（如获批）+ qmd-collection-report.md
-    check_voting:
-      - check: 对照 approval/contract 核对 collection names、canonical paths、patterns 与 `_raw/**` exclusion，wiki/papers collections disjoint，未使用不存在的 ignore flag
-      - check: 独立解析 QMD config，确认没有 duplicate collection、path escape 或对未获批 collection 的修改
-      - check: report 与最终配置一致；未批准、未配置或 CLI 不可用时状态和零变更声明准确
+    check: 对照 approval 解析 QMD config/report；configured 时确认 canonical paths、`_raw/**` exclusion、wiki/papers disjoint 且无 duplicate，skipped 时 QMD 配置未改变
     on_pass: refresh_qmd_index
     on_fail: configure_qmd_collection
     max_fail_count: 3
@@ -196,10 +173,7 @@ steps:
       写 `qmd-refresh-report.md`，记录 updated/skipped/failed、命令结果与 collection。
     input: approved-setup.json + setup-contract.json/md + qmd-collection-report.md
     output: QMD index refresh（如获批）+ qmd-refresh-report.md
-    check_voting:
-      - check: 刷新仅在 approval、local CLI、collection disjoint 与 `_raw/**` exclusion 全部成立时发生；否则 QMD index 未改变
-      - check: command、collection 和退出状态与 report 一致，失败未回滚或破坏 vault/config/layout/core 状态
-      - check: 文件系统审计确认本步骤只改变获批 QMD index/cache 与 report，没有其他外部变更
+    check: 核对 approval、collection guard 与 refresh report 的 command/exit status；updated 时只改变目标 QMD index/cache，skipped/failed 时未损坏 setup 已生成状态
     on_pass: render_setup_completion
     on_fail: refresh_qmd_index
     max_fail_count: 3
@@ -212,10 +186,7 @@ steps:
       当输入 reports 均为 pass/skipped 时输出 `<promise>done</promise>`；否则在 completion 中列出失败及所属 step。
     input: setup-contract.json/md + approved-setup.json + config/layout/core/optional reports + 最终 config/vault
     output: setup-completion.md
-    check_voting:
-      - check: 独立运行 `obsidian-wiki doctor` 或等价只读检查，核对 canonical vault、active layout/system dirs、core templates/JSON、absolute config、source readability、_staging 与 Writing Profile preservation
-      - check: 将最终 filesystem/config/remotes/hooks/QMD 与 approved plan、contract hash 和每份 report 对账，确认无遗漏、越权或错误的 pass/skipped/failed 状态
-      - check: completion 含四个插件用途与六个 next steps；任一 required check 或获批动作失败时没有输出完成 promise
+    check: 仅对账 approved plan 与各 step report，确认 required 状态均为 pass、optional 状态如实、completion 包含 plugins/next steps；有 required failure 时不得输出完成 promise
     on_pass: done
     on_fail: plan_setup
     max_fail_count: 4

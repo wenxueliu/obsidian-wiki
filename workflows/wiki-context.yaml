@@ -8,8 +8,8 @@ manual_step:
 adversarial_check:
   timeout_ms: 3600000
   system_prompt: |
-    你是 Wiki Context 的只读审计者。必须独立检查输入、文件系统和 artifacts，不得调用 context 生成脚本作为验证方法，不得修改 vault 或执行后续业务流程。
-    每个 step 的 do 只生成声明的 artifact；所有路径、配置、hash、安全边界和副作用判断都在 check/check_voting 中完成。
+    你是 Wiki Context 的只读审计者。只核对 check 列出的 artifacts 和关键磁盘事实，不得调用 context 生成脚本，不得修改 vault 或执行后续流程。
+    每个 step 的 do 只生成声明的 artifact；check 只验收本步的必要不变量，不重复生成器已完成的全量扫描。
 
 steps:
   - id: collect_vault
@@ -24,10 +24,7 @@ steps:
       将结果写为 `{"mode":"interactive","vault_path":"<expanded path>","overrides":{...}}`，展示给用户后等待 `/ralphflow-continue`；准备好后输出 `<promise>done</promise>`。
     input: 调用方 invocation、run_condition（如有）、requested_keys 和用户输入
     output: vault-input.json
-    check_voting:
-      - check: mode=skipped 时 reason/evidence 与父报告一致且没有交互；mode=interactive 时 vault_path 为用户批准的展开后绝对路径、不是 `@name`，overrides 仅含 requested_keys 中的非秘密键
-      - check: vault-input.json 是合法 JSON，字段类型和 mode 对应结构完整，用户已通过人工门批准当前内容
-      - check: 文件系统审计确认本步骤只写 vault-input.json，未读取 config/vault 内容且未修改 vault/home/QMD/Git 状态
+    check: 解析 vault-input.json；skipped 时核对 reason/evidence，interactive 时核对已批准的绝对 vault path 和 requested_keys 内的非秘密 overrides；确认本步只产生该 artifact
     on_pass: resolve_context
     on_fail: collect_vault
     max_fail_count: 3
@@ -50,11 +47,7 @@ steps:
       console script 不在 PATH 时使用等价的 `python3 -m obsidian_wiki wiki-context-resolve ...`。resolver 将 effective config、owner/Writing Profile metadata、requested optional metadata、active layout 状态及 retrieval order 写入声明的两个 artifacts。
     input: vault-input.json + 调用方传入的 source_cwd、requested_keys、optional_reads、setup_mode
     output: wiki-context.json + wiki-context.md
-    check_voting:
-      - check: 不运行生成脚本；直接读 vault-input.json 和 wiki-context.json，用文件系统 realpath 独立核对 vault 是已批准的绝对路径、非 `@` 值，setup_mode=false 时存在且为目录；入口资源来自安装包或源码 checkout 而非调用方 CWD/.cac 相对路径
-      - check: 独立解析唯一 config source 与 requested non-vault keys，核对 source-CWD 向上查找优先于 global config、overrides 优先、boolean 类型、owner/Writing Profile、optional metadata 和 retrieval order；未请求的值与 knowledge page body 未进入 artifact
-      - check: 请求 active layout 时独立重算 marker 的 manifest/inventory/routing/prompt hashes 和完整 frozen routing；matched/stale/missing 状态准确，未根据 vault 目录推断 layout，依赖 layout 的下游在非 matched 状态 fail closed
-      - check: 文件系统审计确认除 artifacts 外零写入，vault/config/QMD/state/log 未改变；mode=skipped 时没有读取 config 或 vault
+    check: 解析 context artifacts，核对 approved canonical vault、唯一 config source、requested keys 与 mode；请求 layout 时确认 marker status/hash 和 frozen routing 存在，skipped 时不带 config/vault 内容；确认除 artifacts 外零写入
     on_pass: done
     on_fail: resolve_context
     max_fail_count: 3

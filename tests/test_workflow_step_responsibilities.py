@@ -71,6 +71,19 @@ def test_setup_splits_independent_mutation_responsibilities() -> None:
     }.issubset(ids)
 
 
+def test_setup_chain_uses_single_concise_checks() -> None:
+    for name in ("wiki-context.yaml", "wiki-setup-contract.yaml", "wiki-setup.yaml"):
+        workflow = (ROOT / "workflows" / name).read_text(encoding="utf-8")
+        assert "check_voting:" not in workflow
+        for step in step_blocks(workflow):
+            match = re.search(r"^    check: (?P<check>.+)$", step, re.MULTILINE)
+            if match:
+                assert len(match.group("check")) <= 260
+
+    setup = (ROOT / "workflows" / "wiki-setup.yaml").read_text(encoding="utf-8")
+    assert "obsidian-wiki doctor" not in setup
+
+
 def test_workflow_transitions_target_declared_steps_or_done() -> None:
     for path in WORKFLOWS:
         text = path.read_text(encoding="utf-8")
