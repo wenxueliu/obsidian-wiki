@@ -25,6 +25,13 @@ Use `obsidian-wiki setup --list-layouts` to inspect available layouts and select
 Changing an existing vault to another layout requires a content-aware migration; editing `.env`,
 renaming directories, or changing the marker by hand is not a supported switch mechanism.
 
+The bundled layouts are:
+
+- `default`: general-purpose concepts, entities, skills, references, and projects.
+- `software-knowledge`: software-domain entities with explicit architecture and operations types.
+- `book-knowledge`: books, authors, arguments, literary elements, and dated reading notes. It is
+  optimized for book/text ingestion and does not provide software project routes.
+
 ## Global wiki writing profile
 
 Setup creates `~/.obsidian-wiki/WRITING.md` on POSIX systems, or

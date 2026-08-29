@@ -18,7 +18,7 @@ from obsidian_wiki.workflow_layout import (
 def test_lists_only_workflow_layout_contracts() -> None:
     layouts = list_layouts()
 
-    assert set(layouts) == {"default", "software-knowledge"}
+    assert set(layouts) == {"default", "software-knowledge", "book-knowledge"}
     assert layouts["default"].root.name == "default"
 
 
@@ -32,6 +32,17 @@ def test_scaffold_persists_and_reloads_active_layout(tmp_path: Path) -> None:
     assert active_layout(vault, allow_uninitialized=False).name == "software-knowledge"
     assert (vault / "terms").is_dir()
     assert not (vault / "entities").exists()
+
+
+def test_book_layout_scaffold_has_book_roots(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+
+    assert scaffold_vault(vault, load_layout("book-knowledge")) is True
+
+    assert (vault / "books").is_dir()
+    assert (vault / "reading").is_dir()
+    assert (vault / "arguments").is_dir()
+    assert not (vault / "projects").exists()
 
 
 def test_initialized_vault_scans_declared_content_roots_only(tmp_path: Path) -> None:

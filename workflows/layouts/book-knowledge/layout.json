@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "name": "book-knowledge",
+  "description": "Traceable knowledge distilled from books and reading notes",
+  "copy_policy": "missing-only",
+  "routing": {"rules": "routing.json", "prompt": "routing.md"},
+  "categories": ["books", "people", "entities", "concepts", "arguments", "themes", "characters", "settings", "practices", "reading", "references", "synthesis"],
+  "ignore": [".gitkeep", ".DS_Store"],
+  "core_template_overrides": {}
+}

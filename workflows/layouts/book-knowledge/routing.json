@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "allowed_placeholders": ["date", "slug"],
+  "routes": {
+    "book": "books/{slug}.md",
+    "person": "people/{slug}.md",
+    "author": "people/{slug}.md",
+    "entity": "entities/{slug}.md",
+    "concept": "concepts/{slug}.md",
+    "argument": "arguments/{slug}.md",
+    "theme": "themes/{slug}.md",
+    "character": "characters/{slug}.md",
+    "setting": "settings/{slug}.md",
+    "practice": "practices/{slug}.md",
+    "skill": "practices/{slug}.md",
+    "reading_note": "reading/{date}-{slug}.md",
+    "journal": "reading/{date}.md",
+    "reference": "references/{slug}.md",
+    "synthesis": "synthesis/{slug}.md",
+    "lint_consolidation_report": "synthesis/consolidation-{date}.md"
+  },
+  "fallback": "reference",
+  "content_roots": ["books", "people", "entities", "concepts", "arguments", "themes", "characters", "settings", "practices", "reading", "references", "synthesis"],
+  "system_dirs": [".codegraph", ".obsidian", "_archives", "_meta", "_raw", "_readouts", "_staging", "_state"],
+  "skip_dirs": [".codegraph", ".obsidian", "_archives", "_meta", "_raw", "_readouts", "_staging", "_state"],
+  "system_paths": ["AGENTS.md", "index.md", "log.md", "hot.md", ".manifest.json", "_meta/layout.json", "_meta/schema.json", "_meta/rules.md", "_meta/terminology-policy.md"]
+}
