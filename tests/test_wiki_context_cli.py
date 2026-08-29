@@ -19,9 +19,10 @@ def run_context_resolver(
     mode: str = "interactive",
     profile: str | None = None,
     home: Path | None = None,
+    overrides: dict[str, object] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     supplied = tmp_path / f"vault-input-{setup_mode}.json"
-    input_value: dict[str, object] = {"mode": mode, "overrides": {}}
+    input_value: dict[str, object] = {"mode": mode, "overrides": overrides or {}}
     if vault is not None:
         input_value["vault_path"] = str(vault)
     if profile is not None:
@@ -125,6 +126,7 @@ def test_context_resolver_types_text_chunk_budget_config(tmp_path: Path) -> None
         "WIKI_TEXT_CHUNK_MIN_BYTES=7000\n"
         "WIKI_TEXT_CHUNK_HARD_MAX_BYTES=16000\n"
         "WIKI_TEXT_CHUNK_STRATEGY=custom_sections\n"
+        "WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS=7\n"
         'WIKI_TEXT_CHUNK_OPTIONS={"mode":"compact"}\n',
         encoding="utf-8",
     )
@@ -136,7 +138,7 @@ def test_context_resolver_types_text_chunk_budget_config(tmp_path: Path) -> None
         requested_keys=(
             "WIKI_TEXT_CHUNK_TARGET_BYTES,WIKI_TEXT_CHUNK_MIN_BYTES,"
             "WIKI_TEXT_CHUNK_HARD_MAX_BYTES,WIKI_TEXT_CHUNK_STRATEGY,"
-            "WIKI_TEXT_CHUNK_OPTIONS"
+            "WIKI_TEXT_CHUNK_OPTIONS,WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS"
         ),
     )
 
@@ -154,9 +156,40 @@ def test_context_resolver_types_text_chunk_budget_config(tmp_path: Path) -> None
         "min_bytes": 7000,
         "options": {"mode": "compact"},
     }
+    assert context["text_ingest"] == {"max_extraction_workers": 7}
     assert json.loads(
         (tmp_path / "artifacts-false" / "text-chunk-options.json").read_text()
     ) == {"mode": "compact"}
+
+
+def test_context_resolver_defaults_and_validates_extraction_concurrency(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+
+    defaulted = run_context_resolver(
+        tmp_path,
+        vault,
+        setup_mode="false",
+        requested_keys="WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS",
+    )
+
+    assert defaulted.returncode == 0, defaulted.stderr
+    context = json.loads(
+        (tmp_path / "artifacts-false" / "wiki-context.json").read_text(encoding="utf-8")
+    )
+    assert context["text_ingest"] == {"max_extraction_workers": 4}
+
+    rejected = run_context_resolver(
+        tmp_path,
+        vault,
+        setup_mode="false",
+        requested_keys="WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS",
+        overrides={"WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS": "0"},
+    )
+    assert rejected.returncode == 1
+    assert "must be a positive integer" in rejected.stderr
 
 
 def test_context_resolver_reads_vault_from_nearest_env(tmp_path: Path) -> None:

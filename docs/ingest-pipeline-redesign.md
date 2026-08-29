@@ -390,20 +390,23 @@ The ordered unit list and statuses in the Job are the coverage record.
 
 ## 9. Processing and session isolation
 
-For one changed source:
+For one or more changed sources:
 
 1. compute its hash;
 2. generate ordered ranges with `text-chunk-plan`;
-3. claim one pending unit;
-4. use `text-chunk-read` to verify the hash and materialize only that unit;
-5. create one Packet with `wiki-source-text`;
-6. integrate the Packet serially with `wiki-packet-integrate`;
-7. mark the unit integrated;
-8. continue with the next unit, normally in a fresh context;
-9. record the permanent source entry only after every unit integrates.
+3. reconcile interrupted `extracting` units from their planned Packet paths;
+4. claim up to `WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS` pending units in one atomic Job update;
+5. use isolated workers to run `text-chunk-read` and materialize only each assigned unit;
+6. create one independent Packet per unit with `wiki-source-text`;
+7. buffer Packets that finish ahead of earlier units;
+8. integrate ready Packets serially in stable source/unit order with `wiki-packet-integrate`;
+9. mark each integrated unit and refill the bounded extraction queue;
+10. record the permanent source entry only after every unit integrates.
 
-Extraction may run concurrently with isolated workers. Integration remains serialized and follows
-source order in V1. Without workers, the Job exposes the next pending unit for a later invocation.
+Extraction may run concurrently across different documents and across units in the same document.
+The configured maximum defaults to 4, while the host may impose a lower limit. Integration remains
+serialized and follows stable source/unit order in V1. Without workers, the Job exposes the next
+pending unit for a later invocation.
 
 ## 10. Incremental processing and completion
 

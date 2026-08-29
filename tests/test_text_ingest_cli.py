@@ -87,6 +87,7 @@ def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> 
     assert "WIKI_TEXT_CHUNK_HARD_MAX_BYTES" in workflow
     assert "WIKI_TEXT_CHUNK_STRATEGY" in workflow
     assert "WIKI_TEXT_CHUNK_OPTIONS" in workflow
+    assert "WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS" in workflow
     assert '--target-budget "<text_chunking.target_bytes>"' in workflow
     assert '--min-budget "<text_chunking.min_bytes>"' in workflow
     assert '--hard-budget "<text_chunking.hard_max_bytes>"' in workflow
@@ -95,8 +96,9 @@ def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> 
     assert "obsidian-wiki text-ingest-status" in workflow
     assert "wiki/" not in workflow
     assert ".cac/" not in workflow
-    assert "按输入文档建立独立调度 lane" in workflow
-    assert "每个 planned unit 使用一个 fresh isolated subagent" in workflow
+    assert "同一文档的多个 unit 也可并行" in workflow
+    assert "text_ingest.max_extraction_workers" in workflow
+    assert "integration 不并发" in workflow
     assert workflow.count("check_voting:") == 0
     assert "workflow: wiki-page-contract" in workflow
     assert workflow.count("workflow: wiki-finalize-sources") == 1
@@ -106,6 +108,9 @@ def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> 
     assert "WIKI_TEXT_CHUNK_MIN_BYTES" in skill
     assert "WIKI_TEXT_CHUNK_HARD_MAX_BYTES" in skill
     assert "WIKI_TEXT_CHUNK_STRATEGY" in skill
+    assert "WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS" in skill
+    assert "Different units from the same\ndocument may extract concurrently" in skill
+    assert "integration remains serialized" in skill
     assert ".cac/" not in skill
     assert "`wiki/" not in skill
     assert not (ROOT / "workflows" / "wiki-ingest.yaml").exists()

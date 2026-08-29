@@ -181,5 +181,8 @@ def test_v1_routing_and_cli_are_documented():
 
 def test_pageindex_runtime_configuration_was_removed():
     config = (ROOT / ".env.example").read_text()
+    documentation = (ROOT / "docs" / "configuration.md").read_text()
+    assert "WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS=4" in config
+    assert "WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS" in documentation
     assert "PAGEINDEX_REPO=" not in config
     assert "PAGEINDEX_MODEL=" not in config

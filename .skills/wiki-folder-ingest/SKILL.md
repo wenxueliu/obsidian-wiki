@@ -4,7 +4,8 @@ description: >
   Coordinate resumable V1 ingestion of a local folder or supported text file into an Obsidian wiki.
   Use for ingest/process/add requests involving .md, .markdown, .mdx, .txt, or .rst sources, including
   large files and folders. It discovers, classifies, hashes, plans deterministic ranges, dispatches
-  one-range workers, serializes Packet integration, and reports every unsupported file explicitly.
+  bounded-parallel one-range workers, serializes Packet integration, and reports every unsupported
+  file explicitly.
 ---
 
 # Wiki Folder Ingest — V1 Coordinator
@@ -84,27 +85,37 @@ vault/write-mode/layout binding but must not resolve either artifact again.
 
 ## Process units
 
-Create one independent scheduling lane per changed input document and never mix documents in an
-extraction subagent. Use one fresh isolated subagent per planned unit. When the host supports
-concurrency, different document lanes may extract in parallel; units within one document retain
-their planned order. For each source in discovery order:
+Resolve `WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS` through `wiki-context` as a positive integer;
+the default is 4. Treat it as a hard upper bound and use fewer workers when the host exposes fewer
+isolated slots. Build one stable queue in source discovery/unit order. Different units from the same
+document may extract concurrently, but one extraction subagent still receives exactly one document
+range. Use one fresh isolated subagent per planned unit.
 
-1. Atomically claim the earliest pending/failed unit in `job.json` as `extracting`.
-2. Invoke `wiki-source-text` by its bare workflow name in a fresh isolated context with only Job
-   directory, source ID, and unit ID. If isolated workers are
-   unavailable, persist `next_unit` and stop for a later invocation.
-3. Verify the resulting Packet path is beneath `packets/` and validate it against the Job.
-4. Set the unit to `packet_ready`.
-5. Invoke `wiki-packet-integrate` by its bare workflow name for that one Packet, passing the Job's
-   frozen `wiki-context.json` and `page-contract.json`.
-6. In direct-write mode, atomically mark the unit integrated. With `WIKI_STAGED_WRITES=true`,
+For each scheduling wave:
+
+1. On resume, reconcile every `extracting` unit before dispatch: validate an existing planned Packet
+   and mark it `packet_ready`, or mark the unit failed when no valid Packet exists so it can be retried.
+2. In one atomic `job.json` update, claim up to the configured limit of pending/failed units as
+   `extracting`. Assign each source/unit pair once; the wave may contain several units from one source.
+3. Invoke `wiki-source-text` concurrently by its bare workflow name in fresh isolated contexts, each
+   receiving only Job directory, source ID, and unit ID. If no isolated worker is available, retain
+   the unclaimed units as pending and stop for a later invocation.
+4. As each worker finishes, verify its Packet path is beneath `packets/`, validate it against the Job,
+   and atomically set only that unit to `packet_ready`. Buffer ready Packets without integrating them
+   out of order.
+5. Consume ready Packets strictly in stable source/unit order. If the earliest outstanding unit is
+   still extracting or failed, pause later integration while retaining its completed Packets.
+6. Invoke `wiki-packet-integrate` by its bare workflow name for the next ordered Packet, passing the
+   Job's frozen `wiki-context.json` and `page-contract.json`.
+7. In direct-write mode, atomically mark the unit integrated. With `WIKI_STAGED_WRITES=true`,
    record its validated review artifacts and mark it staged without increasing `units_integrated`.
-   Advance `next_unit` in either mode.
-7. Continue in source order.
+   Advance `next_unit` in either mode, refill the extraction wave without exceeding the configured
+   limit, and continue.
 
-Extraction workers may operate concurrently when the host explicitly supports isolated workers,
-but Packet integration is always serialized in source/unit order. Workers never write shared Job,
-manifest, index, log, hot-cache, or page files.
+Extraction workers may operate concurrently across and within documents when the host supports
+isolated workers. The number of units in `extracting` must never exceed the configured limit. Packet
+integration remains serialized in source/unit order. Workers never write shared Job, manifest,
+index, log, hot-cache, or page files.
 
 ## Completion and recovery
 
@@ -115,6 +126,8 @@ the manifest-last commit. Read `references/finalization-policy.md` completely an
 completion boundary to that shared workflow. Retain successful units and Packets after failures.
 
 - Extraction failure: mark only that unit failed and retain prior successes.
+- Interrupted extraction: reconcile every `extracting` unit from its planned Packet path before
+  claiming new work; never leave stale claims consuming the configured worker limit.
 - Packet validation failure: retain the Packet and error; do not integrate it.
 - Source hash mismatch: invalidate pending ranges and replan.
 - Interrupted integration: retry the same Packet idempotently.

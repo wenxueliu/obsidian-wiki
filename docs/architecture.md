@@ -21,7 +21,9 @@ Unsupported formats remain visible in the Job report and are never silently deco
 
 An isolated `wiki-source-text` worker materializes exactly one hash-verified range and pulls out
 concepts, entities, claims, relationships, and open questions into one bounded Packet. It never
-reads neighboring ranges or writes wiki pages.
+reads neighboring ranges or writes wiki pages. Multiple workers, including workers for units from
+the same document, may extract concurrently up to `WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS`;
+the host may impose a lower limit.
 
 Each page also gets a 1–2 sentence `summary:` in its frontmatter at write time — later queries use this to preview pages without opening them.
 
@@ -44,7 +46,7 @@ resume. `.manifest.json` advances only after every unit for one exact source ver
 2. Agent reads `.manifest.json` to know what's already been done
 3. Agent reads the relevant skill for instructions
 4. Agent uses its built-in tools to do the work
-5. Range workers produce bounded Packets; integration consumes them serially
+5. Range workers produce bounded Packets with configured concurrency; integration consumes them serially
 6. Agent updates `.manifest.json`, `index.md`, `log.md`, and `hot.md` only at source completion
 7. Output is standard Obsidian-compatible markdown with frontmatter and `[[wikilinks]]`
 

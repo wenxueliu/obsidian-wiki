@@ -17,6 +17,7 @@ from apply_wiki_layout import inventory as layout_inventory
 
 BOOL_KEYS = {"WIKI_STAGED_WRITES"}
 POSITIVE_INT_KEYS = {
+    "WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS",
     "WIKI_TEXT_CHUNK_TARGET_BYTES",
     "WIKI_TEXT_CHUNK_HARD_MAX_BYTES",
     "WIKI_TEXT_CHUNK_MIN_BYTES",
@@ -250,6 +251,11 @@ def main() -> int:
             "min_bytes": chunk_min,
             "options": values.get("WIKI_TEXT_CHUNK_OPTIONS", {}),
         }
+        text_ingest = {
+            "max_extraction_workers": int(
+                values.get("WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS", 4)
+            ),
+        }
 
         owner_path = vault / "AGENTS.md"
         owner_rules = owner_path.read_text(encoding="utf-8") if owner_path.is_file() else None
@@ -321,6 +327,7 @@ def main() -> int:
             "write_mode": "staged" if values.get("WIKI_STAGED_WRITES") is True else "direct",
             "link_format": values.get("OBSIDIAN_LINK_FORMAT", "wikilink"),
             "text_chunking": text_chunking,
+            "text_ingest": text_ingest,
             "qmd": {"available": shutil.which("qmd") is not None,
                     "transport": values.get("QMD_TRANSPORT"),
                     "wiki_collection": values.get("QMD_WIKI_COLLECTION"),

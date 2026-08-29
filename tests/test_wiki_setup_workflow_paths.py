@@ -54,6 +54,10 @@ def test_setup_contract_wrapper_resolves_bundled_resources_from_any_cwd(
     )
     assert final.returncode == 0, final.stderr
     assert (artifacts / "setup-contract.json").is_file()
+    contract = json.loads((artifacts / "setup-contract.json").read_text(encoding="utf-8"))
+    assert contract["config_defaults"][
+        "WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS"
+    ] == 4
 
 
 def test_layout_apply_wrapper_resolves_bundled_resources_from_any_cwd(

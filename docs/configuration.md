@@ -108,7 +108,7 @@ off.
 | `SKILL_FACTORY_OUTPUT_DIR` | Where generated skills are written | `<vault>/_generated-skills` |
 | `SKILL_FACTORY_MATURITY` | Which lifecycle states count as mature enough to harvest (pages with `tier: core` also qualify) | `reviewed,verified` |
 
-## Text ingest budgets
+## Text ingest extraction and chunking
 
 Text ingest V1 uses dependency-free UTF-8 byte budgets rather than a model-specific tokenizer.
 `wiki-folder-ingest` resolves these values from the target vault's config and records the effective
@@ -117,6 +117,7 @@ incomplete Job.
 
 | Variable | What it does | Default |
 |---|---|---|
+| `WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS` | Maximum concurrent isolated unit-to-Packet extraction workers per Job; the host may impose a lower limit | `4` |
 | `WIKI_TEXT_CHUNK_TARGET_BYTES` | Preferred UTF-8 byte size for each planned text unit | `48000` |
 | `WIKI_TEXT_CHUNK_MIN_BYTES` | Minimum accumulated size before a heading becomes a preferred split point | half the target (`24000` by default) |
 | `WIKI_TEXT_CHUNK_HARD_MAX_BYTES` | Absolute UTF-8 byte cap for each planned text unit | `64000` |
@@ -132,6 +133,11 @@ direct CLI use, the corresponding flags override command defaults per invocation
 Custom strategy names come from trusted installed Python packages using the
 `obsidian_wiki.text_chunk_strategies` entry-point group. Selecting one executes that package's code;
 do not configure an untrusted extension.
+
+Extraction concurrency applies across the whole Job, including multiple units from the same source
+document. Workers write distinct Packet files and never mutate shared wiki state. Completed Packets
+are buffered and integrated serially in stable source/unit order, so increasing this value speeds up
+extraction without making page writes concurrent.
 
 PageIndex is not a V1 dependency. A future PDF pipeline may use it only as a structure provider
 behind the local hard-budget splitter; PDFs remain explicitly unsupported until that pipeline exists.
