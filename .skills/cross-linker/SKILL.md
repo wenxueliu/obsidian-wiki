@@ -1,350 +1,141 @@
 ---
 name: cross-linker
-description: >
-  Scan the Obsidian wiki and automatically discover missing cross-references between pages.
-  Use this skill when the user says "link my pages", "find missing links", "cross-reference",
-  "connect my wiki", "add wikilinks", "what pages should be linked", or after any large ingestion
-  to ensure new pages are woven into the existing knowledge graph. Also trigger when the user
-  mentions "orphan pages" in the context of wanting to connect them, or says things like
-  "my wiki feels disconnected" or "pages aren't linked well". This is a write-heavy skill —
-  it actually modifies pages to add links, unlike wiki-lint which just reports issues.
+description: "发现并写入高置信 Obsidian 页面链接、typed relationships 与 misc affinity，收紧知识图谱"
 ---
 
-# Cross-Linker — Automated Wiki Cross-Referencing
-
-You are weaving the wiki's knowledge graph tighter by finding and inserting missing `[[wikilinks]]` between pages that should reference each other but currently don't.
-
-**Follow the Retrieval Primitives table in `llm-wiki/SKILL.md`.** Build the registry in Step 1 by grepping frontmatter only (not full pages). Reserve full `Read` for the unlinked-mention detection pass, and even there, only read pages whose summaries/titles make them plausible link targets. Blind full-vault reads are what this framework exists to avoid.
-
-## Before You Start
-
-1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_LINK_FORMAT` (default: `wikilink`).
-2. Read `index.md` to get the full inventory of pages and their one-line descriptions
-3. Skim `log.md` to see what was recently ingested (focus linking effort on new pages)
-
-When inserting links in Step 4, apply the link format from `llm-wiki/SKILL.md` (Link Format section) using the `OBSIDIAN_LINK_FORMAT` value. When `OBSIDIAN_LINK_FORMAT=markdown`, compute the relative `.md` path from the **file being edited** to the target page.
-
-## Step 1: Build the Page Registry
-
-Glob all `.md` files in the vault (excluding `_archives/`, `_readouts/`, `.obsidian/`). For each page, extract:
-
-- **Filename** (without `.md`) — this is the wikilink target
-- **Title** from frontmatter
-- **Aliases** from frontmatter (if any)
-- **Tags** from frontmatter
-- **Category** from frontmatter or directory inference
-- **One-line summary** — first sentence or `title` field
-
-Build a lookup table:
-
-```
-page_name → { path, title, aliases, tags, summary }
-```
-
-This is your "vocabulary" — every entry in this table is a valid wikilink target.
-
-## Step 2: Scan for Missing Links
-
-For each page in the vault:
-
-1. **Read the full content**
-2. **Extract existing wikilinks** — find all `[[...]]` references already present
-3. **Search for unlinked mentions** — check if the page's text contains any of these, without being wrapped in `[[...]]`:
-   - Page filenames (e.g., the word "MyProject" appears but `[[projects/my-project/my-project]]` is missing)
-   - Page titles from frontmatter
-   - Aliases from frontmatter
-   - Entity names, project names, concept names from the registry
-
-4. **Check for semantic connections** — pages that share multiple tags or are in the same project directory but don't link to each other
-
-### Matching Rules
-
-- **Case-insensitive matching** for names (e.g., "my-project" matches page `MyProject`)
-- **Diacritic-insensitive matching** — normalize both the page name and the body text with Unicode NFKD (decompose accented characters to base + combining marks, strip combining marks) before comparing. This ensures body text "Muller" matches page `[[entities/müller]]` and vice versa.
-- **Skip self-references** — a page shouldn't link to itself
-- **Skip common words** — don't link "the", "and", generic terms. Only match on distinctive names
-- **Prefer the shortest unambiguous wikilink path** — use `[[page-name]]` not `[[full/path/to/page-name]]` when the name is unique across the vault
-- **Don't link inside code blocks** or frontmatter
-- **Don't double-link** — if `[[foo]]` already appears on the page, don't add another
-
-## Step 3: Score and Rank Suggestions
-
-Not every possible link is worth adding. Score each candidate using a composite signal, then tag it with a confidence label.
-
-### Scoring
-
-| Signal | Points | Example |
-|---|---|---|
-| **Exact name match in text** | +4 | "MyProject" appears in body text → link to my-project.md |
-| **Shared tags (2+)** | +2 | Both tagged `#ai #agent` but no link between them |
-| **Same project, no link** | +2 | Both under `projects/my-project/` but don't reference each other |
-| **Mentioned entity/concept** | +2 | Page mentions "knowledge graphs" → link to `[[concepts/knowledge-graphs]]` |
-| **Cross-category connection** | +2 | Source is in `concepts/`, target is in `entities/` (or `skills/` ↔ `synthesis/`) — different knowledge layers make this link more architecturally valuable |
-| **Peripheral→hub reach** | +2 | Source page has ≤ 2 total links (peripheral) but target has ≥ 8 (hub) — connecting a loose page to a load-bearing concept |
-| **Partial name match** | +1 | "graph" appears but page is `knowledge-graphs` — plausible but ambiguous |
-
-### Confidence labels
-
-Tag each candidate with a confidence label based on its score:
-
-| Score | Label | Action |
-|---|---|---|
-| ≥ 6 | **EXTRACTED** | Link is effectively certain — exact mention or very strong match. Apply inline. |
-| 3–5 | **INFERRED** | Link is a reasonable inference — shared context, cross-category, peripheral→hub. Apply inline or as Related section. |
-| 1–2 | **AMBIGUOUS** | Weak or partial match. Skip unless user specifically asks to connect loose pages. |
-
-Only act on **EXTRACTED** and **INFERRED** candidates. Include the confidence label in the Cross-Link Report so the user can review INFERRED links before trusting them.
-
-## Step 4: Apply Links
-
-**Pre-write snapshot** — before the first file write, check whether the vault itself is the root of a Git repository. Merely being a subdirectory of a larger repository does not qualify: running `git add -A` there could capture unrelated files. If the vault is not a standalone Git repository, skip this step silently — no nagging, no suggesting `git init`.
-
-```bash
-VAULT_REAL_PATH=$(cd "$OBSIDIAN_VAULT_PATH" && pwd -P)
-VAULT_GIT_ROOT=$(git -C "$OBSIDIAN_VAULT_PATH" rev-parse --show-toplevel 2>/dev/null || true)
-SNAPSHOT_SHA=""
-
-if [ -n "$VAULT_GIT_ROOT" ] && [ "$VAULT_GIT_ROOT" = "$VAULT_REAL_PATH" ]; then
-  if git -C "$OBSIDIAN_VAULT_PATH" diff --quiet \
-    && git -C "$OBSIDIAN_VAULT_PATH" diff --cached --quiet \
-    && [ -z "$(git -C "$OBSIDIAN_VAULT_PATH" ls-files --others --exclude-standard)" ]; then
-    SNAPSHOT_SHA=$(git -C "$OBSIDIAN_VAULT_PATH" rev-parse HEAD)
-  else
-    if ! git -C "$OBSIDIAN_VAULT_PATH" add -A; then
-      echo "Pre-write snapshot failed; abort the skill without writing any vault files." >&2
-      exit 1
-    fi
-    if ! git -C "$OBSIDIAN_VAULT_PATH" commit -m "pre-cross-linker snapshot" --quiet; then
-      echo "Pre-write snapshot failed; abort the skill without writing any vault files." >&2
-      exit 1
-    fi
-    SNAPSHOT_SHA=$(git -C "$OBSIDIAN_VAULT_PATH" rev-parse HEAD)
-  fi
-fi
-```
-
-The clean-repository branch deliberately avoids calling `git commit`, so "nothing to commit" is not treated as an error. If `git add` or `git commit` fails, stop before editing the vault; never continue without the promised snapshot.
-
-If `SNAPSHOT_SHA` is non-empty and the skill writes files, include the SHA in the final report. To discard the entire run, after confirming there are no later changes worth keeping, the user can run:
-
-```bash
-git -C "$OBSIDIAN_VAULT_PATH" reset --hard "$SNAPSHOT_SHA"
-git -C "$OBSIDIAN_VAULT_PATH" clean -fd
-```
-
-For each page with missing links:
-
-### 4a: Inline linking (preferred)
-
-Find the first natural mention of the term in the body text and wrap it in wikilinks:
-
-**Before:**
-```markdown
-This project uses knowledge graphs to connect entities.
-```
-
-**After:**
-```markdown
-This project uses [[concepts/knowledge-graphs|knowledge graphs]] to connect entities.
-```
-
-Use the `[[path|display text]]` format when the wikilink path differs from the display text.
-
-### 4b: Related section (fallback)
-
-If the term isn't mentioned naturally in the body but the pages are semantically related (shared tags, same project), add a `## Related` section at the bottom of the page:
-
-```markdown
-## Related
-
-- [[projects/my-project/my-project]] — Also uses AI agents for research automation
-- [[concepts/knowledge-graphs]] — Core technique used in this project
-```
-
-If a `## Related` section already exists, append to it. Don't duplicate existing entries.
-
-### 4c: Infer and write relationship type
-
-For every EXTRACTED or INFERRED link added (inline or related section), infer a semantic relationship type from the surrounding sentence context and write it to the page's `relationships:` frontmatter block. Skip AMBIGUOUS links.
-
-**Type inference rules** — scan the sentence containing the mention (or, for related-section links, the page title and shared-tag context). These 24 relationship types are the standard set from the [Penfield](https://penfield.app) memory system. Pick the most specific type that applies. If none fit precisely, don't force it — leave it unlinked.
-
-### Knowledge Evolution
-| Type | Meaning | Signal |
-|---|---|---|
-| `supersedes` | This replaces an outdated understanding | Same subject, different conclusion, later date |
-| `updates` | This adds to or refines existing knowledge | Same subject, additional detail |
-| `evolution_of` | This shows how thinking changed over time | Same subject, shifted framing |
-
-### Evidence
-| Type | Meaning | Signal |
-|---|---|---|
-| `supports` | This provides evidence for another claim | Shared conclusion from different angle |
-| `contradicts` | This challenges another claim | Opposite conclusion on same subject |
-| `disputes` | This questions the reasoning of another | Methodological or logical disagreement |
-
-### Hierarchy
-| Type | Meaning | Signal |
-|---|---|---|
-| `parent_of` | This is a broader topic containing the other | General → specific |
-| `child_of` | This is a subtopic of the other | Specific → general |
-| `sibling_of` | These are peers under the same parent topic | Same level, same domain |
-| `composed_of` | This is made up of the other | Whole → part |
-| `part_of` | This is a component of the other | Part → whole |
-
-### Causation
-| Type | Meaning | Signal |
-|---|---|---|
-| `causes` | This leads to or produces the other | Action → consequence |
-| `influenced_by` | This was shaped by the other | Consequence ← influence |
-| `prerequisite_for` | This must come before the other | Dependency ordering |
-
-### Implementation
-| Type | Meaning | Signal |
-|---|---|---|
-| `implements` | This is a concrete realization of the other | Concept → code/action |
-| `documents` | This describes or records the other | Description → subject |
-| `tests` | This validates or verifies the other | Test → claim |
-| `example_of` | This is an instance of a general pattern | Instance → pattern |
-
-### Conversation
-| Type | Meaning | Signal |
-|---|---|---|
-| `responds_to` | This is a reply or reaction to the other | Dialogue thread |
-| `references` | This cites or points to the other | Attribution |
-| `inspired_by` | This was sparked by the other | Creative lineage |
-
-### Sequence
-| Type | Meaning | Signal |
-|---|---|---|
-| `follows` | This comes after the other in a process | Step N+1 → Step N |
-| `precedes` | This comes before the other in a process | Step N → Step N+1 |
-
-### Dependencies
-| Type | Meaning | Signal |
-|---|---|---|
-| `depends_on` | This requires the other to function | Runtime dependency |
-
-**Writing the block:**
-
-Read the page's YAML frontmatter. If a `relationships:` block already exists, append new entries without duplicating existing targets. If the block is absent, add it after `aliases:` (or after `tags:` when `aliases:` is missing).
-
-```yaml
-relationships:
-  - target: "[[concepts/knowledge-graphs]]"
-    type: uses
-```
-
-Always use wikilink format (`[[path/to/page]]`) for `target` values in the `relationships:` YAML block — regardless of `OBSIDIAN_LINK_FORMAT`. The `OBSIDIAN_LINK_FORMAT` setting controls body content; frontmatter properties always use wikilink syntax so that `wiki-export` can reliably parse them.
-
-Only add entries for links added in this cross-linker run — do not touch typed entries that were already present.
-
-## Step 5: Score Misc Page Affinity
-
-After the main linking pass, update affinity scores for all pages in `misc/` (pages with `promotion_status: misc` in their frontmatter, or located under the `misc/` directory).
-
-For each misc page:
-
-1. **Collect outgoing links** — all `[[wikilinks]]` in the page body
-2. **Collect incoming links** — grep the vault for `[[misc/<slug>]]` and `[[<slug>]]` references
-3. For each linked page (both directions), check if it belongs to a project:
-   - Lives under `projects/<project-name>/`
-   - Has a `project:` frontmatter field matching a project name
-4. Group by project name and sum: `outgoing_links + incoming_links`
-5. Update the `affinity` frontmatter block on the misc page:
-
-```yaml
-affinity:
-  obsidian-wiki: 3
-  another-project: 1
-```
-
-6. If any project's score ≥ 3: flag this page as a **promotion candidate** and record it for the report
-
-**Efficiency note:** only read the full body of misc pages — other pages only need a frontmatter grep to determine their project membership.
-
-## Step 6: Report
-
-Present a summary:
-
-```markdown
-## Cross-Link Report
-
-### Links Added: 23 across 12 pages
-
-| Page | Links Added | Confidence | Placement | Relationship Types |
-|---|---|---|---|---|
-| `projects/my-project/my-project.md` | 3 | EXTRACTED | 2 inline, 1 related | uses ×2, related_to ×1 |
-| `entities/jane-doe.md` | 5 | INFERRED | 3 inline, 2 related | extends ×1, uses ×3, related_to ×1 |
-| ... | | | | |
-
-### Orphan Pages Remaining: 2
-- `references/foo.md` — no incoming or outgoing links found
-- `concepts/bar.md` — could not find related pages
-
-### Misc Promotion Candidates: N
-Pages in misc/ that have ≥ 3 connections to a single project — ready to be promoted:
-
-| Page | Top Project | Score |
-|---|---|---|
-| `misc/web-martinfowler-articles-microservices.md` | `obsidian-wiki` | 4 |
-
-To promote: move the page to `projects/<project-name>/references/` and update all backlinks.
-
-### Pages Skipped: 3
-- `index.md`, `log.md` — special files
-- `_archives/*` — archived content
-- `_readouts/*` — derived readouts (wiki-narrate output)
-```
-
-## Step 7: Update Log and Hot Cache
-
-Append to `log.md`:
-```
-- [TIMESTAMP] CROSS_LINK pages_scanned=N links_added=M typed_relations_written=T pages_modified=P orphans_remaining=Q misc_affinity_updated=R promotion_candidates=S
-```
-
-**`hot.md`** — Read `$OBSIDIAN_VAULT_PATH/hot.md` (create from the vault setup template if missing). Update **Recent Activity** with a one-line summary of what was linked — e.g. "Cross-linked 23 mentions across 12 pages; 2 orphans remain." Keep the last 3 operations. Update `updated` timestamp.
-
-## Tips
-
-- **Run after every ingest.** New pages are almost always poorly connected. This is the fix.
-- **Be conservative with inline links.** Only link the first natural mention, not every occurrence.
-- **Don't touch pages in `_archives/` or `_readouts/`.** Archives are frozen snapshots; readouts are derived output from `wiki-narrate`, not knowledge pages.
-- **Respect existing structure.** If a page carefully curates its links in a `## Key Concepts` section, add to that section rather than creating a separate `## Related`.
-- **Entity pages are link magnets.** An entity like `jane-doe` should be linked from almost every project page. Prioritize these.
-
-## QMD Refresh After Vault Writes
-
-QMD is a search index, not the source of truth. If `$QMD_WIKI_COLLECTION` is empty or unset, skip this step. Run it only after this skill has written or rewritten vault markdown. If QMD refresh fails, do not roll back the vault changes; report the QMD status separately.
-
-Use `$QMD_CLI` if set; otherwise use `qmd`.
-
-```bash
-${QMD_CLI:-qmd} update
-```
-
-If the output says vectors are needed or embeddings may be stale, run:
-
-```bash
-${QMD_CLI:-qmd} embed
-```
-
-Verify the collection with either:
-
-```bash
-${QMD_CLI:-qmd} ls "$QMD_WIKI_COLLECTION"
-```
-
-or, when a specific page path is known:
-
-```bash
-${QMD_CLI:-qmd} get "qmd://$QMD_WIKI_COLLECTION/<page>.md" -l 5
-```
-
-Record one of:
-- `QMD refreshed: update + embed + verified`
-- `QMD refreshed: update only + verified`
-- `QMD skipped: QMD_WIKI_COLLECTION unset`
-- `QMD skipped: qmd CLI unavailable`
-- `QMD failed: <short error summary>`
+# cross-linker
+
+此 skill 直接执行下方从 `workflows/cross-linker.yaml` 同步的完整契约。内嵌 YAML 是实际指令，不是摘要或外部参考；按 `steps`、输入输出、检查、跳转、失败上限和人工审批要求逐项执行。
+
+发生任何冲突时，以内嵌 workflow 契约为准。不要用历史 skill 文案补写、弱化或覆盖它。修改行为时先编辑 workflow，再运行 `python tools/sync_workflow_skills.py`。
+
+<!-- BEGIN GENERATED WORKFLOW CONTRACT -->
+````yaml
+description: 发现并写入高置信 Obsidian 页面链接、typed relationships 与 misc affinity，收紧知识图谱
+
+auto_reset: true
+
+adversarial_check:
+  timeout_ms: 3600000
+  system_prompt: |
+    你是 Cross-Linker 的保守审计者。只允许 EXTRACTED/INFERRED 候选落盘，禁止代码块/frontmatter 内正文链接、自链接、重复链接与强行 relationship type。
+    写前必须遵守 standalone Git vault snapshot 规则；archive/readout/staging 不属于 live linking scope。
+
+steps:
+  - id: resolve_context
+    desc: 复用共享子 workflow 解析 linking 上下文
+    workflow: wiki-context
+    input: linking invocation、run_condition 与当前 CWD
+    output: wiki-context.json + wiki-context.md
+    inputs:
+      requested_keys: OBSIDIAN_VAULT_PATH,OBSIDIAN_LINK_FORMAT,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_CLI_SEARCH_MODE
+      optional_reads: owner AGENTS,index,manifest,active layout
+      setup_mode: "false"
+      run_condition: 若父调用提供 completion/reconciliation gate，则先验证该报告；false 时 context 自身也不得扫描 config/vault
+    on_pass: build_registry
+    on_fail: resolve_context
+    max_fail_count: 3
+
+  - id: build_registry
+    desc: 解析 vault 并建立低成本页面词汇表
+    do: |
+      使用 wiki-context.json 的配置、retrieval order、link format 与 typed relationships。
+
+      1. 若父 workflow 传入 `run_condition`，先只读取其中指定的 completion/reconciliation report，验证条件是否成立。条件不成立时写 `linking-context.md`（mode=skipped、reason、evidence）和空 `page-registry.json`，后续步骤全部 no-op；不得扫描或修改 vault。没有 run_condition 的直接调用默认执行。
+      2. 执行模式下使用 context 的 canonical vault、OBSIDIAN_LINK_FORMAT、index.md，并按需只读近期 log.md；不得重新选择 profile。
+      3. 只扫描 active layout routing.content_roots 下的 live `.md`，排除 routing.skip_dirs/system_dirs/system_paths；只 grep frontmatter/title/aliases/tags/category/summary，不盲读全 vault。
+      4. 建立 page-name/title/alias 到 canonical target 的 registry，标记同名冲突、shortest unambiguous wikilink path、项目归属与当前 incoming/outgoing degree。
+      5. 写 page-registry.json 和 linking-context.md；不得修改 vault。
+    input: cross-link、连接 orphan 或补齐 wikilink 请求（vault 由 wiki-context 交互式确认）
+    output: page-registry.json + linking-context.md
+    check_voting:
+      - check: 对照 index/frontmatter 抽查 registry 的 path/title/alias/tags/category/summary 和重名消歧准确
+      - check: 确认 conditional skip 有明确 evidence 且没有扫描 vault；执行模式的 config/link format、live scope 与 exclusions 正确，未全量读取不相关正文且 vault 无变化
+    on_pass: discover_links
+    on_fail: build_registry
+    max_fail_count: 3
+
+  - id: discover_links
+    desc: 按需读取候选页面并评分缺失链接
+    do: |
+      若 linking-context.md 为 mode=skipped，写空 link-plan.json 与标记同一 reason 的 cross-link-plan.md，不读取页面并直接完成本步骤。
+
+      使用 registry 与近期新增页面优先级发现候选：
+
+      1. 只对 title/summary/tags 表明可能有关的页面读取正文；提取已有 links，并在排除 YAML/code block 后查找未链接 filename/title/alias/entity/concept mentions。
+      2. 匹配 case-insensitive、Unicode NFKD diacritic-insensitive；跳过 self/common word/double-link，distinctive name 才可匹配。
+      3. 评分：exact +4、shared tags>=2 +2、same project +2、entity/concept +2、cross-category +2、peripheral→hub +2、partial +1。
+      4. >=6 标 EXTRACTED，3-5 标 INFERRED，1-2 标 AMBIGUOUS；只规划前两类。为每项选择 first natural inline mention，无法自然内联才 Related。
+      5. 从允许的 24 个标准 relationship types 中依据句子语义选最具体方向；不能精确判断则不写 typed relation，不发明 `uses`/`related_to`。
+      6. 写 link-plan.json 和 cross-link-plan.md，含 source/target、score/signals/confidence、locator、placement、body link format、typed relationship 或 null。保持 vault 只读。
+    input: page-registry.json + 相关页面正文
+    output: link-plan.json + cross-link-plan.md
+    check_voting:
+      - check: skip 模式的计划为空且未读取页面；执行模式重算候选分数和 confidence，确认只含 >=3，exact/semantic/cross-category/hub signals 有正文或 registry 证据
+      - check: 检查 self/common/duplicate/code/frontmatter/ambiguous 均排除，inline locator 自然且每个 target 只链接首次合理 mention
+      - check: 对 typed relationships 逐项复核标准 type、方向、语境与 target；不能精确分类的确为 null，vault 尚未写入
+    on_pass: snapshot_and_apply
+    on_fail: discover_links
+    max_fail_count: 4
+
+  - id: snapshot_and_apply
+    desc: 建立可回退快照并原子应用链接计划
+    do: |
+      若 linking-context.md 为 mode=skipped，写 cross-link-apply-report.md 标记 no-op，不创建 Git snapshot、不修改 vault。
+
+      执行 cross-linker 的 Pre-write snapshot 与 Apply Links：
+
+      1. canonical 比较 vault 与 `git rev-parse --show-toplevel`；只有 vault 自身是 Git root 才 snapshot。clean repo 记录当前 HEAD；dirty repo 必须 `git add -A` 后成功提交 `pre-cross-linker snapshot`。add/commit 失败则在任何 vault 写入前停止。非 standalone Git vault 静默跳过 snapshot。
+      2. 应用 link-plan.json 前重读并校验 source hash/locator，漂移则停止重规划，不能覆盖并发修改。
+      3. 普通 body link 按 OBSIDIAN_LINK_FORMAT 写 inline 或现有/新 `## Related`；markdown link 从编辑文件计算相对 `.md` path。typed edge 则始终写 `[[target|label @type]]`，并同步追加 nested `relationships:` 与顶层 type-key quoted-wikilink list，三处均不得重复。
+      4. 保留 archive/readout/staging/special files；每页验证 YAML、links、targets、placement、无重复和无意正文改动，并比较三种 typed projection 的 canonical `(target,type)` 集合完全一致。
+      5. 写 cross-link-apply-report.md，记录 snapshot SHA/skipped reason、changed pages、links、relations 与 diff。此时不更新 tracking/QMD。
+    input: link-plan.json + 最新 live pages + Git 状态
+    output: 已验证的 links/relationships + cross-link-apply-report.md
+    check_voting:
+      - check: skip 模式没有 snapshot/vault diff；执行模式复核 standalone Git root 判定与 snapshot 行为，dirty standalone vault 在写前有有效 commit，clean/non-standalone 分支处理正确
+      - check: 将实际 diff 与 plan 逐项对账，检查 link format/relative path、inline/Related placement、首次 mention、并发 hash 与无额外改动
+      - check: 验证所有 targets 存在、relationship type/direction 合法、nested/flat-key/inline @type 三种 projection 一致，且无 duplicate/self/code/frontmatter links，tracking/QMD 尚未改变
+    on_pass: update_affinity
+    on_fail: snapshot_and_apply
+    max_fail_count: 4
+
+  - id: update_affinity
+    desc: 重算 misc 页面项目亲和度与晋升候选
+    do: |
+      若 linking-context.md 为 mode=skipped，写空 affinity-report.md 与 cross-link-report.md，保留 skip reason，不读取或修改 misc 页面。
+
+      只处理 misc/ 或 frontmatter `promotion_status: misc` 页面：
+
+      1. 读取 misc 正文收集 outgoing；用 vault grep 收集 incoming；从 linked page path/project frontmatter 确定项目归属。
+      2. affinity[project]=incoming+outgoing，去重并确定 score>=3 的 promotion candidates。
+      3. 仅在数值变化时更新 misc frontmatter affinity，保留其他字段与正文；验证 YAML 和所有 counts。
+      4. 写 affinity-report.md 与 cross-link-report.md，后者列 links/pages/confidence/placement/types、orphans、promotion candidates、skipped scope。
+    input: cross-link-apply-report.md + misc pages + page-registry.json
+    output: 更新的 misc affinity + affinity-report.md + cross-link-report.md
+    check_voting:
+      - check: skip 模式保持空报告且 vault 无变化；执行模式对每个 changed misc page 重算 incoming/outgoing 项目计数，确认 affinity 与 score>=3 候选准确
+      - check: 检查只改 misc affinity 且报告 link/relation/page/orphan counts 可由实际 vault 重算
+    on_pass: record_and_refresh
+    on_fail: update_affinity
+    max_fail_count: 3
+
+  - id: record_and_refresh
+    desc: 幂等记录 Cross-Link 并刷新可选 QMD
+    do: |
+      1. linking-context.md 为 mode=skipped 时，不写 log/hot、不刷新 QMD，写 cross-link-completion.md 记录 `skipped`、run_condition 与 evidence。
+      2. 执行模式从实际 diff 重算 pages_scanned、links_added、typed_relations_written、pages_modified、orphans_remaining、misc_affinity_updated、promotion_candidates。
+      3. 执行模式向 log.md 幂等追加带 stable run_id 的 CROSS_LINK；更新 hot.md Recent Activity，保留最近 3 次并更新 timestamp。
+      4. 有 live Markdown 修改且 QMD_WIKI_COLLECTION 配置时运行 `${QMD_CLI:-qmd} update`，需要时 embed，并用 ls/get 验证；unset/unavailable/error 单独报告，不回滚 vault。
+      5. 写 cross-link-completion.md，若有 snapshot SHA 列出其值与安全回退说明；所有事实与磁盘一致后输出 <promise>done</promise>。
+    input: cross-link/affinity reports + log/hot/QMD config
+    output: 幂等 CROSS_LINK tracking + cross-link-completion.md + 可选 QMD refresh
+    check_voting:
+      - check: skip 模式确认 log/hot/QMD/vault 零变化且 reason 可证；执行模式从最终 vault 重算 counts，确认 CROSS_LINK run_id 恰好一次、hot last-3/timestamp 与报告一致
+      - check: 验证 QMD guard/update/embed/verify 状态准确，失败未回滚 Markdown；snapshot SHA 如报告则真实存在
+      - check: 最终抽查 links、typed relationships、orphans 与 misc candidates 可发现且无 archive/readout/staging 越界写入
+    on_pass: done
+    on_fail: record_and_refresh
+    max_fail_count: 3
+````
+<!-- END GENERATED WORKFLOW CONTRACT -->

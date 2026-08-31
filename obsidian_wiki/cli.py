@@ -2052,6 +2052,14 @@ def _print_query(result: dict[str, object]) -> None:
     if path:
         print("path:")
         print(" -> ".join(path))
+    path_edges = result.get("path_edges") or []
+    if path_edges:
+        print("path_edges:")
+        for edge in path_edges:
+            reverse = " (reverse)" if edge.get("direction") == "reverse" else ""
+            print(
+                f"- {edge['source']} -[{edge['relation']}{reverse}]-> {edge['target']}"
+            )
     should_read = result.get("should_read") or []
     if should_read:
         print("should_read:")

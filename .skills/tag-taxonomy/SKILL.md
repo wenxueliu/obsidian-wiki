@@ -1,218 +1,132 @@
 ---
 name: tag-taxonomy
-description: >
-  Enforce consistent tagging across the Obsidian wiki using a controlled vocabulary.
-  Use this skill when the user says "fix my tags", "normalize tags", "clean up tags",
-  "tag audit", "what tags should I use", "tag taxonomy", or whenever you're creating or
-  updating wiki pages and need to choose the right tags. Also trigger when the user asks
-  about tag conventions, wants to add a new tag to the taxonomy, or says "my tags are a mess".
-  Always consult this skill's taxonomy file before assigning tags to any wiki page.
+description: "审计、规范化或扩展 Obsidian wiki 的受控标签词表，并安全维护 tracking 与可选 QMD 索引"
 ---
 
-# Tag Taxonomy — Controlled Vocabulary for Wiki Tags
-
-You are enforcing consistent tagging across the wiki by normalizing tags to a controlled vocabulary.
-
-## Before You Start
-
-1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH`
-2. Read `$OBSIDIAN_VAULT_PATH/_meta/taxonomy.md` — this is the canonical tag list
-3. Read `index.md` to understand the wiki's scope
-
-## The Taxonomy File
-
-The canonical tag vocabulary lives at `$OBSIDIAN_VAULT_PATH/_meta/taxonomy.md`. It defines:
-
-- **Canonical tags** — the tags that should be used
-- **Aliases** — common alternatives that should be mapped to the canonical form
-- **Rules** — max 5 tags per page, lowercase/hyphenated, prefer broad over narrow
-- **Migration guide** — specific renames for known inconsistencies
-
-**Always read this file before tagging.** It's the source of truth.
-
-## Reserved System Tags
-
-`visibility/` is a reserved tag group with special rules. These tags are **not** domain or type tags and are managed separately from the taxonomy vocabulary:
-
-| Tag | Purpose |
-|---|---|
-| `visibility/public` | Explicitly public — shown in all modes (same as no tag) |
-| `visibility/internal` | Team-only — excluded in filtered query/export mode |
-| `visibility/pii` | Sensitive data — excluded in filtered query/export mode |
-
-**Rules for `visibility/` tags:**
-- They do **not** count toward the 5-tag limit
-- Only one `visibility/` tag per page
-- Omit entirely when content is clearly public — no tag needed
-- Never add `visibility/internal` just because content is technical; use it only for genuinely team-restricted knowledge
-- When running a tag audit, report `visibility/` tag usage separately — do not flag them as unknown or non-canonical
-
-When normalizing tags, leave `visibility/` tags untouched — they are not subject to alias mapping.
-
-## Mode 1: Tag Audit
-
-When the user wants to see the current state of tags:
-
-### Step 1: Scan all pages
-
-```
-Glob: $VAULT_PATH/**/*.md (excluding _archives/, .obsidian/, _meta/)
-Extract: tags field from YAML frontmatter
-```
-
-### Step 2: Build a tag frequency table
-
-For each tag found, count how many pages use it. Flag:
-
-- **Unknown tags** — not in the taxonomy's canonical list
-- **Alias tags** — using an alias instead of the canonical form (e.g., `nextjs` instead of `react`)
-- **Over-tagged pages** — pages with more than 5 tags
-- **Untagged pages** — pages with no tags or empty tags field
-
-### Step 3: Report
-
-```markdown
-## Tag Audit Report
-
-### Summary
-
-- Total unique tags: 47
-- Canonical tags used: 32
-- Non-canonical tags found: 15
-- Pages over tag limit (5): 3
-- Untagged pages: 2
-
-### Non-Canonical Tags Found
-
-| Current Tag | → Canonical | Pages Affected |
-| ----------- | ----------- | -------------- |
-| `nextjs`    | `react`     | 4              |
-| `next-js`   | `react`     | 2              |
-| `robotics`  | `ml`        | 1              |
-| `windows98` | `retro`     | 3              |
-
-### Unknown Tags (not in taxonomy)
-
-| Tag          | Pages | Recommendation                   |
-| ------------ | ----- | -------------------------------- |
-| `flutter`    | 1     | Add to taxonomy under Frameworks |
-| `kubernetes` | 2     | Add to taxonomy under DevOps     |
-
-### Over-Tagged Pages
-
-| Page                   | Tag Count | Tags                 |
-| ---------------------- | --------- | -------------------- |
-| `entities/jane-doe.md` | 8         | ai, ml, founder, ... |
-```
-
-## Mode 2: Tag Normalization
-
-When the user wants to fix the tags:
-
-### Step 1: Run audit (above)
-
-### Step 2: Apply fixes
-
-For each page with non-canonical tags:
-
-1. Read the page
-2. Replace alias tags with their canonical form from the taxonomy
-3. If page has > 5 tags, suggest which to drop (keep the most specific/relevant ones)
-4. Write the updated frontmatter
-
-**Example:**
-
-```yaml
-# Before
-tags: [nextjs, ai, ml-engineer, windows98, creative-coding, game, 8-bit, portfolio]
-
-# After
-tags: [react, ai, ml, retro, generative-art]
-```
-
-### Step 3: Handle unknowns
-
-For tags that aren't in the taxonomy and aren't aliases:
-
-- If the tag is used on 2+ pages, suggest adding it to the taxonomy
-- If the tag is used on 1 page, suggest replacing it with the closest canonical tag
-- Ask the user before making changes to unknown tags
-
-### Step 4: Update taxonomy
-
-If new canonical tags were agreed upon, append them to `_meta/taxonomy.md` in the correct section.
-
-## Mode 3: Tagging a New Page
-
-When you're creating a wiki page and need to choose tags:
-
-1. Read `_meta/taxonomy.md`
-2. Select up to 5 tags that best describe the page:
-   - 1-2 **domain tags** (what subject area)
-   - 1 **type tag** (what kind of thing)
-   - 0-1 **project tags** (if project-specific)
-   - 0-1 additional descriptive tags
-3. Use only canonical tags — never aliases
-4. If no existing tag fits, check if it's worth adding to the taxonomy
-
-## Mode 4: Adding a New Tag
-
-When the user wants to add a tag to the vocabulary:
-
-1. Check if an existing tag already covers the concept (suggest it if so)
-2. If genuinely new, determine which section it belongs in (Domain, Type, Project)
-3. Add it to `_meta/taxonomy.md` with:
-   - The canonical tag name
-   - What it's used for
-   - Any aliases to redirect
-
-## After Any Tag Operation
-
-Append to `log.md`:
-
-```
-- [TIMESTAMP] TAG_AUDIT tags_normalized=N unknown_tags=M pages_modified=P
-```
-
-Or for normalization:
-
-```
-- [TIMESTAMP] TAG_NORMALIZE tags_renamed=N pages_modified=M new_tags_added=P
-```
-
-**`hot.md`** — Read `$OBSIDIAN_VAULT_PATH/hot.md` (create from the vault setup template if missing). Update **Recent Activity** with a one-line summary — e.g. "Tag audit: normalized 14 tags across 28 pages; 2 new canonical tags added." Keep the last 3 operations. Update `updated` timestamp.
-
-## QMD Refresh After Vault Writes
-
-QMD is a search index, not the source of truth. If `$QMD_WIKI_COLLECTION` is empty or unset, skip this step. Run it only after this skill has written or rewritten vault markdown. If QMD refresh fails, do not roll back the vault changes; report the QMD status separately.
-
-Use `$QMD_CLI` if set; otherwise use `qmd`.
-
-```bash
-${QMD_CLI:-qmd} update
-```
-
-If the output says vectors are needed or embeddings may be stale, run:
-
-```bash
-${QMD_CLI:-qmd} embed
-```
-
-Verify the collection with either:
-
-```bash
-${QMD_CLI:-qmd} ls "$QMD_WIKI_COLLECTION"
-```
-
-or, when a specific page path is known:
-
-```bash
-${QMD_CLI:-qmd} get "qmd://$QMD_WIKI_COLLECTION/<page>.md" -l 5
-```
-
-Record one of:
-- `QMD refreshed: update + embed + verified`
-- `QMD refreshed: update only + verified`
-- `QMD skipped: QMD_WIKI_COLLECTION unset`
-- `QMD skipped: qmd CLI unavailable`
-- `QMD failed: <short error summary>`
+# tag-taxonomy
+
+此 skill 直接执行下方从 `workflows/tag-taxonomy.yaml` 同步的完整契约。内嵌 YAML 是实际指令，不是摘要或外部参考；按 `steps`、输入输出、检查、跳转、失败上限和人工审批要求逐项执行。
+
+发生任何冲突时，以内嵌 workflow 契约为准。不要用历史 skill 文案补写、弱化或覆盖它。修改行为时先编辑 workflow，再运行 `python tools/sync_workflow_skills.py`。
+
+<!-- BEGIN GENERATED WORKFLOW CONTRACT -->
+````yaml
+description: 审计、规范化或扩展 Obsidian wiki 的受控标签词表，并安全维护 tracking 与可选 QMD 索引
+
+auto_reset: true
+
+manual_step:
+  - approve_changes
+
+adversarial_check:
+  timeout_ms: 3600000
+  system_prompt: |
+    你是 Tag Taxonomy 的审计者。_meta/taxonomy.md 是 canonical vocabulary，visibility/* 是独立系统标签。
+    未经人工门批准不得改标签或 taxonomy；未知标签不能自动猜映射，知识页最多 5 个普通标签。
+
+steps:
+  - id: resolve_context
+    desc: 复用共享子 workflow 解析 taxonomy 上下文
+    workflow: wiki-context
+    input: taxonomy invocation 与当前 CWD
+    output: wiki-context.json + wiki-context.md
+    inputs:
+      requested_keys: OBSIDIAN_VAULT_PATH,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_CLI_SEARCH_MODE
+      optional_reads: owner AGENTS,taxonomy,index,manifest,active layout
+      setup_mode: "false"
+    on_pass: audit_tags
+    on_fail: resolve_context
+    max_fail_count: 3
+
+  - id: audit_tags
+    desc: 解析词表并生成全 vault 标签审计
+    do: |
+      使用 wiki-context.json 解析后的 vault 与 canonical taxonomy。
+
+      1. 使用 context 的 canonical vault、_meta/taxonomy.md 和 index.md；不得重新选择 profile。
+      2. 只扫描 active layout routing.content_roots 下的 live `.md`，排除 routing.skip_dirs/system_dirs/system_paths；从 YAML frontmatter 提取 tags，不把正文 hashtag 当标签。
+      3. 建立频率表并识别 canonical、alias、unknown、>5 普通标签、untagged；visibility/public|internal|pii 单独统计，不计 5-tag 限额，不受 alias mapping，且每页最多一个。
+      4. 识别用户模式：audit、normalize、tag-new-page、add-tag；所有模式先完成审计。
+      5. 写 tag-audit-report.md 和 tag-inventory.json，包含逐页 locator、counts 与配置来源。不得修改 vault。
+    input: 标签审计、规范化、新页面选标签或新增 canonical tag 请求
+    output: tag-audit-report.md + tag-inventory.json
+    check_voting:
+      - check: 对照 taxonomy 重算 canonical/alias/unknown/over-tagged/untagged，确认 frontmatter-only 与排除目录准确
+      - check: 独立核对 visibility 统计和规则：不计普通标签上限、不当 unknown、不被 normalization 改写且每页至多一个
+      - check: 确认审计只写 artifacts，vault/taxonomy/index/log/hot/QMD 无变化
+    on_pass: plan_changes
+    on_fail: audit_tags
+    max_fail_count: 3
+
+  - id: plan_changes
+    desc: 形成确定性标签变更或只读报告计划
+    do: |
+      基于用户模式和 tag-inventory.json 写 tag-change-plan.md 与 tag-change-plan.json。
+
+      1. audit 模式生成 empty write plan，仅保留报告。
+      2. normalize 模式只自动规划 taxonomy 明示的 alias→canonical；去重并保证普通标签<=5，超限时列出保留/删除理由。
+      3. unknown 用于 2+ pages 时仅建议新增，单页仅建议最接近 canonical；在用户明确同意前不得纳入写计划。
+      4. tag-new-page 选择最多 5 个 canonical 普通标签：1-2 domain、1 type、可选 project/descriptor；保留合法 visibility。
+      5. add-tag 先证明现有词表不能覆盖，再给 section、definition、aliases 和受影响页面。
+      6. 每项记录 before/after、路径、taxonomy evidence、是否需人工选择和 stable plan_id。保持 vault 只读。
+    input: tag-audit-report.md + tag-inventory.json + 用户意图
+    output: tag-change-plan.md + tag-change-plan.json
+    check_voting:
+      - check: 逐项对照 taxonomy 确认 alias mapping 精确、canonical tags 合法、普通标签去重且不超过 5
+      - check: unknown/new tag 没有被自动决定，tag selection 的 domain/type/project 配额合理，visibility 完整保留
+      - check: audit 模式 write plan 严格为空，所有模式尚未修改 vault
+    on_pass: approve_changes
+    on_fail: plan_changes
+    max_fail_count: 3
+
+  - id: approve_changes
+    desc: 人工确认标签页面与 taxonomy 的精确变更集
+    do: |
+      展示 tag-change-plan.md 的所有 before/after、unknown 决策与 taxonomy additions。
+
+      把用户选择写入 approved-tag-plan.json，绑定 plan_id、plan hash、canonical vault、mode、page edits 和 taxonomy edits。audit 模式绑定明确 no-op；拒绝则取消。输出 <promise>done</promise> 后等待人工门，批准前不得修改 vault 或刷新 QMD。
+    input: tag-change-plan.md + 用户 accept/reject/select 决策
+    output: approved-tag-plan.json（绑定 plan hash 的批准或 no-op）
+    check: |
+      确认 approved plan 是原计划子集，所有 unknown/new taxonomy 决定均有明确用户选择，vault 与 hash 匹配；人工门之前没有 vault 写入。
+    on_pass: apply_tags
+    on_fail: approve_changes
+    max_fail_count: 3
+
+  - id: apply_tags
+    desc: 应用获批标签并验证 frontmatter 与词表
+    do: |
+      只执行 approved-tag-plan.json；audit/no-op 模式不写 vault。
+
+      1. 修改前读取最新页面与 taxonomy；若 before/hash 已漂移，停止并回到重规划，不覆盖并发修改。
+      2. 只改 YAML tags 字段与明确批准的 _meta/taxonomy.md 条目，保留 frontmatter 顺序、正文和无关字段。
+      3. 对每页验证普通标签均 canonical、去重且<=5，visibility 合法且至多一个；taxonomy additions 位于正确 section，alias 无冲突。
+      4. 写 tag-apply-report.md 和实际 diff/counts；此时不得更新 log/hot 或 QMD。
+    input: approved-tag-plan.json + 最新 pages/taxonomy
+    output: 获批的标签/taxonomy edits + tag-apply-report.md，或 audit no-op
+    check_voting:
+      - check: 将实际 diff 与 approved plan 逐项对账，确认无越权、无并发覆盖，正文及其他 frontmatter 字段未改变
+      - check: 重扫所有 changed pages，确认 canonical、<=5、visibility 与新增 taxonomy/alias 约束全部满足
+      - check: audit/no-op 时 vault 字节不变；写模式下 log/hot/QMD 尚未改变
+    on_pass: record_and_refresh
+    on_fail: apply_tags
+    max_fail_count: 4
+
+  - id: record_and_refresh
+    desc: 幂等记录标签操作并按需刷新 QMD
+    do: |
+      1. 根据 mode 向 log.md 幂等写 TAG_AUDIT 或 TAG_NORMALIZE，带 plan_id、tags_normalized/unknown/pages_modified/new_tags_added；重试不得重复。
+      2. 有 live page/taxonomy 修改时更新 hot.md Recent Activity，保留最近 3 次并更新 frontmatter timestamp；纯 audit 只记录 audit log，不虚报 normalization。
+      3. 仅有 live Markdown 写入且 QMD_WIKI_COLLECTION 已配置时运行 `${QMD_CLI:-qmd} update`，需要时 embed，并以 ls/get 验证；unset/unavailable/error 分别记录且不回滚 Markdown。
+      4. 写 tag-taxonomy-completion.md，事实匹配实际 diff、tracking 和 QMD。完成后输出 <promise>done</promise>。
+    input: approved-tag-plan.json + tag-apply-report.md + log/hot/QMD config
+    output: 幂等 tracking + tag-taxonomy-completion.md + 可选 QMD refresh
+    check_voting:
+      - check: 核对 TAG event 恰好一次、字段与实际 counts 一致，hot last-3/timestamp 只在适用时更新
+      - check: 核对 QMD guard/update/embed/verify 顺序和状态；失败未回滚 vault，no-op 未刷新
+      - check: 从最终页面和 taxonomy 抽样验证报告准确，没有未批准 unknown mapping 或隐藏写入
+    on_pass: done
+    on_fail: record_and_refresh
+    max_fail_count: 3
+````
+<!-- END GENERATED WORKFLOW CONTRACT -->

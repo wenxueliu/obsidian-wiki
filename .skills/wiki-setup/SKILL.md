@@ -1,346 +1,207 @@
 ---
 name: wiki-setup
-description: >
-  Initialize a new Obsidian wiki vault with the correct structure, special files, and configuration.
-  Use this skill when the user wants to set up a new wiki from scratch, initialize the vault structure,
-  create the .env file, or says things like "set up my wiki", "initialize obsidian", "create a new vault",
-  "get started with the wiki". Also use when the user needs to reconfigure their existing vault or
-  fix a broken setup.
+description: "经人工确认后安全初始化或修复 Obsidian wiki 的配置、layout、核心文件与可选集成"
 ---
 
-# Obsidian Setup — Vault Initialization
-
-You are setting up a new Obsidian wiki vault (or repairing an existing one).
-
-## Step 1: Create .env
-
-If `.env` doesn't exist, create it from `.env.example`. Ask the user for:
-
-1. **Where should the vault live?** → `OBSIDIAN_VAULT_PATH`
-   - Default: `~/Documents/obsidian-wiki-vault`
-   - Must be an absolute path (after expansion)
-
-2. **Where are your source documents?** → `OBSIDIAN_SOURCES_DIR`
-   - Can be multiple paths, comma-separated
-   - Default: `~/Documents`
-   - Local git repo clones (public or private, any host) can be listed here too — clone
-     the repo locally first, then add its path. See "Ingesting Git Repositories" in
-     `wiki-folder-ingest/SKILL.md` for how supported text sources are handled.
-
-3. **Want to import Claude history?** → `CLAUDE_HISTORY_PATH`
-   - Default: auto-discovers from `~/.claude`
-   - Set explicitly if Claude data is elsewhere
-
-4. **Have QMD installed?** → `QMD_WIKI_COLLECTION` / `QMD_PAPERS_COLLECTION` / `QMD_TRANSPORT`
-   - Optional. Enables semantic search in `wiki-query` and source discovery in `wiki-folder-ingest`.
-   - Default to `QMD_TRANSPORT=mcp` unless the user wants the agent to call the local `qmd` CLI directly.
-   - If using CLI mode, set `QMD_CLI_SEARCH_MODE=quality` by default; suggest `balanced` if reranking is too slow.
-   - If unsure, skip for now — both skills fall back to `Grep` automatically.
-   - Install instructions: see `.env.example` (QMD section).
-   - **If `QMD_WIKI_COLLECTION` is set, verify the collection excludes `_raw/`.** The wiki
-     collection and papers collection must stay disjoint — `wiki-query` cites them as
-     separate layers (compiled knowledge vs. raw staging), and `OBSIDIAN_VAULT_PATH` contains
-     `_raw/`, so a plain `qmd collection add <vault>` silently merges the two.
-     Read `~/.config/qmd/index.yml`, find the entry for `$QMD_WIKI_COLLECTION`, and check its
-     `ignore` list includes `_raw/**` (and ideally `log.md`, which has no semantic value). If
-     the collection doesn't exist yet, create it (`qmd collection add "$OBSIDIAN_VAULT_PATH"
-     --name <collection-name>`), then add the `ignore` block to `index.yml` by hand — `qmd`
-     has no `--ignore` flag and refuses a second `collection add` on a path that already has
-     one, so editing the YAML is the only way to scope it. Run `qmd update` after editing.
-     If the collection already exists without the `ignore` block, tell the user their
-     wiki collection is indexing `_raw/` (including `_raw/_archived/` drafts left behind by
-     `wiki-folder-ingest`) and offer to add the `ignore` block and re-run `qmd update`.
-
-5. **Token budget warning threshold?** → `WIKI_TOKEN_WARN_THRESHOLD`
-   - Default: `100000` (warn when full-wiki read would cost > 100K tokens)
-   - Set to `0` to disable the warning entirely
-   - `wiki-status` shows a token footprint table and emits this warning automatically
-
-6. **Enable staged writes?** → `WIKI_STAGED_WRITES`
-   - Default: unset / `false` (pages written directly to their final location)
-   - Set to `true` for team wikis, high-stakes domains, or any vault where the human wants final say on every LLM-written page
-   - When enabled: all new/updated pages land in `_staging/` first; run `/wiki-stage-commit` to review and promote them
-   - `wiki-status` shows a "Staged writes pending" count when files are waiting
-
-After resolving config, ensure the global writing profile exists at
-`~/.obsidian-wiki/WRITING.md` (`%LOCALAPPDATA%/.obsidian-wiki/WRITING.md` on Windows). Copy it from
-`llm-wiki/references/WRITING.md` only when absent; never overwrite an existing profile and do not
-ask additional writing-style questions. Report the resulting path.
-
-## Step 2: Create Vault Directory Structure
-
-Before creating directories, determine which layout to use:
-
-```bash
-# List available layouts
-obsidian-wiki setup --list-layouts
-
-```
-
-Ask the user which layout they prefer (or use `default`). Apply it through the workflow setup contract or `obsidian-wiki setup --layout <name>`; both use `workflows/layouts/<name>/` with missing-only copy semantics and create `_meta/layout.json`. Never select a layout through `.env` or infer it from existing directories.
-
-**Directory purposes:**
-- `.obsidian/` — Obsidian's own config. Creates vault recognition.
-- `projects/` — Per-project knowledge (populated during ingest).
-- `_archives/` — Stores wiki snapshots for rebuild/restore operations.
-- `_raw/` — Staging area for unprocessed drafts. Drop rough notes here; `wiki-folder-ingest` will promote them to proper wiki pages and move the originals into `_raw/_archived/` (created on first use).
-- `_staging/` — Review queue for LLM-written pages when `WIKI_STAGED_WRITES=true`. Pages here are not visible in Obsidian's graph until promoted via `/wiki-stage-commit`.
-- `_meta/` — Trust ledger, taxonomy, dashboard definitions.
-- `_readouts/` — Narrative readouts saved by wiki-narrate.
-
-## Step 3: Create Special Files
-
-### index.md
-
-```markdown
----
-title: Wiki Index
----
-
-# Wiki Index
-
-*This index is automatically maintained. Last updated: TIMESTAMP*
-
-## Concepts
-
-*No pages yet. Use `wiki-folder-ingest` to add your first source.*
-
-## Entities
-
-## Skills
-
-## References
-
-## Synthesis
-
-## Journal
-```
-
-### log.md
-
-```markdown
----
-title: Wiki Log
----
-
-# Wiki Log
-
-- [TIMESTAMP] INIT vault_path="OBSIDIAN_VAULT_PATH" categories=concepts,entities,skills,references,synthesis,journal
-```
-
-### hot.md
-
-```markdown
----
-title: Hot Cache
-updated: TIMESTAMP
----
-
-# Hot Cache
-
-*A ~500-word semantic snapshot of recent activity. Updated after every major write operation.*
-
-## Recent Activity
-
-- [TIMESTAMP] INIT — vault created at OBSIDIAN_VAULT_PATH
-
-## Active Threads
-
-*None yet — start ingesting sources to populate.*
-
-## Key Takeaways
-
-*None yet.*
-
-## Flagged Contradictions
-
-*None yet.*
-```
-
-### .manifest.json
-
-Create an empty manifest so ingest skills have a tracking file to append to and
-`obsidian-wiki doctor` reports the vault as complete (it treats `.manifest.json`
-as a required core file):
-
-```bash
-printf '{}\n' > "$OBSIDIAN_VAULT_PATH/.manifest.json"
-```
-
-## Step 4: Create .obsidian Configuration
-
-Create minimal Obsidian config for a good out-of-box experience:
-
-### .obsidian/app.json
-```json
-{
-  "strictLineBreaks": false,
-  "showFrontmatter": false,
-  "defaultViewMode": "preview",
-  "livePreview": true
-}
-```
-
-### .obsidian/appearance.json
-```json
-{
-  "baseFontSize": 16
-}
-```
-
-## Step 5: Recommend Obsidian Plugins
-
-Tell the user about these recommended community plugins (they install manually):
-
-1. **Dataview** — Query page metadata, create dynamic tables. Essential for a wiki.
-2. **Graph Analysis** — Enhanced graph view for exploring connections.
-3. **Templater** — If they want to create pages manually using templates.
-4. **Obsidian Git** — Auto-backup the vault to a git repo.
-
-## Step 6: Verify Setup
-
-Run a quick sanity check:
-- [ ] Vault directory matches the selected workflow layout and `_meta/layout.json` hashes validate
-- [ ] `index.md` exists at vault root
-- [ ] `log.md` exists at vault root
-- [ ] `hot.md` exists at vault root
-- [ ] `.manifest.json` exists at vault root (empty `{}` is fine)
-- [ ] `.env` has `OBSIDIAN_VAULT_PATH` set
-- [ ] `.obsidian/` directory exists
-- [ ] `_staging/` directory exists (required even when `WIKI_STAGED_WRITES` is not set — created on setup for future use)
-- [ ] Source directories (if configured) exist and are readable
-
-Report the results and tell the user they can now:
-1. Open the vault in Obsidian (File → Open Vault → select the directory)
-2. Run `wiki-status` to see what's available to ingest
-3. Run `wiki-folder-ingest` to add their first sources
-4. Run `claude-history-ingest` to mine their Claude conversations
-5. Run `codex-history-ingest` to mine their Codex sessions (if they use Codex)
-6. Run `wiki-status` again anytime to check the delta
-
-## Optional: Install the Stop Hook (Auto-Capture)
-
-Ask the user: **"Want to auto-capture findings at session end?"**
-
-If yes, install the Stop hook into their global Claude Code settings so that every session
-with meaningful work automatically prompts `/wiki-capture --quick` before closing.
-
-**What the hook does:** reads the session transcript on Stop, counts file edits and shell
-calls, and if significant work happened, asks Claude to run `/wiki-capture --quick` once.
-The `wiki-capture` quick-mode KEEP/SKIP gate prevents noise — routine or
-inconclusive sessions are skipped automatically.
-
-**Installation steps:**
-
-1. Find the obsidian-wiki repo path. If `OBSIDIAN_WIKI_REPO` is set in config, use that.
-   Otherwise, check common locations: `~/Documents/projects/obsidian-wiki`, `~/obsidian-wiki`,
-   or ask the user.
-
-2. Locate the hook script. **Windows users:** use `wiki-stop-capture.ps1` (PowerShell)
-   instead of `.sh`. The path differs between install types:
-
-   - `<REPO_PATH>/hooks/wiki-stop-capture.sh` — packaged install (Unix).
-   - `<REPO_PATH>/.claude/hooks/wiki-stop-capture.sh` — source checkout (Unix).
-   - `<REPO_PATH>/.claude/hooks/wiki-stop-capture.ps1` — **Windows** source checkout.
-
-   If none exist, fetch the canonical copy:
-   **Unix:**
-   ```bash
-   mkdir -p ~/.obsidian-wiki/hooks
-   curl -fsSL https://raw.githubusercontent.com/Ar9av/obsidian-wiki/main/.claude/hooks/wiki-stop-capture.sh \
-     -o ~/.obsidian-wiki/hooks/wiki-stop-capture.sh
-   chmod +x ~/.obsidian-wiki/hooks/wiki-stop-capture.sh
-   ```
-   **Windows (PowerShell):**
-   ```powershell
-   New-Item -ItemType Directory -Force $env:LOCALAPPDATA\.obsidian-wiki\hooks
-   Invoke-WebRequest -Uri https://raw.githubusercontent.com/Ar9av/obsidian-wiki/main/.claude/hooks/wiki-stop-capture.ps1 `
-     -OutFile $env:LOCALAPPDATA\.obsidian-wiki\hooks\wiki-stop-capture.ps1
-   ```
-
-   Use the resolved absolute path as `<HOOK_PATH>` below.
-
-3. Merge the hook entry into `~/.claude/settings.json`:
-
-**Unix:**
-```json
-{
-  "hooks": {
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash <HOOK_PATH>"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-**Windows:**
-```json
-{
-  "hooks": {
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell -NoProfile -File <HOOK_PATH>"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-   If `~/.claude/settings.json` already exists and has a `hooks.Stop` array, **append** the new
-   entry rather than replacing — don't clobber existing hooks.
-
-   > **Note — expect a duplicate nudge inside this repo.** The obsidian-wiki repo ships its own
-   > git-tracked `.claude/settings.json` registering the same Stop hook at a relative path. Claude
-   > Code *merges* project-level and user-level hook config rather than letting one override the
-   > other, so sessions ending inside the repo itself fire both registrations. This is expected and
-   > harmless — the hook claims an atomic per-session sentinel, so only one nudge is emitted. Leave
-   > both in place: removing the project entry dirties a tracked framework file and disables capture
-   > for anyone who clones the repo without doing the global install.
-
-4. Confirm: "Stop hook installed. Claude Code will prompt `/wiki-capture --quick` at the
-   end of any session where you write files or run ≥ 4 shell commands."
-
-**To uninstall later:** remove the hook entry from `~/.claude/settings.json` or set
-`HIVEMIND_CAPTURE=false` in your shell to skip capture for a single session.
-
-## Optional: Configure GitHub Sync
-
-Ask the user: **"Want to sync your vault to a private GitHub repo?"**
-
-The vault is plain markdown, so pushing it to git gets you version history, backup, and
-cross-device sync for free. This is opt-in — skip it if the user declines or has no repo ready.
-
-If yes:
-
-1. Ask for the repo URL (e.g. `https://github.com/you/my-wiki.git`). Recommend it be **private**
-   if the vault holds personal notes.
-2. Run the CLI, which handles `git init`, a default `.gitignore`, and wiring the `origin` remote —
-   this is the same code path `obsidian-wiki setup`'s interactive prompt and `python3 setup.py` use, so
-   there's one implementation to keep correct (see issue #153 for why that matters):
-   ```bash
-   obsidian-wiki sync-setup "<repo-url>" --vault "$OBSIDIAN_VAULT_PATH"
-   ```
-   If the `obsidian-wiki` binary isn't on PATH (source checkout without an install), run it from
-   the repo instead: `PYTHONPATH="$OBSIDIAN_WIKI_REPO" python3 -m obsidian_wiki.cli sync-setup ...`
-   using whichever of `OBSIDIAN_WIKI_REPO` or a local checkout path is available.
-3. Tell the user they can run `obsidian-wiki sync` any time afterward to commit and push pending
-   vault changes (stages everything, commits with a timestamp, pushes). There's no config file to
-   check for sync status — the vault's own `git remote` is the source of truth.
-
-## Optional: Refresh QMD After Setup
-
-If `QMD_WIKI_COLLECTION` is configured and the local QMD CLI is available, run `qmd update` after the initial vault files exist so the fresh vault is immediately queryable. No embedding pass is usually needed at setup time because the vault starts empty, so a plain update is enough unless you have already populated pages. Before running it, confirm the `_raw/` exclusion described in Step 1.4 is in place — otherwise this update indexes the (currently empty) staging directory into the wiki collection too, and every future draft dropped there joins it silently.
+# wiki-setup
+
+此 skill 直接执行下方从 `workflows/wiki-setup.yaml` 同步的完整契约。内嵌 YAML 是实际指令，不是摘要或外部参考；按 `steps`、输入输出、检查、跳转、失败上限和人工审批要求逐项执行。
+
+发生任何冲突时，以内嵌 workflow 契约为准。不要用历史 skill 文案补写、弱化或覆盖它。修改行为时先编辑 workflow，再运行 `python tools/sync_workflow_skills.py`。
+
+<!-- BEGIN GENERATED WORKFLOW CONTRACT -->
+````yaml
+description: 经人工确认后安全初始化或修复 Obsidian wiki 的配置、layout、核心文件与可选集成
+
+auto_reset: true
+
+manual_step:
+  - approve_setup
+
+adversarial_check:
+  timeout_ms: 3600000
+  system_prompt: |
+    你是 Wiki Setup 的安全审计者。批准前不得写文件；批准后不得覆盖 owner 现有配置、Writing Profile、vault 内容或 hooks。
+    网络、Git sync、全局 hook 等可选外部变更只能执行 setup plan 中明确获批的项目。
+    每个 step 的 do 只生成该 step 声明的状态或 artifact；check 只验收本步目标、preserve 边界和必要副作用，不重复全量推理。
+
+steps:
+  - id: resolve_existing_context
+    desc: 按共享规则解析现有配置，允许尚未初始化的 vault
+    workflow: wiki-context
+    input: setup invocation、source CWD 与可能存在的 config/vault metadata
+    inputs:
+      requested_keys: OBSIDIAN_VAULT_PATH,OBSIDIAN_SOURCES_DIR,CLAUDE_HISTORY_PATH,QMD_WIKI_COLLECTION,QMD_PAPERS_COLLECTION,QMD_TRANSPORT,QMD_CLI_SEARCH_MODE,WIKI_TOKEN_WARN_THRESHOLD,WIKI_STAGED_WRITES,WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS,WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES,WIKI_TEXT_CHUNK_TARGET_BYTES,WIKI_TEXT_CHUNK_MIN_BYTES,WIKI_TEXT_CHUNK_HARD_MAX_BYTES,WIKI_TEXT_CHUNK_STRATEGY,WIKI_TEXT_CHUNK_OPTIONS,OBSIDIAN_WIKI_REPO
+      optional_reads: existing config, vault metadata, AGENTS.md, active layout metadata, QMD collection metadata
+      setup_mode: "true"
+    output: wiki-context.json + wiki-context.md
+    on_pass: load_setup_contract
+    on_fail: resolve_existing_context
+    max_fail_count: 3
+
+  - id: load_setup_contract
+    desc: 生成仓库内自包含的精确初始化契约
+    workflow: wiki-setup-contract
+    input: wiki-context.json 中的非秘密 invocation metadata
+    inputs:
+      invocation_metadata: wiki-context.json 中的 resolution mode、canonical paths 与 configured/unconfigured 状态；不得传递秘密明文
+    output: setup-contract.md + setup-contract.json
+    on_pass: plan_setup
+    on_fail: load_setup_contract
+    max_fail_count: 3
+
+  - id: plan_setup
+    desc: 收集配置选择并形成零写入 setup plan
+    do: |
+      以 `wiki-context.json` 的磁盘事实和 `setup-contract.json/md` 的精确默认值、模板、命令与验收条款为唯一依据，形成 setup plan，不读取外部规范或示例配置。
+
+      先区分新建或 repair，并盘点唯一 config path、canonical vault、active layout、core files、Writing Profile、QMD collection、hooks 与 Git remote。只询问尚未确定或需要用户选择的项目：vault/source/history paths、layout、QMD、token threshold、staged writes，以及是否安装 Stop hook、配置 private Git sync和准确 repo URL。采用默认值时也要在 plan 明示。
+
+      在 `setup-plan.md` 列出 exact targets、每项 create/preserve/minimal-repair、原子写策略、required checks，以及所有需要 home/network/git/QMD 变更的 optional approvals。现有 `.env`、WRITING.md、core files、hooks、custom dirs 和 owner data 默认 preserve；此步骤零写入。
+    input: wiki-context.json + setup-contract.json/md + 用户的初始化/修复请求与配置选择
+    output: setup-plan.md（exact paths、defaults、create/preserve/repair、optional approvals、contract version/hash）
+    check: 核对 plan 的绝对 vault path、layout、必需配置、preserve/repair 策略和可选动作选择均已明确；确认零写入
+    on_pass: approve_setup
+    on_fail: plan_setup
+    max_fail_count: 3
+
+  - id: approve_setup
+    desc: 人工审批 setup 的全部本地与外部变更
+    do: |
+      展示 setup-plan.md 的精简变更清单与 exact targets，写 approval-request.md 和 approved-setup.json，绑定 plan hash、setup contract hash、vault、config path、create/preserve/repair 集合及 approved optional actions。
+
+      用户运行 /ralphflow-continue 表示批准当前 binding；如修改选择，先更新 plan/binding 再重新等待。拒绝则取消 workflow。批准前不得创建目录、配置、QMD collection、hook、Git repo 或 remote。准备好后输出 <promise>done</promise>。
+    input: setup-plan.md + 用户批准/修改/拒绝
+    output: approval-request.md + approved-setup.json
+    check: 核对 approved binding 的 plan/contract hash、targets 和 optional actions 与用户明确批准一致；确认批准前零变更
+    on_pass: write_config
+    on_fail: approve_setup
+    max_fail_count: 3
+
+  - id: write_config
+    desc: 生成或最小更新 Wiki 配置
+    do: |
+      根据 approved-setup.json 与 setup contract 的 config binding 生成目标配置。缺失时创建；repair 时 read-modify-write，保留未知字段、注释和秘密值。使用 sibling temp 原子替换。
+
+      写 `config-report.md`，记录 target、created/preserved/repaired、effective non-secret values 和秘密值的 configured/unconfigured 状态。
+    input: approved-setup.json + setup-contract.json/md + wiki-context.json + 现有 config（如有）
+    output: config + config-report.md
+    check: 解析目标 config，核对 approved path、required typed values 和 report；repair 时确认未知字段、注释和秘密值保留，且未改变其他 setup 状态
+    on_pass: initialize_writing_profile
+    on_fail: write_config
+    max_fail_count: 4
+
+  - id: initialize_writing_profile
+    desc: 生成缺失的全局 Writing Profile
+    do: |
+      根据 approved binding 和冻结的 `WRITING.md` 模板，在目标缺失时创建全局 Writing Profile；目标已存在时保持原文并记录 preserved。
+
+      写 `writing-profile-report.md`，记录 target 与 created/preserved 状态。
+    input: approved-setup.json + setup-contract.json/md + config-report.md + 现有 WRITING.md（如有）
+    output: WRITING.md（仅缺失时）+ writing-profile-report.md
+    check: 核对平台 target 与 report；新建时内容匹配冻结模板，已存在时保持原文；确认未改变其他 setup 状态
+    on_pass: apply_layout
+    on_fail: initialize_writing_profile
+    max_fail_count: 3
+
+  - id: apply_layout
+    desc: 生成选定的 Vault layout
+    do: |
+      使用 approved layout name、canonical vault 和 artifacts 目录运行 bundled layout copier：
+
+      ```bash
+      obsidian-wiki wiki-layout-apply \
+        --layout "<approved-layout>" \
+        --vault "<canonical-vault>" \
+        --output-dir "{{artifacts_dir}}"
+      ```
+
+      console script 不在 PATH 时使用等价的 `python3 -m obsidian_wiki wiki-layout-apply ...`。同名 contract refresh 仅在 approved binding 含该动作时追加 `--refresh-layout-marker`。
+
+      copier 按 missing-only policy 生成 layout 目录、预制文件、`_meta/layout.json` 和 `layout-apply-report.json`。
+    input: approved-setup.json + setup-contract.json/md + config-report.md + canonical vault
+    output: vault layout tree + _meta/layout.json + layout-apply-report.json
+    check: 解析 layout marker/report，核对 approved vault、layout name/version 和 contract hashes，确认 required inventory 存在、overwritten_files 为空，且无 path escape 或未批准 layout 切换
+    on_pass: initialize_core
+    on_fail: apply_layout
+    max_fail_count: 4
+
+  - id: initialize_core
+    desc: 按精确模板幂等创建或最小修复核心文件
+    do: |
+      按 approved binding 使用 setup contract 中冻结的 index.md、log.md、hot.md、.manifest.json、app.json、appearance.json 内容，替换 timestamp、canonical vault path、active categories 和 index sections。
+
+      缺失文件按模板创建；repair 对现有内容做 minimal patch，保留 pages、manifest/log/index/hot 历史、owner frontmatter 和未知 Obsidian JSON keys。使用 sibling temp 原子替换，写 `core-files-report.md` 记录逐文件 created/preserved/repaired、diff 摘要和 contract hash。
+    input: approved-setup.json + setup-contract.json/md + config-report.md + writing-profile-report.md + layout-apply-report.json + 现有 core files
+    output: 完整 core files/.obsidian config + core-files-report.md
+    check: 核对 report 中的 approved core targets；确认 JSON 可解析、Markdown 具备必需 frontmatter/headings，新建文件包含契约动态值，repair 保留 owner 字段、历史和未知 settings
+    on_pass: configure_stop_hook
+    on_fail: initialize_core
+    max_fail_count: 4
+
+  - id: configure_stop_hook
+    desc: 生成已批准的 Stop hook 配置
+    do: |
+      若 Stop hook 获批，按 contract 的平台脚本与 settings merge 策略写入 hook 配置；需要且获批下载时获取 canonical copy。未获批时不改变 hook 状态。
+
+      写 `stop-hook-report.md`，记录 installed/skipped/failed、目标路径、command、sentinel、卸载方式和 HIVEMIND_CAPTURE 单次开关。
+    input: approved-setup.json + setup-contract.json/md + 现有 hook/settings 状态
+    output: Stop hook 配置（如获批）+ stop-hook-report.md
+    check: 对照 approval 核对 report 与最终 Stop hook entry；installed 时 command/sentinel 正确且保留旧 hooks，skipped 时状态未改变
+    on_pass: configure_git_sync
+    on_fail: configure_stop_hook
+    max_fail_count: 3
+
+  - id: configure_git_sync
+    desc: 生成已批准的 Vault Git sync 配置
+    do: |
+      若 Git sync 获批，使用 contract 声明的首选 CLI 为 canonical vault 配置 Git 与用户提供的 remote；console binary 不可用时使用 contract 的本地 repo/PYTHONPATH fallback。未获批时不改变 Git 状态。
+
+      写 `git-sync-report.md`，记录 configured/skipped/failed、vault root、remote、所用入口和后续 sync 命令；秘密仅记录 configured/unconfigured。
+    input: approved-setup.json + setup-contract.json/md + canonical vault + 现有 Git 状态
+    output: Vault Git sync 配置（如获批）+ git-sync-report.md
+    check: 对照 approval 核对 report、vault Git root 和 origin；configured 时 remote 精确且无 credential 泄露，skipped 时 Git 状态未改变
+    on_pass: configure_qmd_collection
+    on_fail: configure_git_sync
+    max_fail_count: 3
+
+  - id: configure_qmd_collection
+    desc: 生成已批准的 QMD collection 配置
+    do: |
+      若 QMD 配置获批，按 contract 和 approved names/path 写入 wiki/papers collection 配置以及 `_raw/**` exclusion；未获批或未配置时不改变 QMD 配置。
+
+      写 `qmd-collection-report.md`，记录 configured/skipped/failed、collection names、paths、patterns 和 exclusions。
+    input: approved-setup.json + setup-contract.json/md + canonical vault + 现有 QMD config
+    output: QMD collection 配置（如获批）+ qmd-collection-report.md
+    check: 对照 approval 解析 QMD config/report；configured 时确认 canonical paths、`_raw/**` exclusion、wiki/papers disjoint 且无 duplicate，skipped 时 QMD 配置未改变
+    on_pass: refresh_qmd_index
+    on_fail: configure_qmd_collection
+    max_fail_count: 3
+
+  - id: refresh_qmd_index
+    desc: 生成已批准的 QMD 索引刷新结果
+    do: |
+      若 approved binding 要求刷新且上一 step 的 collection check 已通过，运行 `qmd update`；初始空 vault 按 contract 生成 skipped 结果。
+
+      写 `qmd-refresh-report.md`，记录 updated/skipped/failed、命令结果与 collection。
+    input: approved-setup.json + setup-contract.json/md + qmd-collection-report.md
+    output: QMD index refresh（如获批）+ qmd-refresh-report.md
+    check: 核对 approval、collection guard 与 refresh report 的 command/exit status；updated 时只改变目标 QMD index/cache，skipped/failed 时未损坏 setup 已生成状态
+    on_pass: render_setup_completion
+    on_fail: refresh_qmd_index
+    max_fail_count: 3
+
+  - id: render_setup_completion
+    desc: 生成 setup 交付报告
+    do: |
+      汇总 approved plan、contract hash、config/layout/core 及各 optional report，写 `setup-completion.md`。逐项列出 reported pass/fail、created/preserved/repaired/skipped、warnings、四个手动插件及用途，以及 Open Vault、status、ingest、Claude history、Codex history、再次 status 六个 next steps。
+
+      当输入 reports 均为 pass/skipped 时输出 `<promise>done</promise>`；否则在 completion 中列出失败及所属 step。
+    input: setup-contract.json/md + approved-setup.json + config/layout/core/optional reports + 最终 config/vault
+    output: setup-completion.md
+    check: 仅对账 approved plan 与各 step report，确认 required 状态均为 pass、optional 状态如实、completion 包含 plugins/next steps；有 required failure 时不得输出完成 promise
+    on_pass: done
+    on_fail: plan_setup
+    max_fail_count: 4
+````
+<!-- END GENERATED WORKFLOW CONTRACT -->

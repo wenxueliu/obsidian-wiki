@@ -27,7 +27,17 @@ import json
 from pathlib import Path
 from typing import Any
 
-from obsidian_wiki.index import load_index
+from obsidian_wiki.index import entry_edges, load_index
+
+GRAPH_CACHE_VERSION = 2
+
+
+def _source_fingerprint(index: dict[str, dict[str, Any]]) -> list[list[Any]]:
+    """Return the index metadata that determines whether graph cache is fresh."""
+    return [
+        [path, entry.get("mtime_ns"), entry.get("size")]
+        for path, entry in sorted(index.items())
+    ]
 
 # ── Graph building ────────────────────────────────────────────────────
 
@@ -69,29 +79,32 @@ def build_graph(vault: str | Path) -> "nx.DiGraph":
     for entry in raw.values():
         slug = entry["slug"]
 
-        # Plain links (wikilinks + markdown), weight = multiplicity
-        for target in entry["out_links"]:
-            if target and target != slug and target in known:
-                if G.has_edge(slug, target):
-                    G[slug][target]["weight"] = G[slug][target].get("weight", 1) + 1
-                    if "types" not in G[slug][target]:
-                        G[slug][target]["types"] = []
-                    if "link" not in G[slug][target]["types"]:
-                        G[slug][target]["types"].append("link")
-                else:
-                    G.add_edge(slug, target, weight=1, types=["link"], relation="link")
-
-        # Typed relationships from frontmatter
-        for target, rtype in entry["out_edges"].items():
-            if target and target != slug and target in known:
-                if G.has_edge(slug, target):
-                    G[slug][target]["weight"] = G[slug][target].get("weight", 1) + 1
-                    if "types" not in G[slug][target]:
-                        G[slug][target]["types"] = []
-                    G[slug][target]["types"].append(rtype)
-                    G[slug][target]["relation"] = rtype
-                else:
-                    G.add_edge(slug, target, weight=1, types=[rtype], relation=rtype)
+        for edge in entry_edges(entry):
+            target = edge["target"]
+            if not target or target == slug or target not in known:
+                continue
+            relation = edge["relation"]
+            weight = edge.get("weight", 1)
+            if G.has_edge(slug, target):
+                G[slug][target]["weight"] = G[slug][target].get("weight", 1) + weight
+                types = G[slug][target].setdefault("types", [])
+                if relation not in types:
+                    types.append(relation)
+                representations = G[slug][target].setdefault("representations", [])
+                for representation in edge.get("representations", []):
+                    if representation not in representations:
+                        representations.append(representation)
+                if edge.get("typed"):
+                    G[slug][target]["relation"] = relation
+            else:
+                G.add_edge(
+                    slug,
+                    target,
+                    weight=weight,
+                    types=[relation],
+                    relation=relation,
+                    representations=list(edge.get("representations", [])),
+                )
 
     return G
 
@@ -100,11 +113,17 @@ def load_graph(vault: str | Path) -> "nx.DiGraph":
     """Load cached graph from vault's .obsidian/ directory, or build fresh."""
     vault = Path(vault)
     cache_path = vault / ".obsidian" / "graph.json"
+    current_index = load_index(vault)
+    fingerprint = _source_fingerprint(current_index)
     if cache_path.exists():
         try:
             import networkx as nx
             data = json.loads(cache_path.read_text())
-            return nx.node_link_graph(data)
+            if (
+                data.get("version") == GRAPH_CACHE_VERSION
+                and data.get("source_fingerprint") == fingerprint
+            ):
+                return nx.node_link_graph(data["graph"])
         except (json.JSONDecodeError, KeyError):
             pass
     G = build_graph(vault)
@@ -118,8 +137,12 @@ def save_graph(G: "nx.DiGraph", vault: str | Path) -> None:
     vault = Path(vault)
     cache_path = vault / ".obsidian"
     cache_path.mkdir(parents=True, exist_ok=True)
-    data = nx.node_link_data(G)
-    (cache_path / "graph.json").write_text(json.dumps(data, ensure_ascii=False))
+    payload = {
+        "version": GRAPH_CACHE_VERSION,
+        "source_fingerprint": _source_fingerprint(load_index(vault)),
+        "graph": nx.node_link_data(G),
+    }
+    (cache_path / "graph.json").write_text(json.dumps(payload, ensure_ascii=False))
 
 
 # ── Query operations ──────────────────────────────────────────────────
@@ -175,8 +198,20 @@ def find_paths(
                         "source": path[i],
                         "target": path[i + 1],
                         "relation": G[path[i]][path[i + 1]].get("relation", "link"),
+                        "kind": (
+                            "link"
+                            if G[path[i]][path[i + 1]].get("relation", "link") == "link"
+                            else "relationship"
+                        ),
+                        "typed": G[path[i]][path[i + 1]].get("relation", "link") != "link",
                         "weight": G[path[i]][path[i + 1]].get("weight", 1),
                         "types": G[path[i]][path[i + 1]].get("types", ["link"]),
+                        "representations": G[path[i]][path[i + 1]].get(
+                            "representations", []
+                        ),
+                        "direction": "forward",
+                        "asserted_source": path[i],
+                        "asserted_target": path[i + 1],
                     }
                     for i in range(len(path) - 1)
                 ],

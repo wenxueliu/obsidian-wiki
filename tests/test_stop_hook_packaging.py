@@ -53,15 +53,18 @@ class StopHookPackagingTest(unittest.TestCase):
 class WikiSetupSkillTest(unittest.TestCase):
     def setUp(self) -> None:
         self.skill = (ROOT / ".skills" / "wiki-setup" / "SKILL.md").read_text()
+        self.integrations = (
+            ROOT / "workflows" / "templates" / "wiki-setup" / "integrations.json"
+        ).read_text()
 
     def test_skill_points_at_packaged_hook_path(self) -> None:
         # Must reference the packaged layout, not only the source-checkout path.
-        self.assertIn("<REPO_PATH>/hooks/wiki-stop-capture.sh", self.skill)
+        self.assertIn("<REPO>/hooks/wiki-stop-capture.sh", self.integrations)
 
     def test_skill_offers_github_fallback(self) -> None:
         self.assertIn(
             "raw.githubusercontent.com/Ar9av/obsidian-wiki/main/.claude/hooks/wiki-stop-capture.sh",
-            self.skill,
+            self.integrations,
         )
 
     def test_setup_creates_manifest(self) -> None:

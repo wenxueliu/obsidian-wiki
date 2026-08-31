@@ -1,0 +1,21 @@
+name: Workflow skill sync
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-skill-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Verify every workflow has an identical embedded skill contract
+        run: python tools/sync_workflow_skills.py --check

@@ -8,6 +8,11 @@ from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
+from obsidian_wiki.relationships import (
+    ALLOWED_RELATIONSHIP_TYPES,
+    parse_flat_relationships,
+    parse_inline_relationships,
+)
 from obsidian_wiki.workflow_layout import iter_content_pages
 from obsidian_wiki.trust import (
     ALLOWED_LIFECYCLES,
@@ -34,29 +39,6 @@ TRUST_REQUIRED_FRONTMATTER = (
     "lifecycle",
 )
 RESERVED_PAGE_STEMS = frozenset({"index", "log", "hot", "_insights"})
-ALLOWED_RELATIONSHIP_TYPES = frozenset(
-    {
-        # Knowledge Evolution
-        "supersedes", "updates", "evolution_of",
-        # Evidence
-        "supports", "contradicts", "disputes",
-        # Hierarchy
-        "parent_of", "child_of", "sibling_of", "composed_of", "part_of",
-        # Causation
-        "causes", "influenced_by", "prerequisite_for",
-        # Implementation
-        "implements", "documents", "tests", "example_of",
-        # Conversation
-        "responds_to", "references", "inspired_by",
-        # Sequence
-        "follows", "precedes",
-        # Dependencies
-        "depends_on",
-        # Legacy (retained for backward compatibility)
-        "extends", "derived_from", "uses", "replaces", "related_to",
-    }
-)
-
 _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---", re.DOTALL)
 _FIELD_RE = re.compile(r"^([A-Za-z_][\w-]*):", re.MULTILINE)
 _WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:[|#][^\]]*?)?\]\]")
@@ -167,10 +149,13 @@ def _normalise_node_id(raw: str) -> str:
     return "/".join(_slug(part) for part in target.strip("/").split("/") if part)
 
 
-def _parse_page(path: Path, vault: Path) -> dict[str, Any]:
+def _parse_page(
+    path: Path, vault: Path, relationship_types: Collection[str]
+) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8", errors="replace")
     front_match = _FRONTMATTER_RE.match(text)
     frontmatter = front_match.group(1) if front_match else ""
+    body = text[front_match.end():] if front_match else text
     fields = set(_FIELD_RE.findall(frontmatter))
     values = _parse_frontmatter_values(frontmatter)
     relative = path.relative_to(vault)
@@ -194,6 +179,8 @@ def _parse_page(path: Path, vault: Path) -> dict[str, Any]:
         "fields": fields,
         "links": links,
         "relationships": _parse_relationships(frontmatter),
+        "flat_relationships": parse_flat_relationships(frontmatter, relationship_types),
+        "inline_relationships": parse_inline_relationships(body, relationship_types),
     }
 
 
@@ -220,7 +207,7 @@ def lint_vault(
         if required_trust_fields is not None
         else TRUST_REQUIRED_FRONTMATTER
     )
-    pages = [_parse_page(path, vault) for path in _iter_pages(vault)]
+    pages = [_parse_page(path, vault, relationship_types) for path in _iter_pages(vault)]
     slug_index: dict[str, list[dict[str, Any]]] = defaultdict(list)
     node_index: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for page in pages:
@@ -287,6 +274,11 @@ def lint_vault(
 
     typed_relationship_issues: list[dict[str, Any]] = []
     for page in pages:
+        representation_sets: dict[str, set[tuple[str, str]]] = {
+            "relationships": set(),
+            "flat": set(page["flat_relationships"]),
+            "inline": set(page["inline_relationships"]),
+        }
         for index, relationship in enumerate(page["relationships"]):
             if "parse_error" in relationship:
                 typed_relationship_issues.append(
@@ -310,6 +302,9 @@ def lint_vault(
                 )
                 continue
             target = _normalise_node_id(target_raw)
+            representation_sets["relationships"].add(
+                (target.rsplit("/", 1)[-1], relation_type)
+            )
             matches = node_index.get(target, []) if "/" in target else slug_index.get(target, [])
             if len(matches) > 1:
                 typed_relationship_issues.append(
@@ -340,6 +335,52 @@ def lint_vault(
                         "target": target,
                     }
                 )
+
+        # Reference-plugin projections are valid relationship sources too.
+        # Validate only identities not already checked through relationships:.
+        checked = set(representation_sets["relationships"])
+        for representation in ("flat", "inline"):
+            for target, relation_type in sorted(representation_sets[representation] - checked):
+                matches = slug_index.get(target, [])
+                if len(matches) > 1:
+                    typed_relationship_issues.append({
+                        "page": page["path"],
+                        "representation": representation,
+                        "issue": "ambiguous_target",
+                        "target": target,
+                    })
+                elif not matches:
+                    typed_relationship_issues.append({
+                        "page": page["path"],
+                        "representation": representation,
+                        "issue": "missing_target",
+                        "target": target,
+                    })
+                elif matches[0]["node_id"] == page["node_id"]:
+                    typed_relationship_issues.append({
+                        "page": page["path"],
+                        "representation": representation,
+                        "issue": "self_reference",
+                        "target": target,
+                    })
+                checked.add((target, relation_type))
+
+        # Legacy single-form pages remain valid. When two or more projections
+        # coexist, they must describe exactly the same semantic edge set.
+        present = [name for name, edges in representation_sets.items() if edges]
+        if len(present) >= 2:
+            baseline_name = present[0]
+            baseline = representation_sets[baseline_name]
+            for other_name in present[1:]:
+                other = representation_sets[other_name]
+                if baseline != other:
+                    typed_relationship_issues.append({
+                        "page": page["path"],
+                        "issue": "representation_mismatch",
+                        "representations": [baseline_name, other_name],
+                        "missing_from_first": sorted(other - baseline),
+                        "missing_from_second": sorted(baseline - other),
+                    })
 
     ledger_path = vault / TRUST_LEDGER_RELATIVE_PATH
     trust_report = (

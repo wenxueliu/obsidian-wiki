@@ -14,6 +14,9 @@ And gets back a JSON response:
   "answer_type": "direct" | "path" | "list" | "gap",
   "candidates": [{"page": "...", "score": 0.N, "summary": "..."}, ...],
   "path": ["page-a", "page-b", "page-c"],   # multi-hop, if applicable
+  "path_length": 2,
+  "path_edges": [{"source": "page-a", "target": "page-b",
+                    "relation": "uses", "direction": "forward", ...}],
   "god_nodes_relevant": ["page", ...],        # hub pages related to query terms
   "should_read": ["page-a.md", "page-b.md"], # pages worth opening for full detail
   "index_only": true/false                    # true = answer is complete without page reads
@@ -26,7 +29,6 @@ to open, replacing the current approach of opening 10+ pages speculatively.
 from __future__ import annotations
 
 import re
-from collections import defaultdict, deque
 from pathlib import Path
 from typing import Any
 
@@ -35,18 +37,19 @@ from typing import Any
 # Index building
 # ---------------------------------------------------------------------------
 
-from obsidian_wiki.index import _slug, load_index
+from obsidian_wiki.index import _slug, entry_edges, find_index_path, load_index
 
 
 def build_index(vault: Path) -> dict[str, dict]:
     """Build a lightweight index dict from vault frontmatter and wikilinks.
 
     Returns:
-        {slug: {title, tags, summary, category, tier, out_links, in_links, path, out_edges}}
+        {slug: {title, tags, summary, category, tier, edges, out_links, in_links, path}}
     """
     raw = load_index(vault)
     pages: dict[str, dict] = {}
     for entry in raw.values():
+        edges = entry_edges(entry)
         pages[entry["slug"]] = {
             "title": entry["title"],
             "tags": list(entry["tags"]),
@@ -54,10 +57,10 @@ def build_index(vault: Path) -> dict[str, dict]:
             "category": entry["category"],
             "tier": entry["tier"],
             "path": entry["path"],
-            # Plain links + typed relationships (both are edges for degree/path).
-            "out_links": list(entry["out_links"]) + list(entry["out_edges"].keys()),
+            "edges": edges,
+            # Compatibility projection used for degree ranking.
+            "out_links": [edge["target"] for edge in edges],
             "in_links": [],
-            "out_edges": dict(entry["out_edges"]),
         }
 
     # Reverse pass: compute in_links.
@@ -131,28 +134,11 @@ def find_path(
     target_slug: str,
     max_depth: int = 4,
 ) -> list[str] | None:
-    """BFS shortest path from source to target through wikilinks."""
-    if source_slug not in index or target_slug not in index:
-        return None
-    if source_slug == target_slug:
-        return [source_slug]
-
-    queue: deque[tuple[str, list[str]]] = deque([(source_slug, [source_slug])])
-    visited = {source_slug}
-
-    while queue:
-        node, path = queue.popleft()
-        if len(path) > max_depth:
-            continue
-        for neighbour in index[node]["out_links"] + index[node]["in_links"]:
-            if neighbour in visited:
-                continue
-            visited.add(neighbour)
-            new_path = path + [neighbour]
-            if neighbour == target_slug:
-                return new_path
-            queue.append((neighbour, new_path))
-    return None
+    """Compatibility wrapper around the shared typed-edge path traversal."""
+    result = find_index_path(
+        index, source_slug, target_slug, max_depth=max_depth, bidirectional=True
+    )
+    return result["path"] if result else None
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +206,8 @@ def query(
             "answer_type": "direct",
             "candidates": [],
             "path": [],
+            "path_length": None,
+            "path_edges": [],
             "god_nodes_relevant": [],
             "should_read": [],
             "index_only": True,
@@ -238,6 +226,8 @@ def query(
     ][:5]
 
     path_result: list[str] = []
+    path_edges: list[dict[str, Any]] = []
+    path_length: int | None = None
     if answer_type == "path" and len(terms) >= 2:
         src_slug = _slug(terms[0])
         tgt_slug = _slug(terms[1])
@@ -248,9 +238,20 @@ def query(
         if tgt_slug not in index:
             cands = rank_candidates(index, [terms[1]], top_n=1)
             tgt_slug = cands[0]["slug"] if cands else tgt_slug
-        raw_path = find_path(index, src_slug, tgt_slug)
-        if raw_path:
+        path_detail = find_index_path(
+            index, src_slug, tgt_slug, max_depth=4, bidirectional=True
+        )
+        if path_detail:
+            raw_path = path_detail["path"]
             path_result = [index[s]["path"] for s in raw_path if s in index]
+            path_length = path_detail["length"]
+            for edge in path_detail["edges"]:
+                enriched = dict(edge)
+                enriched["source_page"] = index[edge["source"]]["path"]
+                enriched["target_page"] = index[edge["target"]]["path"]
+                enriched["asserted_source_page"] = index[edge["asserted_source"]]["path"]
+                enriched["asserted_target_page"] = index[edge["asserted_target"]]["path"]
+                path_edges.append(enriched)
 
     candidates = rank_candidates(index, terms, top_n=top_n)
 
@@ -281,6 +282,8 @@ def query(
             for c in candidates
         ],
         "path": path_result,
+        "path_length": path_length,
+        "path_edges": path_edges,
         "god_nodes_relevant": god_relevant,
         "should_read": should_read,
         "index_only": index_only,

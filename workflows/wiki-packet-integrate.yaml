@@ -55,10 +55,10 @@ steps:
 
       1. 完整遵循 page-contract.json；owner schema、provenance、安全与 source fidelity 优先。所有写入先在内存或临时 sibling 完成，校验通过后原子替换；不得破坏未涉及字段或正文。
       2. 合并 compatible facts 而不重复。保留每条 claim 的 path/hash/unit/line/byte locator；非源文本综合标 ^[inferred]，未解决冲突标 ^[ambiguous] 并同时呈现各方。
-      3. 新页面使用 owner 生效 schema；更新页面先读后合并，保留 owner 字段和不受影响的原文。维护 title/category/tags/sources/summary/created/updated，以及策略要求的 relationships、provenance、confidence、lifecycle、tier、visibility。
+      3. 新页面使用 owner 生效 schema；更新页面先读后合并，保留 owner 字段和不受影响的原文。维护 title/category/tags/sources/summary/created/updated，以及策略要求的 relationships、provenance、confidence、lifecycle、tier、visibility。每条 typed edge 必须把同一 `(target,type)` 同步写入 nested `relationships:`、顶层 type-key quoted-wikilink list 和正文 `@type` alias；typed alias 是 OBSIDIAN_LINK_FORMAT=markdown 的兼容例外。
       4. direct mode 只写 route resolver 返回的 live content target；staged mode 只写 _staging 下绑定该 canonical target 的完整新页面或带完整 binding metadata 与 Additions/Deletions/Updated Fields 的 patch，绝不改 live 页面、index.md 或 .manifest.json。
       5. 对本次新增 wikilink 做局部双向引用检查；staged mode 的 backlink 也必须作为 staged artifact。
-      6. 先运行 changed live pages / staged artifacts 的页面校验，再运行仓库正常的相关 vault 校验。失败则修复后重验，尚不推进 Job unit 状态。
+      6. 先运行 changed live pages / staged artifacts 的页面校验，再运行仓库正常的相关 vault 校验；额外比较 typed edge 三种 projection 的 canonical `(target,type)` 集合，一致且无重复才通过。失败则修复后重验，尚不推进 Job unit 状态。
       7. 在产出目录写 integration-write-report.md，列出 created/updated/omitted artifact、mode、provenance、校验命令与结果。保持 job.json 的 unit 状态和永久 manifest 不变。
     input: transport-validation.md + merge-plan.md + 当前 Packet 或 inline in-memory extraction + 相关 live/staged 页面
     output: 已验证的 live 页面或 staged artifacts + integration-write-report.md；Job unit 尚未推进

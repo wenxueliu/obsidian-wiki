@@ -123,8 +123,8 @@ def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> 
     assert "WIKI_TEXT_CHUNK_STRATEGY" in skill
     assert "WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS" in skill
     assert "WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES" in skill
-    assert "Different units from the same\ndocument may extract concurrently" in skill
-    assert "integration remain serialized" in skill
+    assert "同一文档的多个 packet unit 也可并行提取" in skill
+    assert "所有页面 integration 均不并发" in skill
     assert ".cac/" not in skill
     assert "`wiki/" not in skill
     assert not (ROOT / "workflows" / "wiki-ingest.yaml").exists()

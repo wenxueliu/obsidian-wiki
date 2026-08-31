@@ -67,12 +67,12 @@ class ScriptsPackagingTest(unittest.TestCase):
 
 class DailyUpdateSkillTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.skill = (ROOT / ".skills" / "daily-update" / "SKILL.md").read_text()
+        self.skill = (ROOT / ".skills" / "daily-update-setup" / "SKILL.md").read_text()
 
-    def test_skill_resolves_scripts_via_repo_var(self) -> None:
+    def test_setup_skill_names_every_packaged_scheduler_resource(self) -> None:
         for name in REFERENCED_SCRIPTS:
             with self.subTest(script=name):
-                self.assertIn(f"$OBSIDIAN_WIKI_REPO/scripts/{name}", self.skill)
+                self.assertIn(name, self.skill)
 
 
 if __name__ == "__main__":

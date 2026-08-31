@@ -85,7 +85,8 @@ staging path is not the real source and must not become page provenance.
 - New pages go to `<category>/<page>.md`.
 - Existing pages are merged in place.
 - Write reciprocal links or typed relationships in the same integration transaction when they are
-  useful and supported.
+  useful and supported. Every new typed edge is one `(source, target, type)` identity projected
+  consistently into `relationships:`, its top-level type key, and an inline `@type` wikilink alias.
 - Validate all changed pages before advancing the Job unit.
 
 ## Staged-write mode
@@ -169,7 +170,10 @@ After drafting page content, inspect every new wikilink:
 1. Confirm its target exists live or is created by the same staged transaction.
 2. Consider whether the target should link back; add a reciprocal link when it improves navigation,
    not mechanically for every mention.
-3. Add a typed `relationships:` entry only when evidence supports its direction and allowed type.
+3. Add a typed edge only when evidence supports its direction and allowed type. Project it into a
+   `relationships:` entry, a top-level type-key list, and an inline `@type` alias; validate that the
+   three `(target, type)` sets agree. Typed body projections always use wikilink alias syntax even
+   when ordinary links use Markdown.
 4. In staged mode, represent any backlink change as another staged page/patch bound to the same
    units.
 

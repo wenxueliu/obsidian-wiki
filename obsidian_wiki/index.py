@@ -14,32 +14,38 @@ index (``.obsidian/frontmatter-index.json``) and updates it incrementally:
   files cost nothing.
 
 Each page entry is keyed by vault-relative path and carries:
-  slug, title, category, tags, summary, tier, path, out_links, out_edges,
-  plus mtime_ns/size for invalidation.
+  slug, title, category, tags, summary, tier, path, edges,
+  plus compatibility fields out_links/out_edges and mtime_ns/size for
+  invalidation.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from collections import defaultdict, deque
 from pathlib import Path
 from typing import Any, Iterator
 
+from obsidian_wiki.relationships import (
+    body_wikilink_targets,
+    collect_typed_relationships,
+    parse_nested_relationships as parse_relationships,
+    split_frontmatter,
+    strip_code_content,
+)
 from obsidian_wiki.workflow_layout import iter_content_pages
 
 # ── Shared parsing (consolidated from graph.py / graphrag.py / graph_analysis.py) ──
 
-_FRONT_RE = re.compile(r"^---\r?\n(.*?)\r?\n---(?:\r?\n|$)", re.DOTALL)
-_WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:[|#][^\]]*?)?\]\]")
 _MD_LINK_RE = re.compile(r"\[.*?\]\(([^)]+\.md[^)]*)\)")
 _TAGS_RE = re.compile(r"^tags:\s*\[([^\]]+)\]", re.MULTILINE)
 _TAGS_LIST_RE = re.compile(r"^tags:\s*\n((?:\s+-\s+\S+\n)+)", re.MULTILINE)
 _CATEGORY_RE = re.compile(r"^category:\s*(\w+)", re.MULTILINE)
 _TIER_RE = re.compile(r"^tier:\s*(\w+)", re.MULTILINE)
-_RELATIONSHIPS_RE = re.compile(r"^relationships:\s*\n((?:\s+-\s+\S.*\n)+)", re.MULTILINE)
 _BLOCK_SCALAR_RE = re.compile(r"^[>|][+-]?\d*$")
 
-INDEX_VERSION = 1
+INDEX_VERSION = 3
 INDEX_FILENAME = "frontmatter-index.json"
 
 def _slug(s: str) -> str:
@@ -88,21 +94,151 @@ def _parse_tags(front: str) -> list[str]:
     return []
 
 
-def parse_relationships(front: str) -> list[tuple[str, str]]:
-    """Parse the frontmatter ``relationships:`` block into (target_slug, type) pairs."""
-    edges: list[tuple[str, str]] = []
-    m = _RELATIONSHIPS_RE.search(front)
-    if not m:
-        return edges
-    for line in m.group(1).splitlines():
-        line = line.strip().lstrip("- ")
-        target_m = re.search(r'target:\s*"?\[\[([^\]]+)\]\]"?', line)
-        type_m = re.search(r'type:\s*(\S+)', line)
-        if target_m:
-            target = _slug(target_m.group(1).split("/")[-1])
-            rtype = type_m.group(1).strip() if type_m else "related_to"
-            edges.append((target, rtype))
+def _build_edges(
+    out_links: list[str], relationships: list[dict[str, Any]] | list[tuple[str, str]]
+) -> list[dict[str, Any]]:
+    """Build the shared edge representation used by every graph consumer.
+
+    Repeated links are collapsed into a weight. Distinct typed relationships
+    between the same pages remain distinct instead of being overwritten by the
+    legacy ``out_edges`` mapping.
+    """
+    counts: dict[str, int] = defaultdict(int)
+    for target in out_links:
+        counts[target] += 1
+    edges = [
+        {
+            "target": target,
+            "relation": "link",
+            "kind": "link",
+            "typed": False,
+            "weight": weight,
+            "representations": ["body"],
+        }
+        for target, weight in counts.items()
+    ]
+    for relationship in relationships:
+        if isinstance(relationship, tuple):
+            target, relation = relationship
+            edges.append({
+                "target": target,
+                "relation": relation,
+                "kind": "relationship",
+                "typed": True,
+                "weight": 1,
+                "representations": ["relationships"],
+            })
+        else:
+            edges.append(dict(relationship))
     return edges
+
+
+def entry_edges(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return normalized edges for an index entry, including v1-shaped data."""
+    edges = entry.get("edges")
+    if isinstance(edges, list):
+        return [dict(edge) for edge in edges if isinstance(edge, dict)]
+    return _build_edges(
+        list(entry.get("out_links", [])),
+        list(entry.get("out_edges", {}).items()),
+    )
+
+
+def find_index_path(
+    pages: dict[str, dict[str, Any]],
+    source_slug: str,
+    target_slug: str,
+    *,
+    max_depth: int = 4,
+    bidirectional: bool = True,
+) -> dict[str, Any] | None:
+    """Find a shortest path while preserving relation type and direction.
+
+    ``pages`` is keyed by slug. Reverse traversal is enabled for natural
+    language "connected to" questions, but each returned edge records whether
+    the underlying assertion was followed forward or in reverse.
+    """
+    if source_slug not in pages or target_slug not in pages:
+        return None
+    if source_slug == target_slug:
+        return {"path": [source_slug], "length": 0, "edges": []}
+
+    adjacency: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for asserted_source, entry in pages.items():
+        # Prefer typed assertions when equally short paths are available.
+        edges = sorted(entry_edges(entry), key=lambda edge: not edge.get("typed", False))
+        for edge in edges:
+            asserted_target = str(edge.get("target", ""))
+            if asserted_target not in pages or asserted_target == asserted_source:
+                continue
+            common = {
+                "relation": str(edge.get("relation", "link")),
+                "kind": str(edge.get("kind", "link")),
+                "typed": bool(edge.get("typed", False)),
+                "weight": int(edge.get("weight", 1)),
+                "representations": list(edge.get("representations", [])),
+                "asserted_source": asserted_source,
+                "asserted_target": asserted_target,
+            }
+            adjacency[asserted_source].append({
+                **common,
+                "source": asserted_source,
+                "target": asserted_target,
+                "direction": "forward",
+            })
+            if bidirectional:
+                adjacency[asserted_target].append({
+                    **common,
+                    "source": asserted_target,
+                    "target": asserted_source,
+                    "direction": "reverse",
+                })
+
+    # Traversal is node-based, but one page pair may assert several semantic
+    # types. Collapse that parallel bundle for BFS while retaining every edge
+    # identity for the answer layer.
+    for node, outgoing in list(adjacency.items()):
+        bundles: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for edge in outgoing:
+            bundles[edge["target"]].append(edge)
+        adjacency[node] = []
+        for parallel in bundles.values():
+            selected = dict(parallel[0])
+            selected["types"] = list(dict.fromkeys(edge["relation"] for edge in parallel))
+            selected["edge_details"] = [
+                {
+                    "relation": edge["relation"],
+                    "kind": edge["kind"],
+                    "typed": edge["typed"],
+                    "representations": edge["representations"],
+                }
+                for edge in parallel
+            ]
+            adjacency[node].append(selected)
+
+    queue: deque[tuple[str, list[str], list[dict[str, Any]]]] = deque(
+        [(source_slug, [source_slug], [])]
+    )
+    visited = {source_slug}
+    while queue:
+        node, path, traversed = queue.popleft()
+        if len(traversed) >= max_depth:
+            continue
+        for edge in adjacency.get(node, []):
+            neighbour = edge["target"]
+            if neighbour in visited:
+                continue
+            next_path = path + [neighbour]
+            next_edges = traversed + [edge]
+            if neighbour == target_slug:
+                return {
+                    "path": next_path,
+                    "length": len(next_edges),
+                    "edges": next_edges,
+                }
+            visited.add(neighbour)
+            queue.append((neighbour, next_path, next_edges))
+    return None
 
 
 def _parse_page(path: Path, vault: Path, known_slugs: set[str], mtime_ns: int, size: int) -> dict[str, Any]:
@@ -113,8 +249,7 @@ def _parse_page(path: Path, vault: Path, known_slugs: set[str], mtime_ns: int, s
         text = ""
 
     slug = _slug(path.stem)
-    front_m = _FRONT_RE.match(text)
-    front = front_m.group(1) if front_m else ""
+    front, body = split_frontmatter(text)
 
     title = _extract_scalar(front, "title") or path.stem
     category = str(path.relative_to(vault).parent)
@@ -126,20 +261,26 @@ def _parse_page(path: Path, vault: Path, known_slugs: set[str], mtime_ns: int, s
     if tm:
         tier = tm.group(1).strip()
 
-    out_links: list[str] = []
-    for link in _WIKILINK_RE.findall(text):
-        target = _slug(link.split("/")[-1])
-        if target and target != slug and target in known_slugs:
-            out_links.append(target)
-    for href in _MD_LINK_RE.findall(text):
+    relationships = [
+        relationship
+        for relationship in collect_typed_relationships(text)
+        if relationship["target"] != slug and relationship["target"] in known_slugs
+    ]
+    typed_targets = {relationship["target"] for relationship in relationships}
+
+    out_links = [
+        target
+        for target in body_wikilink_targets(body)
+        if target != slug and target in known_slugs and target not in typed_targets
+    ]
+    for href in _MD_LINK_RE.findall(strip_code_content(body)):
         target = _slug(Path(href).stem)
-        if target and target != slug and target in known_slugs:
+        if target and target != slug and target in known_slugs and target not in typed_targets:
             out_links.append(target)
 
     out_edges: dict[str, str] = {}
-    for target, rtype in parse_relationships(front):
-        if target and target != slug and target in known_slugs:
-            out_edges[target] = rtype
+    for relationship in relationships:
+        out_edges[relationship["target"]] = relationship["relation"]
 
     return {
         "slug": slug,
@@ -149,6 +290,7 @@ def _parse_page(path: Path, vault: Path, known_slugs: set[str], mtime_ns: int, s
         "summary": _extract_scalar(front, "summary"),
         "tier": tier,
         "path": str(path.relative_to(vault)),
+        "edges": _build_edges(out_links, relationships),
         "out_links": out_links,
         "out_edges": out_edges,
         "mtime_ns": mtime_ns,
@@ -174,6 +316,8 @@ def _load_cache(vault: Path) -> dict[str, dict[str, Any]]:
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
+        if data.get("version") != INDEX_VERSION:
+            return {}
         pages = data.get("pages", {})
         return pages if isinstance(pages, dict) else {}
     except (json.JSONDecodeError, OSError):

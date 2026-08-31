@@ -90,6 +90,23 @@ class TestBuildGraph:
         assert G2.number_of_nodes() == G1.number_of_nodes()
         assert G2.number_of_edges() == G1.number_of_edges()
 
+    def test_cache_invalidates_when_inline_relationship_changes(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        source = vault / "source.md"
+        source.write_text("---\ntitle: Source\n---\n[[target]]\n", encoding="utf-8")
+        (vault / "target.md").write_text("---\ntitle: Target\n---\n", encoding="utf-8")
+        first = load_graph(vault)
+        assert first["source"]["target"]["relation"] == "link"
+
+        source.write_text(
+            "---\ntitle: Source\n---\n[[target|Target @supports]]\n",
+            encoding="utf-8",
+        )
+        second = load_graph(vault)
+        assert second["source"]["target"]["relation"] == "supports"
+        assert second["source"]["target"]["representations"] == ["inline"]
+
     def test_find_paths(self, tmp_path: Path) -> None:
         vault = _make_vault(tmp_path)
         G = build_graph(vault)
@@ -97,6 +114,15 @@ class TestBuildGraph:
         assert len(paths) >= 1
         p = paths[0]
         assert p["length"] >= 2  # cnn -> dl -> ml or cnn -> dl -> ml
+        assert all(edge["direction"] == "forward" for edge in p["edges"])
+        assert all("typed" in edge for edge in p["edges"])
+
+    def test_typed_relationship_uses_shared_edge_model(self, tmp_path: Path) -> None:
+        vault = _make_vault(tmp_path)
+        G = build_graph(vault)
+        edge = G["dl"]["ml"]
+        assert "child_of" in edge["types"]
+        assert edge["relation"] == "child_of"
 
     def test_neighbors(self, tmp_path: Path) -> None:
         vault = _make_vault(tmp_path)

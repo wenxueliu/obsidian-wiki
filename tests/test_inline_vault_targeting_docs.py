@@ -12,12 +12,12 @@ class InlineVaultTargetingDocsTest(unittest.TestCase):
         return (ROOT / relpath).read_text()
 
     def test_central_protocol_documents_inline_override_before_fallbacks(self) -> None:
-        llm_wiki = self.read(".skills/llm-wiki/SKILL.md")
+        wiki_context = self.read(".skills/wiki-context/SKILL.md")
         agents = self.read("AGENTS.md")
 
-        self.assertIn("0. **Inline vault override (`@name`)", llm_wiki)
+        self.assertIn("invocation 含 `@name`", wiki_context)
+        self.assertIn("严格按 `@name` 指定 config", wiki_context)
         self.assertIn("0. **Inline vault override (`@name`)", agents)
-        self.assertIn("resolve `~/.obsidian-wiki/config.<name>` directly", llm_wiki)
         self.assertIn("do **not** silently fall back to the default", agents)
 
     def test_skill_resolution_summaries_include_inline_override(self) -> None:
@@ -51,22 +51,21 @@ class InlineVaultTargetingDocsTest(unittest.TestCase):
         self.assertIn("All supported agents can use this syntax", install)
         self.assertIn("Claude Code, Cursor, Windsurf, Codex, Gemini", install)
 
-    def test_core_skill_descriptions_include_named_vault_examples(self) -> None:
-        examples = {
-            ".skills/wiki-query/SKILL.md": "wiki-query @work",
-            ".skills/wiki-update/SKILL.md": "@work update wiki",
-            ".skills/wiki-capture/SKILL.md": "@research save this",
-        }
-
-        for relpath, expected in examples.items():
+    def test_core_workflows_delegate_named_vault_resolution(self) -> None:
+        for relpath in (
+            ".skills/wiki-query/SKILL.md",
+            ".skills/wiki-update/SKILL.md",
+        ):
             with self.subTest(relpath=relpath):
-                self.assertIn(expected, self.read(relpath))
+                self.assertIn("workflow: wiki-context", self.read(relpath))
+        self.assertIn("@research save this", self.read(".skills/wiki-capture/SKILL.md"))
 
     def test_wiki_query_does_not_prefer_default_over_inline_override(self) -> None:
-        wiki_query = self.read(".skills/wiki-query/SKILL.md")
+        wiki_context = self.read(".skills/wiki-context/SKILL.md")
 
-        self.assertIn("For cross-project queries without `@name`", wiki_query)
-        self.assertNotIn("Prefer `~/.obsidian-wiki/config` for cross-project queries", wiki_query)
+        self.assertIn("严格按 `@name` 指定 config", wiki_context)
+        self.assertIn("再到全局 `~/.obsidian-wiki/config`", wiki_context)
+        self.assertNotIn("Prefer `~/.obsidian-wiki/config`", wiki_context)
 
 
 if __name__ == "__main__":

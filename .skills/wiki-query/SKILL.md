@@ -1,283 +1,139 @@
 ---
 name: wiki-query
-description: >
-  Answer questions by searching the compiled Obsidian wiki. Use this skill when the user asks a question
-  about their knowledge base, wants to find information across their wiki, asks "what do I know about X",
-  "find everything related to Y", or wants synthesized answers with citations from their wiki pages.
-  Also use when the user wants to explore connections between topics in their wiki, or asks a multi-hop
-  "how is X connected to Y", "what links X to Y", "trace the chain from X to Z", or "what does X depend on
-  transitively" question — answered by walking typed edges across multiple hops. Works from any project.
-  Includes an index-only fast mode triggered by "quick answer", "just scan", "don't read the pages",
-  "fast lookup" — returns answers from page summaries and frontmatter without reading page bodies.
-  Accepts inline named-vault routing like "wiki-query @work what do I know about X" via the shared
-  Config Resolution Protocol.
+description: "只读查询 compiled Obsidian wiki，按 GraphRAG、索引、QMD、局部正文与多跳 typed graph 渐进检索"
 ---
 
-# Wiki Query — Knowledge Retrieval
-
-You are answering questions against a compiled Obsidian wiki, not raw source documents. The wiki contains pre-synthesized, cross-referenced knowledge.
-
-## This skill is READ-ONLY
-
-`wiki-query` answers questions. It MUST NOT create or modify any wiki content. The ONLY write it may perform is the single Step 6 append to `log.md`.
-
-Never, even when a change seems obviously helpful:
-- create or edit pages under `concepts/`, `entities/`, `skills/`, `references/`, `synthesis/`, `journal/`, or `projects/`
-- modify `index.md`, `hot.md`, `_insights.md`, or `.manifest.json`
-
-If the user's message contains a new finding, an action request ("save this", "ban X", "record that"), or anything implying a change, **do not perform it.** Answer the question, PROPOSE the change, and route the user to the right skill:
-- quick note / gotcha → `wiki-capture --quick`
-- a full new page → `wiki-capture`
-- a project-knowledge sync → `wiki-update`
-
-## Before You Start
-
-1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). For cross-project queries without `@name`, prefer `~/.obsidian-wiki/config` when present, even if it is a symlink to the vault `.env`. This gives `OBSIDIAN_VAULT_PATH` and any QMD variables. Works from any project directory.
-2. **Load QMD settings from the resolved config** before deciding retrieval strategy. If `QMD_WIKI_COLLECTION` is set, treat QMD as available subject only to transport/tool checks below. If it is empty or unset, say briefly why QMD is being skipped before using grep/page reads.
-3. If `$OBSIDIAN_VAULT_PATH/hot.md` exists, read it first — it gives you instant context on recent activity. If the user's question is about something ingested recently, hot.md may answer it before you even open `index.md`.
-4. Read `$OBSIDIAN_VAULT_PATH/index.md` to understand the wiki's scope and structure
-
-## Visibility Filter (optional)
-
-By default, **all pages are returned** regardless of visibility tags. This preserves existing behavior — nothing changes unless the user asks for it.
-
-If the user's query includes phrases like **"public only"**, **"user-facing"**, **"no internal content"**, **"as a user would see it"**, or **"exclude internal"**, activate **filtered mode**:
-
-- Build a **blocked tag set**: `{visibility/internal, visibility/pii}`
-- In the Index Pass (Step 2), skip any candidate whose frontmatter tags contain a blocked tag
-- In Section/Full Read passes (Steps 3–4), do not read or cite any blocked page
-- Synthesize the answer **only from allowed pages** — do not mention that excluded pages exist
-
-Pages with no `visibility/` tag, or tagged `visibility/public`, are always included.
-
-In filtered mode, note the filter in the Step 6 log entry: `mode=filtered`.
-
-## Retrieval Protocol
-
-**Follow the Retrieval Primitives table in `llm-wiki/SKILL.md`.** Reading is the dominant cost of this skill — use the cheapest primitive that answers the question and escalate only when it can't. Never jump straight to full-page reads.
-
-### Step 0: GraphRAG Pre-pass (fast index query — no page reads)
-
-Before opening any pages, query the compiled graph index:
-
-```bash
-obsidian-wiki graph-query "$OBSIDIAN_VAULT_PATH" "<question>" --pretty
-```
-
-Output fields:
-
-- **`answer_type`**: `direct` | `path` | `list` | `gap` — shapes what to do next
-- **`candidates`**: top-ranked pages by title/tag/summary match + degree, with scores and summaries
-- **`should_read`**: the pages most worth opening — start here instead of speculatively reading many files
-- **`path`**: for multi-hop queries, the shortest wikilink path between the two concepts
-- **`god_nodes_relevant`**: hub pages related to your query terms — always useful context
-- **`index_only`**: if `true`, the top candidate's summary already answers the question — skip page reads
-
-**Decision tree:**
-
-1. If `index_only: true` → answer directly from `candidates[0].summary`. Skip Steps 1–4, go to Step 5.
-2. If `answer_type == "path"` and `path` is non-empty → the connection is in `path`. Read only those pages.
-3. Otherwise → open only `should_read` pages (not all candidates). This replaces the speculative 5–10 page reads the old flow required.
-
-**Fallback** (if `obsidian-wiki` is not installed): proceed with Step 1 as normal using grep and index.md.
-
-### Step 1: Understand the Question
-
-Classify the query type:
-- **Factual lookup** — "What is X?" → Find the relevant page(s)
-- **Relationship query** — "How does X relate to Y?" / "What contradicts X?" → Find both pages, their cross-references, and their `relationships:` frontmatter blocks for typed edges
-- **Path / multi-hop query** — "How is X connected to Y?" / "What links X to Y?" / "Trace the chain from X to Z" / "What does X depend on transitively?" → X and Y don't link directly; the connection runs through intermediate pages. Use the multi-hop graph traversal in Step 4b.
-- **Synthesis query** — "What's the current thinking on X?" → Find all pages that touch X, synthesize
-- **Gap query** — "What don't I know about X?" → Find what's missing, check open questions sections
-
-Also decide the **mode**:
-- **Index-only mode** — triggered by "quick answer", "just scan", "don't read the pages", "fast lookup". Stops at Step 3. Answers from frontmatter + `index.md` only.
-- **Normal mode** — the full tiered pipeline below.
-
-### Step 2: Index Pass (cheap)
-
-Build a candidate set *without opening any page bodies*:
-
-- You've already read `index.md` above — use it as the first filter. It lists every page with a one-line description and tags.
-- Use `Grep` to scan page **frontmatter only** for title, tag, alias, and summary matches. A pattern like `^(title|tags|aliases|summary):` scoped to vault `.md` files is far cheaper than content grep.
-- Collect the top 5–10 candidate page paths ranked by:
-  1. Exact title or alias match
-  2. Tag match
-  3. Summary field contains the query term
-  4. `index.md` entry contains the query term
-- **Apply tier ordering within each rank bucket:** when two candidates score equally, prefer `tier: core` over `tier: supporting` over `tier: peripheral`. Read the `tier:` frontmatter field with the same cheap grep as other fields. Pages without a `tier:` field are treated as `supporting`.
-
-If you're in **index-only mode**, stop here. Answer from `summary:` fields, titles, and `index.md` descriptions only. Label the answer clearly: **"(index-only answer — page bodies not read; facts below are from page summaries and may miss nuance)"**. Then skip to Step 5.
-
-### Step 2b: QMD Semantic Pass (optional — requires `QMD_WIKI_COLLECTION` in resolved config)
-
-**GUARD: If `$QMD_WIKI_COLLECTION` is empty or unset after config resolution, skip this entire step and proceed to Step 3. Mention the missing variable in your working update.**
-
-> **No QMD?** Skip to Step 3 and use `Grep` directly on the vault. QMD is faster and concept-aware but the grep path is fully functional. See `.env.example` for setup.
-
-If `QMD_WIKI_COLLECTION` is set, run QMD before reaching for `Grep` unless the question is already fully answered by `hot.md` or `index.md` metadata. QMD is especially preferred when the question is semantic, project-specific, asks for related context, or uses terms that may not appear verbatim in titles/frontmatter.
-
-Choose the QMD transport from `$QMD_TRANSPORT`:
-
-- `mcp` (default): use the QMD MCP tool configured in the agent.
-- `cli`: run the local qmd CLI. Use `$QMD_CLI` if set; otherwise use `qmd`.
-
-For detailed CLI command selection, maintenance, and VM caveats, use the local
-`$qmd-cli` skill when it is installed.
-
-If the selected transport is unavailable (no MCP tool, `qmd` not on PATH, or the command errors), skip QMD and continue with Step 3.
-
-For MCP transport:
-
-```
-mcp__qmd__query:
-  collection: <QMD_WIKI_COLLECTION>   # e.g. "knowledge-base-wiki"
-  intent: <the user's question>
-  searches:
-    - type: lex    # keyword match — good for exact names, file paths, error messages
-      query: <key terms>
-    - type: vec    # semantic match — good for concepts, patterns, "what is X like"
-      query: <question rephrased as a description>
-```
-
-For CLI transport, pick the command from `$QMD_CLI_SEARCH_MODE`:
-
-Keep operator-like or punctuation-heavy tokens such as `no-sudo`, `ansible_become=false`, and `~/.local/bin` in the `lex:` line. Rewrite the `vec:` line as plain natural language without hyphenated `-term` words; QMD treats `-term` as negation, and negation is not supported in `vec`/`hyde` queries.
-
-- `quality` (default): best relevance; slower on CPU.
-  ```bash
-  ${QMD_CLI:-qmd} query $'lex: <key terms>\nvec: <question rephrased as a description>' -c "$QMD_WIKI_COLLECTION" -n 8 --files
-  ```
-- `balanced`: hybrid search without LLM reranking; use when `quality` is too slow.
-  ```bash
-  ${QMD_CLI:-qmd} query $'lex: <key terms>\nvec: <question rephrased as a description>' -c "$QMD_WIKI_COLLECTION" -n 8 --no-rerank --files
-  ```
-- `fast`: semantic-only recall, or `search` instead when exact names, file paths, or error messages matter.
-  ```bash
-  ${QMD_CLI:-qmd} vsearch "<question rephrased as a description>" -c "$QMD_WIKI_COLLECTION" -n 8 --files
-  ```
-
-Use `${QMD_CLI:-qmd} get "#docid"` to retrieve a ranked document by docid when CLI output provides one.
-
-The returned snippets or ranked files act as pre-read section summaries. If they answer the question fully, skip Step 3 and go straight to Step 4 (reading only the pages QMD ranked highest). If not, use the ranked file list to guide which files to grep or read in Step 3.
-
-**Defensive filter: drop any `_raw/` path from wiki-collection results.** The wiki collection is supposed to index only compiled pages, but a misconfigured collection (see `.env.example`) can end up indexing `_raw/` — including stale drafts sitting in `_raw/_archived/` that were already superseded by a promoted page. Before using a QMD hit from `$QMD_WIKI_COLLECTION`, check its path: if it contains `_raw/`, discard it from the wiki-collection result set (it may still surface legitimately via `$QMD_PAPERS_COLLECTION`, cited as a raw source). This keeps a misconfigured collection degrading to "missing recall" rather than "silently citing a superseded draft as compiled knowledge." If you see `_raw/` paths coming back from the wiki collection, mention it in your working update so the user knows their collection scope needs fixing (see `.env.example` QMD section).
-
-**Also search `papers` when the question may have source material in `_raw/`:**
-
-If `QMD_PAPERS_COLLECTION` is set and the user is asking about a topic likely covered by ingested papers (research, theory, background), run a parallel search against the papers collection. Cite raw sources separately from compiled wiki pages in your answer.
-
-### Step 3: Section Pass (medium cost — only if Steps 2/2b are inconclusive)
-
-For each of the top candidates, pull the relevant section *without reading the whole page*:
-
-- Use `Grep -A 10 -B 2 "<query-term>" <candidate-file>` to get just the lines around the match.
-- This usually returns 15–30 lines per hit instead of 100–500.
-- If the section grep gives a clear answer, go straight to Step 5.
-
-### Step 4: Full Read (expensive — last resort)
-
-Only when Steps 2 and 3 don't answer the question:
-
-- `Read` the top **3** candidates in full. When choosing which 3 to read, apply tier ordering: read `core` pages before `supporting`, and skip `peripheral` pages unless they are the only match.
-- Follow at most one hop of `[[wikilinks]]` from those pages if the answer requires cross-references.
-- **For relationship queries** ("How does X relate to Y?" / "What contradicts X?"): also read the `relationships:` frontmatter block of the candidate pages. Each entry gives a typed, directional edge (`extends`, `implements`, `contradicts`, `derived_from`, `uses`, `replaces`, `related_to`). Surface these explicitly in your answer — "Page A *contradicts* Page B (typed edge)" is more useful than "Page A links to Page B".
-- Check "Open Questions" sections for known gaps.
-- If you're still short, **then** fall back to a broad content grep across the vault. Tell the user you escalated — this is the expensive path and they should know.
-
-### Step 4b: Multi-hop Graph Traversal (typed edges)
-
-Plain retrieval surfaces pages that *mention* the query terms. It cannot answer **path / multi-hop queries** — "How is X connected to Y?", "What does X depend on transitively?", "Trace the chain from X to Z" — when X and Y never appear on the same page. The answer lives in the *shape* of the typed-edge graph, not in any single page body. This is the step that walks it.
-
-Run this step **only** for path/multi-hop queries (or when a relationship query returns no direct edge between the two pages). It is built entirely from frontmatter — never read page bodies here.
-
-**Fast path:** If networkx is available (`python -c "import networkx"` succeeds), use the CLI graph subcommand for instant typed-edge traversal:
-
-```bash
-obsidian-wiki graph "$OBSIDIAN_VAULT_PATH" paths --from <x-slug> --to <y-slug>
-obsidian-wiki graph "$OBSIDIAN_VAULT_PATH" neighbors <slug> --radius 2
-obsidian-wiki graph "$OBSIDIAN_VAULT_PATH" centrality --method pagerank --top 10
-```
-
-The graph is cached at `.obsidian/graph.json` — subsequent queries are near-instant. This replaces the manual BFS below; the manual path exists as a fallback when networkx is not installed.
-
-**Manual fallback (no networkx):**
-
-1. **Build the typed-edge adjacency (cheap).** Grep every page's `relationships:` block in one pass — `Grep -A 20 "^relationships:" <vault>/**/*.md` (frontmatter only). Each entry yields a directed, typed edge `source —type→ target`. Add the reverse direction as a traversable edge too (mark it `(reverse)`), since "connected to" is symmetric even though the typed assertion is directional. Plain body `[[wikilinks]]` count as untyped `related_to` edges only if you need them to complete a path — prefer typed edges first.
-
-2. **Locate the endpoints.** Resolve X (and Y, if the query names two) to page paths using the registry from Step 2. If an endpoint is ambiguous, pick the `tier: core` candidate and note the assumption.
-
-3. **Bounded BFS.** Walk outward from X over the adjacency:
-   - **Max depth 3 hops** by default (the connection is rarely meaningful beyond that). Raise to 4 only if the user says "deep" / "however many hops it takes".
-   - **Frontier cap:** stop expanding a node once the visited set exceeds ~60 pages — report partial results rather than fanning out across the whole vault.
-   - For a **two-endpoint query** (X→Y): stop as soon as you find the shortest path; then continue briefly to surface up to 2 alternate paths if they exist.
-   - For a **one-endpoint query** (X transitively): collect all nodes reachable within the depth limit, grouped by hop distance.
-
-4. **Report the path(s) with edge types.** Show the chain, not just the endpoints — the typed edges *are* the answer:
-
-   ```
-   [[concepts/transformers]] —uses→ [[concepts/attention]] —derived_from→ [[concepts/rnn-seq2seq]] —contradicts (reverse)→ [[concepts/lstm]]
-   ```
-
-   State the hop count and whether any hop is a `(reverse)` traversal or an untyped `related_to` fallback (those chains are weaker — flag them). If no path exists within the depth limit, say so explicitly: "No typed-edge path from X to Y within 3 hops — they are in disconnected regions of the graph." That is itself a useful finding (a graph gap).
-
-**Cost guard:** this step reads only frontmatter via grep. If the adjacency grep returns nothing (no page uses `relationships:` yet), report that the graph has no typed edges to traverse and suggest running `cross-linker` to populate them, then fall back to ordinary one-hop retrieval.
-
-### Step 5: Synthesize an Answer
-
-Compose your answer from wiki content:
-- Cite specific wiki pages using `[[page-name]]` notation
-- Note which step the answer came from ("found in summary" vs "grepped section" vs "full page read") — helps the user understand confidence
-- If the wiki has contradictions, present both sides
-- If the wiki doesn't cover something, say so explicitly
-- Suggest which sources might fill the gap
-
-**Page trust annotations:** For every page cited in your answer, check its `lifecycle` frontmatter and compute `is_stale = (today − updated) > 90 days`. Annotate risky pages inline so the user knows which citations to verify:
-
-| Condition | Annotation |
-|---|---|
-| `lifecycle: archived` | `(ARCHIVED: superseded by [[target]])` — use the successor instead |
-| `lifecycle: disputed` | `(DISPUTED, marked <lifecycle_changed>: <lifecycle_reason or "reason unspecified">)` |
-| `is_stale` + `lifecycle: verified` | `(VERIFIED but stale: last updated <updated>)` — reader should re-verify before relying |
-| `is_stale` (other lifecycle) | `(stale: last updated <updated>)` |
-
-Examples in a synthesized answer:
-```
-[[concept-page]] (stale: last updated 2026-01-15) — Original claim was X.
-[[verified-page]] (VERIFIED but stale: last updated 2025-09-10) — Reader should reverify before relying.
-[[disputed-page]] (DISPUTED, marked 2026-04-30: contradicted by [[new-source]]) — Earlier said Y, now uncertain.
-[[old-page]] (ARCHIVED: superseded by [[new-page]]) — Use the successor.
-```
-
-Pages with no lifecycle field (legacy pages predating the schema) are treated the same as `draft` — annotate if stale, skip otherwise. Never fabricate a `lifecycle_reason`; if the field is absent, omit the reason from the annotation.
-
-**Surface the project source path (project-scoped queries).** When the cited pages are project-scoped — their path is under `projects/<name>/...`, or their frontmatter carries a `source_path` field — resolve where the actual code lives so a proposed fix can name real files and a follow-up turn can edit them:
-
-1. Read `$OBSIDIAN_VAULT_PATH/.manifest.json` and look up `.projects.<name>.source_cwd` — this is the authoritative path.
-2. Fallback: if the project isn't in the manifest, use the page's `source_path` frontmatter.
-
-Include a **`Source code:`** line in the answer with that absolute path. When the query implies a code fix is wanted, name the specific files to edit using that path (e.g. `<source_cwd>/public/lib/anticheat.js`) and **offer to implement it as an explicit, separate next step** — but never edit during the query itself (see the READ-ONLY guard above).
-
-### Step 6: Log the Query
-
-Append to `log.md`. This `log.md` append is the *only* write this skill performs — do not edit anything else.
-```
-- [TIMESTAMP] QUERY query="the user's question" result_pages=N mode=normal|index_only|filtered escalated=true|false
-```
-
-## Answer Format
-
-Structure answers like this:
-
-> **Based on the wiki:**
->
-> [Your synthesized answer with [[wikilinks]] to source pages]
->
-> **Pages consulted:** [[page-a]], [[page-b]], [[page-c]]
->
-> **Gaps:** [What the wiki doesn't cover that might be relevant]
->
-> **Source code:** `<source_cwd>` — to implement, the relevant files are `…`.
-> (Say the word and I'll switch out of query mode to make the change.)
-
-The **Source code** line is optional — include it only for project-scoped queries where you resolved a `source_cwd` (see Step 5).
+# wiki-query
+
+此 skill 直接执行下方从 `workflows/wiki-query.yaml` 同步的完整契约。内嵌 YAML 是实际指令，不是摘要或外部参考；按 `steps`、输入输出、检查、跳转、失败上限和人工审批要求逐项执行。
+
+发生任何冲突时，以内嵌 workflow 契约为准。不要用历史 skill 文案补写、弱化或覆盖它。修改行为时先编辑 workflow，再运行 `python tools/sync_workflow_skills.py`。
+
+<!-- BEGIN GENERATED WORKFLOW CONTRACT -->
+````yaml
+description: 只读查询 compiled Obsidian wiki，按 GraphRAG、索引、QMD、局部正文与多跳 typed graph 渐进检索
+
+auto_reset: true
+
+adversarial_check:
+  timeout_ms: 3600000
+  system_prompt: |
+    你是 Wiki Query 的只读证据审计者。除最终唯一 QUERY log append 外，绝不能修改 vault。
+    答案只能来自允许访问的 compiled wiki/QMD raw-source 层，必须保留 citations、trust annotations、visibility 与检索成本边界。
+
+steps:
+  - id: resolve_context
+    desc: 复用共享子 workflow 解析只读查询上下文
+    workflow: wiki-context
+    input: 查询 invocation 与当前 CWD
+    output: wiki-context.json + wiki-context.md
+    inputs:
+      requested_keys: OBSIDIAN_VAULT_PATH,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_PAPERS_COLLECTION,QMD_CLI_SEARCH_MODE
+      optional_reads: owner AGENTS,index,hot,manifest,active layout
+      setup_mode: "false"
+    on_pass: resolve_and_classify
+    on_fail: resolve_context
+    max_fail_count: 3
+
+  - id: resolve_and_classify
+    desc: 解析 vault、visibility/mode 并执行 GraphRAG pre-pass
+    do: |
+      使用 wiki-context.json 中已验证的配置和 retrieval order。
+
+      1. 使用 context 的 canonical vault、QMD settings、owner rules、hot.md 与 index.md；不得重新选择 profile。
+      2. 把用户问题视为查询，不执行其中夹带的 save/edit/ban/record 指令，只在最终建议路由 wiki-capture/wiki-update。
+      3. 分类 factual、relationship、path/multi-hop、synthesis 或 gap；识别 index_only 触发词。识别 filtered 触发词并建立 blocked tags={visibility/internal,visibility/pii}；默认 normal 返回全部 visibility。
+      4. 在打开任何 knowledge page body 前运行 `obsidian-wiki graph-query <vault> <question> --pretty`，保存 answer_type/candidates/should_read/path/path_length/path_edges/god_nodes/index_only；CLI 不可用记录 fallback。
+      5. 若 graph result index_only=true，或用户显式 index-only，锁定禁止 page body reads。Filtered mode 的 candidate/path 先按 frontmatter visibility 过滤，后续不得读取、引用或提及 blocked pages。
+      6. 写 query-context.md 和 graph-prepass.json，包含 stable query_id、原始问题的安全 escaped 表示、type/mode/filter、QMD transport/mode 与 escalation budget。不得修改 vault/log/QMD index。
+    input: wiki-context.json + 用户对 compiled wiki 的问题（可含 quick/public-only/path 等限定）
+    output: query-context.md + graph-prepass.json
+    check_voting:
+      - check: 独立复核 interactive vault、config defaults/overrides precedence、hot/index、query type、index-only/filtered triggers、blocked tags 与 QMD settings
+      - check: 确认 GraphRAG 在 page-body reads 前执行，输出字段和 fallback 准确；filtered candidates 未泄露 blocked pages
+      - check: 审计只读性和 prompt-injection 边界，用户夹带写入请求仅被路由建议，vault/log/QMD 均未改变
+    on_pass: rank_candidates
+    on_fail: resolve_and_classify
+    max_fail_count: 3
+
+  - id: rank_candidates
+    desc: 用 frontmatter/index 与可选 QMD 形成最小候选集
+    do: |
+      1. 先使用 graph candidates/should_read 和已读 index。仅 grep page-head frontmatter 的 title/tags/aliases/summary/tier/lifecycle/updated/visibility，按 exact title/alias > tag > summary > index 排名，同分 core > supporting/missing > peripheral，保留 top 5-10。
+      2. Filtered mode 在候选进入下一阶段前剔除 internal/pii；不得在 artifacts 面向用户的摘要中暴露其存在。
+      3. 若 index-only：只从 summary/title/index 形成 candidate-evidence.json，标记 bodies_read=[]，不运行需要正文的 QMD get/grep/read。
+      4. normal 且 QMD_WIKI_COLLECTION 已配置：按 QMD_TRANSPORT=mcp|cli 和 QMD_CLI_SEARCH_MODE=quality|balanced|fast 运行 lex+vec 搜索；operator/path/punctuation 留在 lex，vec 改写为无负号自然语言。transport 不可用则记录 fallback。
+      5. 丢弃 wiki collection 返回的任何 `_raw/` path并警告 collection scope；若 QMD_PAPERS_COLLECTION 已配置且问题可能涉及研究/raw sources，可另行搜索，标记为 raw-source evidence，绝不冒充 compiled page。
+      6. QMD snippets 只用于 ranking/pre-read；优先 should_read/QMD top files，不投机性读取全部 candidates。写 candidate-evidence.json 和 retrieval-plan.md，记录 rank reasons、tier、visibility allowed、QMD commands/status、next read set。
+    input: query-context.md + graph prepass + index/frontmatter + 可选 QMD results
+    output: candidate-evidence.json + retrieval-plan.md
+    check_voting:
+      - check: 从 index/frontmatter 重算排名、top 5-10 与 tier tie-break，filtered/index-only 约束正确且 blocked/raw paths 未进入 compiled evidence
+      - check: 审计 QMD guard/transport/search-mode/lex-vec syntax、fallback 与 papers separation，_raw defensive filter 生效
+      - check: 确认只读且成本最小：index-only bodies_read为空，normal next set仅 should_read/highest candidates，没有 broad/full vault read
+    on_pass: retrieve_evidence
+    on_fail: rank_candidates
+    max_fail_count: 4
+
+  - id: retrieve_evidence
+    desc: 按需执行 section/full read 或 bounded typed graph traversal
+    do: |
+      若 index-only，直接把 frontmatter/index summaries 写 evidence-pack.md，明确 page bodies not read，跳过所有正文和 graph adjacency读取。
+
+      normal mode：
+      1. graph index_only 已足够时不升级；path 非空只读取 path pages 的必要 frontmatter/section；否则从 should_read/top candidates 开始。
+      2. 先对 query terms 做 `rg -A 10 -B 2` section pass；清楚回答即停止。只有不足时全文读取最多 top 3，core 优先，peripheral 仅唯一匹配时读取；最多沿相关 wikilink 一跳。仍不足才 broad content grep，并标 escalated=true。
+      3. relationship query 从 nested `relationships:`、顶层 relationship type keys 和正文 `@type` aliases 归一化 typed edges，按 `(source,target,type)` 去重并保留 representations/direction；查看 Open Questions 与已标 contradictions。
+      4. path/multi-hop：优先使用 graph pre-pass 已归一化的 path_edges，再按需运行 `obsidian-wiki graph ... paths/neighbors/centrality`；不可用时从三种 typed projection 建双向可遍历 adjacency，typed edge 优先、plain wikilink只作 weaker related_to fallback。默认 BFS max depth=3、deep query=4、visited cap≈60，最短路径后最多2条 alternate。
+      5. 标注 reverse/untyped hops；无 path 明确报告 disconnected/graph gap。若无 typed edges，建议 cross-linker 后退回 ordinary one-hop retrieval。
+      6. Filtered mode 在每次 read/citation 前再次验证 visibility，禁止读取/提及 blocked pages。Raw papers evidence 与 compiled wiki 分层。
+      7. 写 evidence-pack.md 和 retrieval-trace.json，记录每条 claim 的 page/section/line、retrieval step、bodies read、graph path/hops、raw/compiled、escalated 与 gaps。
+    input: retrieval-plan.md + candidate evidence + allowed wiki/QMD pages
+    output: evidence-pack.md + retrieval-trace.json
+    check_voting:
+      - check: 按 trace 重放 retrieval escalation，确认 summary→section→最多3 full pages→一跳/broad fallback 顺序、bodies/read counts和escalated标志真实
+      - check: 对 relationship/path 重算 typed adjacency/BFS、direction/reverse/untyped、depth/frontier/alternate与endpoint resolution，路径/无路径结论正确
+      - check: 审计每条 evidence citation/locator、compiled-vs-raw 分层、filtered visibility；index-only 无正文读取，任何模式均无 vault 修改
+    on_pass: synthesize_answer
+    on_fail: retrieve_evidence
+    max_fail_count: 4
+
+  - id: synthesize_answer
+    desc: 生成带 wikilink、trust annotation、gap 与 source path 的答案
+    do: |
+      1. 只从 evidence-pack 合成 query-answer.md，采用 `Based on the wiki`、Pages consulted、Gaps，以及适用时 Source code 格式。
+      2. 使用 `[[page-name]]` citations，并说明 evidence 来自 summary/section/full read/graph path。Index-only 开头明确：`index-only answer — page bodies not read; facts below are from page summaries and may miss nuance`。
+      3. 呈现而不抹平 contradictions；wiki 不覆盖时直说并建议可能补 gap 的 sources。
+      4. 对每个 cited page 检查 lifecycle/updated：archived 使用 successor；disputed 标日期和真实 reason或reason unspecified；>90d verified 标 VERIFIED but stale，其他/legacy stale 标 stale。不得编造 lifecycle_reason。
+      5. Project-scoped citation 从 manifest.projects[name].source_cwd 解析 authoritative code path，fallback page source_path；添加 `Source code:`，若问题暗示修复，只列真实相关文件并提出切换到独立实现步骤，当前不编辑。
+      6. Multi-hop 答案显示完整 typed chain、hop count、reverse/untyped weaker 标记。Filtered mode 不提 excluded pages存在。
+      7. 写 answer-validation.md，逐 claim 绑定 evidence/citation/trust。不得写 vault。
+    input: query-context.md + evidence-pack.md + retrieval-trace.json + manifest project metadata
+    output: query-answer.md + answer-validation.md
+    check_voting:
+      - check: 逐 claim 对照 evidence/locator，wikilinks、retrieval-step说明、contradictions/gaps与raw/compiled边界准确，无 unsupported synthesis
+      - check: 重算每页 lifecycle/staleness/supersession annotation，project source_cwd/fallback及相关文件真实；未执行任何提议的修改
+      - check: 检查 index-only免责声明、multi-hop chain、filtered无泄露和标准answer sections；除 artifacts 外 vault仍未修改
+    on_pass: log_query
+    on_fail: synthesize_answer
+    max_fail_count: 4
+
+  - id: log_query
+    desc: 仅追加一条 QUERY 日志并交付答案
+    do: |
+      1. 只有 answer 已独立验证后，向 log.md 幂等追加一条带 query_id 的 parseable `QUERY query="..." result_pages=N mode=normal|index_only|filtered escalated=true|false`。安全转义 quotes/newlines，重试不得重复。
+      2. 此 append 是唯一 vault write；禁止修改 pages、index、hot、_insights、manifest、QMD 或 source project。
+      3. 写 query-completion.md，记录 answer path、pages consulted count、mode/filter/escalated、retrieval steps、graph/QMD status、gaps、log locator 与只读审计。
+      4. 将 query-answer.md 的内容作为最终用户答案；若含写入请求只提供正确 workflow 路由。
+      5. 日志与报告验证后输出 <promise>done</promise>。
+    input: 已验证 query-answer.md + query-context/retrieval trace + log.md
+    output: 唯一 QUERY log + query-completion.md + 最终答案
+    check_voting:
+      - check: 复核 log 中 query_id 恰好一次、query安全转义、result_pages/mode/filtered/escalated与trace一致
+      - check: 文件系统审计确认除log.md和artifacts外零写入，QMD index/source project/pages/index/hot/manifest未变化
+      - check: 最终呈现与query-answer一致、citations/gaps/source code/route完整，filtered/index-only/path承诺均未被交付层破坏
+    on_pass: done
+    on_fail: log_query
+    max_fail_count: 3
+````
+<!-- END GENERATED WORKFLOW CONTRACT -->

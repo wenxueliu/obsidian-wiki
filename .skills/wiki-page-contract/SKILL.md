@@ -1,3 +1,16 @@
+---
+name: wiki-page-contract
+description: "将共享 Wiki context 与事务范围编译为不可变的 effective page write contract"
+---
+
+# wiki-page-contract
+
+此 skill 直接执行下方从 `workflows/wiki-page-contract.yaml` 同步的完整契约。内嵌 YAML 是实际指令，不是摘要或外部参考；按 `steps`、输入输出、检查、跳转、失败上限和人工审批要求逐项执行。
+
+发生任何冲突时，以内嵌 workflow 契约为准。不要用历史 skill 文案补写、弱化或覆盖它。修改行为时先编辑 workflow，再运行 `python tools/sync_workflow_skills.py`。
+
+<!-- BEGIN GENERATED WORKFLOW CONTRACT -->
+````yaml
 description: 将共享 Wiki context 与事务范围编译为不可变的 effective page write contract
 
 auto_reset: true
@@ -36,3 +49,5 @@ steps:
     on_pass: done
     on_fail: build_page_contract
     max_fail_count: 3
+````
+<!-- END GENERATED WORKFLOW CONTRACT -->

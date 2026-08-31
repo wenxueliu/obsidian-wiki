@@ -391,7 +391,14 @@ def test_wiki_route_resolve_does_not_depend_on_cwd(tmp_path: Path) -> None:
     assert json.loads(result.stdout)["target"] == "concepts/alpha.md"
 
 
-def test_page_contract_uses_cwd_independent_route_cli() -> None:
+def test_page_contract_is_a_single_read_only_contract_compiler() -> None:
     workflow = (ROOT / "workflows" / "wiki-page-contract.yaml").read_text(encoding="utf-8")
     assert "obsidian-wiki wiki-route-resolve" in workflow
+    assert "transaction_kind" in workflow
+    assert "source_scope" in workflow
+    assert "不得扫描 index" in workflow
+    assert "不为虚拟 page types 执行 route resolver" in workflow
+    assert "只审计既有 contract artifacts，不生成或修改任何文件" in workflow
+    assert "check_voting:" not in workflow
+    assert workflow.count("    check: |") == 1
     assert ".cac/" not in workflow

@@ -86,6 +86,12 @@ Knowledge that's project-specific goes under `projects/`. Knowledge that's gener
 
 Every page carries required frontmatter: `title`, `category`, `tags`, `sources`, `created`, `updated`.
 
+Typed relationships use the Penfield 24-type vocabulary. One directional edge is normalized by
+`(source, target, type)` and may be read from the framework's nested `relationships:` block, a
+Wikilink Types top-level key such as `supports:`, or an inline alias such as
+`[[Target|Target @supports]]`. New ingest/update writes keep all three projections synchronized;
+query and graph consumers deduplicate them into one edge, while lint reports mismatches.
+
 `hot.md` deserves a mention — it's a running semantic snapshot every write skill updates, so the next session picks up where the last one left off without crawling the whole vault.
 
 ## Core principles

@@ -469,20 +469,18 @@ def test_distributed_schema_config_contract_names_all_four_variables(tmp_path: P
     )
     env_example = (root / ".env.example").read_text(encoding="utf-8")
     configuration = (root / "docs" / "configuration.md").read_text(encoding="utf-8")
-    lint_skill = (root / ".skills" / "wiki-lint" / "SKILL.md").read_text(encoding="utf-8")
-    llm_skill = (root / ".skills" / "llm-wiki" / "SKILL.md").read_text(encoding="utf-8")
+    lint_workflow = (root / "workflows" / "wiki-lint.yaml").read_text(encoding="utf-8")
     capture_skill = (root / ".skills" / "wiki-capture" / "SKILL.md").read_text(encoding="utf-8")
 
     for variable in variables:
         assert variable in env_example
         assert variable in configuration
-        assert variable in lint_skill
-        assert variable in llm_skill
+        assert variable in lint_workflow
         assert variable in capture_skill
     assert "CLI flags > these environment/config values >" in env_example
-    assert "CLI flags > resolved environment/config values > framework defaults" in lint_skill
+    assert "形成 effective schema" in lint_workflow
     assert "Empty or whitespace-only values fail closed" in env_example
-    assert "fails closed" in lint_skill
+    assert "fail closed" in lint_workflow
 
 
 def test_owner_schema_still_rejects_unknown_typos(tmp_path: Path) -> None:

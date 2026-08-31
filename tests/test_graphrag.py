@@ -13,6 +13,7 @@ from obsidian_wiki.graphrag import (
     query,
     rank_candidates,
 )
+from obsidian_wiki.index import find_index_path
 
 
 # ---------------------------------------------------------------------------
@@ -28,6 +29,7 @@ def vault(tmp_path):
 
 def _page(vault: Path, name: str, *, title: str = "", summary: str = "",
           tags: list[str] | None = None, links: list[str] | None = None,
+          relationships: list[tuple[str, str]] | None = None,
           tier: str = "supporting", category: str = "concepts") -> Path:
     lines = ["---", f"title: {title or name}"]
     if summary:
@@ -36,6 +38,11 @@ def _page(vault: Path, name: str, *, title: str = "", summary: str = "",
         lines.append(f"tags: [{', '.join(tags)}]")
     lines.append(f"tier: {tier}")
     lines.append(f"category: {category}")
+    if relationships:
+        lines.append("relationships:")
+        for target, relation in relationships:
+            lines.append(f'  - target: "[[{target}]]"')
+            lines.append(f"    type: {relation}")
     lines.append("---")
     lines.append(f"# {title or name}")
     for lnk in (links or []):
@@ -95,6 +102,15 @@ class TestBuildIndex:
     def test_in_links_reverse(self, simple_vault):
         idx = build_index(simple_vault)
         assert "transformer" in idx["attention"]["in_links"]
+
+    def test_preserves_typed_relationship(self, vault):
+        _page(vault, "a", relationships=[("b", "uses")])
+        _page(vault, "b")
+        idx = build_index(vault)
+        edge = next(edge for edge in idx["a"]["edges"] if edge["relation"] == "uses")
+        assert edge["target"] == "b"
+        assert edge["typed"] is True
+        assert edge["representations"] == ["relationships"]
 
     def test_empty_vault(self, vault):
         idx = build_index(vault)
@@ -211,6 +227,28 @@ class TestFindPath:
         path = find_path(idx, "x", "y")
         assert path is None
 
+    def test_shared_path_preserves_typed_edge(self, vault):
+        _page(vault, "a", relationships=[("b", "uses")])
+        _page(vault, "b")
+        detail = find_index_path(build_index(vault), "a", "b")
+        assert detail is not None
+        assert detail["length"] == 1
+        assert detail["edges"][0]["relation"] == "uses"
+        assert detail["edges"][0]["typed"] is True
+        assert detail["edges"][0]["direction"] == "forward"
+
+    def test_shared_path_marks_reverse_traversal(self, vault):
+        _page(vault, "a", relationships=[("b", "implements")])
+        _page(vault, "b")
+        detail = find_index_path(build_index(vault), "b", "a")
+        assert detail is not None
+        edge = detail["edges"][0]
+        assert edge["source"] == "b"
+        assert edge["target"] == "a"
+        assert edge["asserted_source"] == "a"
+        assert edge["asserted_target"] == "b"
+        assert edge["direction"] == "reverse"
+
 
 # ---------------------------------------------------------------------------
 # classify_query
@@ -259,6 +297,9 @@ class TestQuery:
     def test_path_query_populated(self, simple_vault):
         result = query(simple_vault, "How is transformer connected to embedding?")
         assert result["answer_type"] == "path"
+        assert result["path_length"] == 1
+        assert len(result["path_edges"]) == 1
+        assert result["path_edges"][0]["source_page"] == "transformer.md"
 
     def test_index_only_on_exact_with_summary(self, simple_vault):
         result = query(simple_vault, "Transformer Architecture")

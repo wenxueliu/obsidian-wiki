@@ -25,6 +25,17 @@ Syncing is advisory, not a merge gate — the `readme-translation-drift` CI job 
 python tools/check_readme_sync.py
 ```
 
+顶层 `workflows/*.yaml` 是同名 Agent Skill 的权威执行契约。修改 workflow 后同步并检查
+`.skills/<name>/SKILL.md`：
+
+```bash
+python tools/sync_workflow_skills.py
+python tools/sync_workflow_skills.py --check
+```
+
+生成的 skill 会直接内嵌完整 workflow，不是对 workflow 的摘要或外部引用。不要手工编辑
+生成的同名 `SKILL.md`；行为变更应先落在 workflow。
+
 It lists the commits that changed `README.md` without a later `README_TW.md` update, plus the pending English diff. Translate and backfill those into `README_TW.md`. Reviewers assess translation quality.
 
 The `docs/` pages are English-only for now.

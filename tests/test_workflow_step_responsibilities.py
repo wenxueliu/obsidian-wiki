@@ -7,6 +7,7 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = (
     ROOT / "workflows" / "wiki-context.yaml",
+    ROOT / "workflows" / "wiki-page-contract.yaml",
     ROOT / "workflows" / "wiki-setup-contract.yaml",
     ROOT / "workflows" / "wiki-setup.yaml",
 )

@@ -1,0 +1,71 @@
+---
+name: wiki-setup-contract
+description: "从 workflow-local 模板生成带 hash 的 Wiki 核心初始化契约，再合并可选集成与验收契约"
+---
+
+# wiki-setup-contract
+
+此 skill 直接执行下方从 `workflows/wiki-setup-contract.yaml` 同步的完整契约。内嵌 YAML 是实际指令，不是摘要或外部参考；按 `steps`、输入输出、检查、跳转、失败上限和人工审批要求逐项执行。
+
+发生任何冲突时，以内嵌 workflow 契约为准。不要用历史 skill 文案补写、弱化或覆盖它。修改行为时先编辑 workflow，再运行 `python tools/sync_workflow_skills.py`。
+
+<!-- BEGIN GENERATED WORKFLOW CONTRACT -->
+````yaml
+description: 从 workflow-local 模板生成带 hash 的 Wiki 核心初始化契约，再合并可选集成与验收契约
+
+auto_reset: true
+
+adversarial_check:
+  timeout_ms: 3600000
+  system_prompt: |
+    你是 Wiki Setup Contract 的只读审计者。只核对 check 列出的 contract 字段与安全边界，不得调用 builder，不得创建或修改 vault、config、hook、QMD、Git 或网络状态。
+    每个 step 的 do 只生成声明的 contract artifacts；check 一次验收 artifact 结构、关键 hash 与零外部写入。
+
+steps:
+  - id: build_core_contract
+    desc: 生成冻结的 setup core contract
+    do: |
+      运行 workflow-local builder 的 `core` phase：
+
+      ```bash
+      obsidian-wiki wiki-setup-contract-build core \
+        --output-dir "{{artifacts_dir}}"
+      ```
+
+      console script 不在 PATH 时使用等价的 `python3 -m obsidian_wiki wiki-setup-contract-build core ...`。
+
+      builder 从随包发布的 `workflows/templates/wiki-setup/` 收集 `WRITING.md`、`index.md`、`log.md`、`hot.md`、`manifest.json`、`app.json`、`appearance.json`，将 source path、完整正文、allowed placeholders 和 SHA-256 写入 core artifacts。
+
+      core artifacts 同时写入动态值声明、config defaults、Writing Profile create-only 策略、core file create/minimal-repair 策略，以及每个 workflow layout 的 manifest、routing、prompt、vault inventory 和对应 hashes。
+
+      只生成 `setup-core-contract.json` 与其 Markdown readout，不修改 vault、home 或外部系统。
+    input: 父 workflow 的 non-secret invocation metadata（仅用于 provenance，不改变模板）
+    output: setup-core-contract.json + setup-core-contract.md
+    check: 解析 core JSON/Markdown，核对必需 templates/layouts inventory、contract hash、config defaults 和 create-only/minimal-repair 策略；拒绝 symlink/path escape/reserved target，确认除 artifacts 外零写入
+    on_pass: build_integration_contract
+    on_fail: build_core_contract
+    max_fail_count: 3
+
+  - id: build_integration_contract
+    desc: 生成冻结的 setup final contract
+    do: |
+      使用已通过上一 step check 的 core contract 生成 final contract：
+
+      ```bash
+      obsidian-wiki wiki-setup-contract-build finalize \
+        --output-dir "{{artifacts_dir}}"
+      ```
+
+      console script 不在 PATH 时使用等价的 `python3 -m obsidian_wiki wiki-setup-contract-build finalize ...`。
+
+      builder 将 `integrations.json` 中的 QMD、Stop hook、Git sync、required checks、manual plugins 和 next steps 合并进 core contract，写出 `setup-contract.json` 与 `setup-contract.md`。
+
+      只生成最终 contract artifacts，不修改 vault、home 或外部系统。
+    input: 已验证的 setup-core-contract.json/md + templates/wiki-setup/integrations.json
+    output: setup-contract.json + setup-contract.md
+    check: 解析 final JSON/Markdown，核对 core/integration/final hash 链、QMD `_raw/**` exclusion、Stop hook、Git sync、plugins 和 next steps 等必需章节存在；确认只写 contract artifacts
+    on_pass: done
+    on_fail: build_integration_contract
+    max_fail_count: 3
+````
+<!-- END GENERATED WORKFLOW CONTRACT -->

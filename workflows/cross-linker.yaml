@@ -74,15 +74,15 @@ steps:
 
       1. canonical 比较 vault 与 `git rev-parse --show-toplevel`；只有 vault 自身是 Git root 才 snapshot。clean repo 记录当前 HEAD；dirty repo 必须 `git add -A` 后成功提交 `pre-cross-linker snapshot`。add/commit 失败则在任何 vault 写入前停止。非 standalone Git vault 静默跳过 snapshot。
       2. 应用 link-plan.json 前重读并校验 source hash/locator，漂移则停止重规划，不能覆盖并发修改。
-      3. body 按 OBSIDIAN_LINK_FORMAT 写 inline 或现有/新 `## Related`；markdown link 从编辑文件计算相对 `.md` path。relationships frontmatter target 始终用 wikilink，追加而不重复现有 typed entries。
-      4. 保留 archive/readout/staging/special files；每页验证 YAML、links、targets、placement、无重复和无意正文改动。
+      3. 普通 body link 按 OBSIDIAN_LINK_FORMAT 写 inline 或现有/新 `## Related`；markdown link 从编辑文件计算相对 `.md` path。typed edge 则始终写 `[[target|label @type]]`，并同步追加 nested `relationships:` 与顶层 type-key quoted-wikilink list，三处均不得重复。
+      4. 保留 archive/readout/staging/special files；每页验证 YAML、links、targets、placement、无重复和无意正文改动，并比较三种 typed projection 的 canonical `(target,type)` 集合完全一致。
       5. 写 cross-link-apply-report.md，记录 snapshot SHA/skipped reason、changed pages、links、relations 与 diff。此时不更新 tracking/QMD。
     input: link-plan.json + 最新 live pages + Git 状态
     output: 已验证的 links/relationships + cross-link-apply-report.md
     check_voting:
       - check: skip 模式没有 snapshot/vault diff；执行模式复核 standalone Git root 判定与 snapshot 行为，dirty standalone vault 在写前有有效 commit，clean/non-standalone 分支处理正确
       - check: 将实际 diff 与 plan 逐项对账，检查 link format/relative path、inline/Related placement、首次 mention、并发 hash 与无额外改动
-      - check: 验证所有 targets 存在、relationship type/direction 合法、无 duplicate/self/code/frontmatter links，tracking/QMD 尚未改变
+      - check: 验证所有 targets 存在、relationship type/direction 合法、nested/flat-key/inline @type 三种 projection 一致，且无 duplicate/self/code/frontmatter links，tracking/QMD 尚未改变
     on_pass: update_affinity
     on_fail: snapshot_and_apply
     max_fail_count: 4

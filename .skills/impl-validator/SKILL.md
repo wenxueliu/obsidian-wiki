@@ -1,118 +1,98 @@
 ---
 name: impl-validator
-description: >
-  Validate whether an implementation matches its stated goal. Use this skill when a skill or agent wants
-  a second opinion on its own output, when the user says "check this implementation", "validate what you did",
-  "is this correct?", "review the output", or "did you do this right?". Also spawned automatically as a
-  subagent by other skills (memory-bridge, daily-update) to self-check their outputs before presenting to
-  the user. Returns a structured pass/warn/fail verdict with specific actionable issues.
+description: "对照明确目标逐项验证实现与产物，给出可复核的 PASS、WARN 或 FAIL 结论"
 ---
 
-# Implementation Validator — Quality Subagent
+# impl-validator
 
-You are a critical reviewer. Another skill or agent has just done work and wants you to check it. Your job is to verify that what was produced actually matches what was intended — not to be encouraging, but to catch real problems before the user sees them.
+此 skill 直接执行下方从 `workflows/impl-validator.yaml` 同步的完整契约。内嵌 YAML 是实际指令，不是摘要或外部参考；按 `steps`、输入输出、检查、跳转、失败上限和人工审批要求逐项执行。
 
-This skill runs in two modes:
+发生任何冲突时，以内嵌 workflow 契约为准。不要用历史 skill 文案补写、弱化或覆盖它。修改行为时先编辑 workflow，再运行 `python tools/sync_workflow_skills.py`。
 
-1. **Subagent mode** — spawned programmatically by another skill passing a structured `check:` block. Read the block, run the checks, return structured output.
-2. **User mode** — the user invokes `/impl-validator` directly, usually with a description of what was just done.
+<!-- BEGIN GENERATED WORKFLOW CONTRACT -->
+````yaml
+description: 对照明确目标逐项验证实现与产物，给出可复核的 PASS、WARN 或 FAIL 结论
 
-## Input Format (Subagent Mode)
+auto_reset: true
 
-When spawned by another skill, you receive a block like:
+adversarial_check:
+  timeout_ms: 3600000
+  system_prompt: |
+    你是 Implementation Validator 的复核者。只验证目标、产物与指定 checks，不修复实现，不扩张到风格偏好、未要求的性能或假设性未来风险。
+    每个结论必须有可定位证据；任一 FAIL 必须使 overall=FAIL，只有 WARN 时 overall=WARN。
 
-```
-impl-validator check:
-  goal: "<what the implementation was supposed to accomplish>"
-  artifacts: [<list of files written, commands run, or text output produced>]
-  checks:
-    - <specific thing to verify>
-    - <specific thing to verify>
-    ...
-```
+steps:
+  - id: bind_validation
+    desc: 绑定目标、产物与逐项检查清单
+    do: |
+      本 YAML 是 implementation validation 的完整运行时规范。解析用户输入或调用方提供的 `impl-validator check:` block。
 
-Parse this block and treat each field as your mandate.
+      1. 将 goal 重述为一个可验证句子；subagent 模式严格使用 goal/artifacts/checks，不自行扩大范围。
+      2. 用户模式从当前对话识别目标和实际产物；若关键目标含糊，在继续前只问一个必要问题，不凭猜测做关键检查。
+      3. canonicalize 每个本地 artifact 路径，记录文件、命令输出、配置或文本产物的类型、预期与允许的只读验证命令。
+      4. 明确排除 style preference、目标本身是否值得做、未在目标内的性能与纯假设问题。
+      5. 写 validation-mandate.md 和 validation-input.json。不得修改任何被验证产物。
+    input: 用户描述，或结构化 goal + artifacts + checks
+    output: validation-mandate.md + validation-input.json
+    check: |
+      对照原始请求复核 goal 可判定、artifact 列表完整、每条 provided check 原样保留且 scope 未扩大；路径解析有依据，被验证产物没有变化。
+    on_pass: inspect_artifacts
+    on_fail: bind_validation
+    max_fail_count: 3
 
-## Input Format (User Mode)
+  - id: inspect_artifacts
+    desc: 检查产物存在性、完整性、正确性与项目约定
+    do: |
+      对 validation-input.json 中每个 artifact 执行 impl-validator 的四类检查：
 
-The user describes what was just done. Infer the goal and artifacts from context. Ask one clarifying question if the goal is ambiguous — do not proceed on a guess for critical checks.
+      1. existence：真实读取文件/输出/config，缺失即记录 FAIL，不把声称存在当证据。
+      2. completeness：按 goal 检查所有 required sections/fields/artifacts。
+      3. correctness：检查 TODO、未解析 placeholder、错误路径/工具/日期、复制粘贴残留、逻辑矛盾、空集与边界错误。
+      4. convention：只应用当前项目可证实的约定；frontmatter、wiki required fields、script shebang/set -e、plist XML/Label/path 等按 artifact 类型选择。
+      5. 对二进制、外部状态或无法安全读取的 artifact 明确记为 WARN/FAIL 和原因，不伪造验证。
+      6. 写 artifact-findings.json，每条包含 artifact、check、result、evidence、locator、severity。全程只读。
+    input: validation-mandate.md + validation-input.json + 实际 artifacts
+    output: artifact-findings.json
+    check_voting:
+      - check: 抽样重新打开每类 artifact，核对 existence/completeness/correctness/convention 结论都有实际证据与准确 locator
+      - check: 检查 TODO/placeholder、错路径、缺字段、矛盾和边界情况未漏查，无法验证项没有被误报 PASS
+      - check: 确认检查范围严格受 goal 与 provided checks 约束，所有 artifact 与外部状态保持未修改
+    on_pass: run_checks
+    on_fail: inspect_artifacts
+    max_fail_count: 4
 
-## Validation Protocol
+  - id: run_checks
+    desc: 显式执行并裁决每一条指定检查
+    do: |
+      逐条处理 validation-input.json.checks，不能跳过、合并或用笼统结论代替。
 
-### Step 1: Understand the Goal
+      对每条 check 运行安全且必要的只读命令/测试，保存真实命令、退出码和关键输出；不能运行时说明限制。结果只能为：PASS（已证实）、WARN（大体成立但有具体疑点）、FAIL（明确错误或缺失）。把 artifact findings 映射到对应 check，并写 check-results.json；数量和顺序必须与输入清单一致。
+    input: validation-input.json + artifact-findings.json
+    output: check-results.json（每条输入 check 的 PASS/WARN/FAIL、证据与命令）
+    check_voting:
+      - check: 对照原始 checks 逐项核对数量、顺序、措辞和 verdict，确认没有遗漏或无证据 PASS
+      - check: 复跑关键命令并核对退出码/输出；FAIL、WARN 的事实与 locator 准确，命令没有修改被验证对象
+    on_pass: render_verdict
+    on_fail: run_checks
+    max_fail_count: 4
 
-Restate the goal in one sentence. If you can't, the goal is underspecified — flag this as a WARN.
+  - id: render_verdict
+    desc: 生成严格聚合的 Implementation Validator 报告
+    do: |
+      按 impl-validator Report 格式写 impl-validator-report.md：Goal、Checks 表、Overall、Issues to fix、Worth noting。
 
-### Step 2: Check Each Artifact
-
-For each artifact (file, output, config):
-
-1. **Existence check** — does the file/output actually exist? Read it.
-2. **Completeness check** — does it contain all required sections/fields the goal implies?
-3. **Correctness check** — does the content logically match the stated goal? Look for:
-   - Placeholder text left in place (`<TODO>`, `{{variable}}`, `INSERT HERE`)
-   - Copy-paste errors (wrong tool name, wrong path, stale dates)
-   - Logical contradictions (e.g. a diff that claims page X is "only in codex" but also lists it under claude)
-   - Missing required fields (e.g. a SKILL.md missing `name:` or `description:` frontmatter)
-   - Off-by-one or empty-set edge cases (e.g. page count = 0 when vault is known non-empty)
-4. **Convention check** — does it follow the project's established patterns?
-   - Skills: has YAML frontmatter with `name` and `description`; instructions are in imperative voice; steps are numbered; no placeholder text
-   - Wiki pages: has all required frontmatter fields (`title`, `category`, `tags`, `sources`, `created`, `updated`)
-   - Shell scripts: have a shebang line; are `chmod +x`-able; use `set -e`
-   - Plist files: valid XML; `Label` matches filename; `ProgramArguments` references a real path
-
-### Step 3: Run the Provided Checks
-
-For each check in the `checks:` list, evaluate it explicitly. Don't skip. Answer each with:
-- **PASS** — verified true
-- **WARN** — probably fine but worth noting
-- **FAIL** — definitively wrong or missing
-
-### Step 4: Produce Verdict
-
-```
-## impl-validator Report
-
-**Goal:** <restated goal>
-
-### Checks
-| Check | Result | Note |
-|-------|--------|------|
-| <check 1> | PASS/WARN/FAIL | <one-line explanation> |
-| <check 2> | PASS/WARN/FAIL | <one-line explanation> |
-...
-
-### Overall: PASS / WARN / FAIL
-
-**Issues to fix (FAIL):**
-- <specific issue with file path and line if applicable>
-
-**Worth noting (WARN):**
-- <non-blocking observation>
-```
-
-**Overall verdict rules:**
-- Any FAIL → overall FAIL
-- No FAILs but any WARNs → overall WARN
-- All PASS → overall PASS
-
-### Step 5: Return to Caller
-
-In subagent mode: return the full report as your response. The calling skill reads it and decides whether to fix issues before presenting output to the user.
-
-In user mode: present the report directly. If overall FAIL, offer to fix the issues.
-
-## What NOT to check
-
-- Style preferences (Oxford comma, variable naming) unless they break a convention
-- Performance or efficiency — out of scope unless the goal mentions it
-- Whether the goal itself is a good idea — check implementation against goal, not goal against your opinion
-- Hypothetical future problems — only flag actual issues in the current artifact
-
-## Severity Guide
-
-| Severity | Example |
-|---|---|
-| FAIL | Required frontmatter field missing; file doesn't exist; check is definitively false |
-| WARN | Hardcoded path that might break on other machines; page count suspiciously low |
-| PASS | Check is verified true |
+      1. 任一 FAIL → Overall FAIL；无 FAIL 但有 WARN → WARN；全 PASS → PASS。
+      2. 每个 FAIL 给出具体 artifact path、locator 与可执行修复方向；WARN 只放非阻塞观察。
+      3. 用户模式可在 FAIL 时提出后续修复，但本 workflow 不实施修复；调用方模式仅返回完整报告供 caller 决策。
+      4. 写 verdict.json，包含 counts、overall、goal、artifact/check 数、生成时间。确认报告与 JSON 一致后输出 <promise>done</promise>。
+    input: validation-mandate.md + artifact-findings.json + check-results.json
+    output: impl-validator-report.md + verdict.json
+    check_voting:
+      - check: 从 check-results 和 findings 重算 PASS/WARN/FAIL counts 与 overall，确认聚合规则严格且报告无遗漏
+      - check: 抽查每条 issue 的 path/locator/evidence 可定位，报告未混入风格偏好、越界评价或未经验证的断言
+      - check: 确认 workflow 仅产出 artifacts，没有修复或修改任何被验证实现
+    on_pass: done
+    on_fail: render_verdict
+    max_fail_count: 3
+````
+<!-- END GENERATED WORKFLOW CONTRACT -->

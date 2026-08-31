@@ -30,7 +30,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from obsidian_wiki.index import load_index
+from obsidian_wiki.index import entry_edges, load_index
 
 
 def parse_vault_graph(vault: Path) -> tuple[dict[str, list[str]], dict[str, list[str]], dict[tuple[str, str], str]]:
@@ -47,10 +47,12 @@ def parse_vault_graph(vault: Path) -> tuple[dict[str, list[str]], dict[str, list
     for entry in load_index(vault).values():
         src = entry["slug"]
         tags_map[src] = list(entry["tags"])
-        # Plain links + typed relationships (both are edges).
-        outgoing[src] = list(entry["out_links"]) + list(entry["out_edges"].keys())
-        for target, rtype in entry["out_edges"].items():
-            edge_types[(src, target)] = rtype
+        # Plain links + typed relationships from the shared edge model.
+        edges = entry_edges(entry)
+        outgoing[src] = [edge["target"] for edge in edges]
+        for edge in edges:
+            if edge.get("typed"):
+                edge_types[(src, edge["target"])] = edge["relation"]
 
     return dict(outgoing), tags_map, edge_types
 

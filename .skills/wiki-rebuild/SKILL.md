@@ -1,212 +1,134 @@
 ---
 name: wiki-rebuild
-description: >
-  Archive existing wiki knowledge and rebuild from scratch, or restore from a previous archive.
-  Use this skill when the user wants to start fresh, rebuild the wiki from all sources, archive current
-  knowledge before a major change, or restore an older version. Triggers on "rebuild the wiki",
-  "start over", "archive and rebuild", "restore from archive", "nuke and repave", "clean rebuild".
-  Also use when the wiki has drifted too far from sources and incremental fixes won't cut it.
+description: "经人工确认先归档，再安全执行 Wiki snapshot、清空重建准备或 archive restore"
 ---
 
-# Wiki Rebuild — Archive, Rebuild, Restore
+# wiki-rebuild
 
-You are performing a destructive operation on the wiki. Always archive first, always confirm with the user before proceeding.
+此 skill 直接执行下方从 `workflows/wiki-rebuild.yaml` 同步的完整契约。内嵌 YAML 是实际指令，不是摘要或外部参考；按 `steps`、输入输出、检查、跳转、失败上限和人工审批要求逐项执行。
 
-## Before You Start
+发生任何冲突时，以内嵌 workflow 契约为准。不要用历史 skill 文案补写、弱化或覆盖它。修改行为时先编辑 workflow，再运行 `python tools/sync_workflow_skills.py`。
 
-1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH` and optional QMD settings such as `QMD_WIKI_COLLECTION`
-2. Read `.manifest.json` to understand current state
-3. **Confirm the user's intent.** This skill supports three modes:
-   - **Archive only** — snapshot current wiki, no rebuild
-   - **Archive + Rebuild** — snapshot, then reprocess all sources from scratch
-   - **Restore** — bring back a previous archive
+<!-- BEGIN GENERATED WORKFLOW CONTRACT -->
+````yaml
+description: 经人工确认先归档，再安全执行 Wiki snapshot、清空重建准备或 archive restore
 
-## The Archive System
+auto_reset: true
 
-Archives live at `$OBSIDIAN_VAULT_PATH/_archives/`. Each archive is a timestamped directory containing a full copy of the wiki state at that point.
+manual_step:
+  - approve_operation
 
-```
-$OBSIDIAN_VAULT_PATH/
-├── _archives/
-│   ├── 2026-04-01T10-30-00Z/
-│   │   ├── archive-meta.json
-│   │   ├── concepts/
-│   │   ├── entities/
-│   │   ├── skills/
-│   │   ├── references/
-│   │   ├── synthesis/
-│   │   ├── journal/
-│   │   ├── projects/
-│   │   ├── index.md
-│   │   ├── log.md
-│   │   └── .manifest.json
-│   └── 2026-03-15T08-00-00Z/
-│       └── ...
-├── concepts/          ← live wiki
-├── entities/
-└── ...
-```
+adversarial_check:
+  timeout_ms: 3600000
+  system_prompt: |
+    你是 Wiki Rebuild 的破坏性操作审计者。任何 clear/restore 前必须有完整可验证 archive 与人工批准。
+    永远不得删除 _archives 或触碰 .obsidian/.env；rebuild 只清空 live wiki 并停止，不自动重 ingest。
 
-### archive-meta.json
+steps:
+  - id: resolve_context
+    desc: 复用共享子 workflow 解析 archive/rebuild/restore 上下文
+    workflow: wiki-context
+    input: operation invocation 与当前 CWD
+    output: wiki-context.json + wiki-context.md
+    inputs:
+      requested_keys: OBSIDIAN_VAULT_PATH,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_CLI_SEARCH_MODE
+      optional_reads: owner AGENTS,index,manifest,active layout
+      setup_mode: "false"
+    on_pass: inspect_and_plan
+    on_fail: resolve_context
+    max_fail_count: 3
 
-```json
-{
-  "archived_at": "2026-04-06T10:30:00Z",
-  "reason": "rebuild",
-  "total_pages": 87,
-  "total_sources": 42,
-  "total_projects": 6,
-  "vault_path": "/Users/name/Knowledge",
-  "manifest_snapshot": ".manifest.json"
-}
-```
+  - id: inspect_and_plan
+    desc: 解析模式、vault 与精确 archive/rebuild/restore 计划
+    do: |
+      使用 wiki-context.json 规划 rebuild/archive/restore。
 
-## Mode 1: Archive Only
+      1. 使用 context 的 canonical vault、QMD、manifest/index 与 active layout；按需只读 log，不得重新解析 profile。
+      2. 识别且只允许 archive-only、archive+rebuild、restore 三种模式；未明确时列出选择，不猜 destructive intent。
+      3. 按 routing.content_roots 统计 live pages、sources/projects 和需要归档的 index/log/manifest；列出必须保留的 archive/config 及其他 routing system/skip dirs。
+      4. restore 模式扫描 _archives/*/archive-meta.json，canonicalize 候选，验证目录边界、metadata、必需内容与可读性；绑定用户选择的唯一 archive。
+      5. 生成 timestamped destination（不得已存在）、copy manifest、clear allowlist、restore source、验证步骤、failure recovery 和 QMD plan。
+      6. 写 rebuild-plan.md 与 rebuild-plan.json，包含 stable plan_id 和所有路径/hash。不得创建 archive 或修改 vault。
+    input: archive、archive+rebuild 或 restore 请求（可含 archive id）
+    output: rebuild-plan.md + rebuild-plan.json
+    check_voting:
+      - check: 复核 config/vault/mode、live inventory/counts、active layout 和 archive candidate metadata，所有 canonical paths 无 escape
+      - check: 审计 copy/clear/restore allowlists，确认 _archives/.obsidian/.env 永不在删除/覆盖集合且 rebuild 不自动 ingest
+      - check: 确认计划含恢复方法/QMD/验证，当前 vault 完全未改变
+    on_pass: approve_operation
+    on_fail: inspect_and_plan
+    max_fail_count: 3
 
-When the user wants to snapshot the current state without rebuilding.
+  - id: approve_operation
+    desc: 人工批准绑定当前 vault 与 hash 的归档或破坏性操作
+    do: |
+      展示 rebuild-plan.md：模式、exact source/destination、pages/sources counts、将 copy/clear/restore 的路径、保留项、QMD 与回退方法。archive+rebuild/restore 明确警告 live wiki 会被替换；restore 再确认 archive id。
 
-### Steps:
+      将用户确认写 approved-rebuild.json，绑定 plan_id/hash、canonical vault、mode、destination、restore source 与当前 state hashes。拒绝则取消。输出 <promise>done</promise> 后等待人工门；批准前不得写 vault。
+    input: rebuild-plan.md + 用户明确 confirm/cancel/archive selection
+    output: approved-rebuild.json（绑定 plan hash 的明确批准）
+    check: |
+      确认批准与用户选择一致，vault/mode/paths/hashes 绑定当前 plan；destructive 模式有明确 overwrite consent；人工门前没有 archive 或 vault 写入。
+    on_pass: create_archive
+    on_fail: approve_operation
+    max_fail_count: 3
 
-1. Create archive directory: `_archives/YYYY-MM-DDTHH-MM-SSZ/`
-2. Copy all category directories, `index.md`, `log.md`, `.manifest.json`, and `projects/` into the archive
-3. Write `archive-meta.json` with reason `"snapshot"`
-4. Append to `log.md`:
-   ```
-   - [TIMESTAMP] ARCHIVE reason="snapshot" pages=87 destination="_archives/2026-04-06T10-30-00Z"
-   ```
-5. Optionally refresh QMD if `log.md` is indexed and `QMD_WIKI_COLLECTION` is configured (see "QMD Refresh After Live Wiki Changes").
-6. Report: "Archived 87 pages. Current wiki is untouched."
+  - id: create_archive
+    desc: 创建并验证不可变的 pre-operation archive
+    do: |
+      只按 approved-rebuild.json 创建 `_archives/YYYY-MM-DDTHH-MM-SSZ/`：
 
-## Mode 2: Archive + Rebuild
+      1. archive-only/rebuild reason 为 snapshot/rebuild；restore 先以 pre-restore reason 归档当前 live state。
+      2. 复制 active routing.content_roots、index.md、log.md、manifest 和 owner-required live special files；绝不递归复制 routing system/skip dirs、config 或 archive root，避免 archive-in-archive。
+      3. 写 archive-meta.json：archived_at/reason/counts/vault_path/manifest_snapshot/source hashes/plan_id。
+      4. 对源与副本逐文件 inventory、size/hash/count 验证；archive 必需文件缺失或不一致即停止，不能进入 mutation。
+      5. 写 archive-verification.md，记录 destination、hash manifest、counts 与恢复说明。archive-only 模式可在后续步骤只执行日志/no-op。
+    input: approved-rebuild.json + 当前 live wiki
+    output: 完整 timestamped archive + archive-verification.md
+    check_voting:
+      - check: 独立比较 archive 与批准时 live inventory/hash/counts，active layout content_roots/special/manifest 内容完整且 archive-meta 准确
+      - check: 确认没有复制 nested _archives/.obsidian/.env，没有修改/删除 live knowledge，archive destination 唯一且在 vault/_archives 内
+      - check: archive+rebuild/restore 只有在 archive 完全可恢复时才可继续，失败没有执行 destructive mutation
+    on_pass: mutate_live
+    on_fail: create_archive
+    max_fail_count: 3
 
-When the user wants to start fresh. This is the full sequence:
+  - id: mutate_live
+    desc: 按获批模式保持、清空或恢复 live wiki
+    do: |
+      先验证 approved plan/current state 与 archive-verification；不一致停止。
 
-### Step 1: Archive current state
+      1. archive-only：保持 live knowledge/manifest/index 不变，只记录 no-op mutation。
+      2. archive+rebuild：仅清除 allowlisted routing.content_roots 内容；保留根目录、routing system/skip dirs 与 config。将 index.md 重置为空模板，log.md 重置为 rebuild entry，删除 manifest 使后续来源均为 new。不得启动任何 ingest。
+      3. restore：验证 selected archive 后仅清除 active layout routing 声明的 allowlisted live content_roots，再复制 archive content roots/index/log/manifest 回 live；system/skip dirs 来自 frozen routing，绝不从 archive 覆盖 config、layout marker 或 archive root。向恢复后的 log 追加 RESTORE。
+      4. 所有写入采用 staging/temp + atomic rename 可行处；失败时停止并在报告中给 pre-operation archive，不虚报成功。
+      5. 写 live-mutation-report.md，列实际 deletes/copies/preserved、before/after counts/hash、log/manifest 状态。
+    input: approved-rebuild.json + verified archive + 当前 live state
+    output: 按模式处理的 live wiki + live-mutation-report.md
+    check_voting:
+      - check: 将实际 filesystem diff 与 mode/allowlist 对账；archive-only live 不变，rebuild 仅保留模板，restore 与 selected archive 内容一致
+      - check: 确认 _archives（含新 archive）、.obsidian、.env 全部完整，未删除 archive、未越界修改且无自动 ingest
+      - check: 核对 rebuild/RESTORE log、manifest delete/restore、index template/restore 和 counts/hash；失败状态真实且 recovery 可用
+    on_pass: refresh_and_report
+    on_fail: mutate_live
+    max_fail_count: 3
 
-Same as Mode 1 above, but with reason `"rebuild"`.
-
-### Step 2: Clear live wiki
-
-Remove all content from the category directories (`concepts/`, `entities/`, `skills/`, etc.) and the `projects/` directory. Keep:
-- `_archives/` (obviously)
-- `.obsidian/` (Obsidian config)
-- `.env` (if present in vault)
-
-Reset `index.md` to the empty template. Reset `log.md` with just the rebuild entry. Delete `.manifest.json` (it'll be recreated during ingest).
-
-### Step 3: Rebuild
-
-Tell the user the vault is cleared and ready for a full re-ingest. They can now run:
-
-1. `wiki-status` — to see all sources as "new"
-2. `claude-history-ingest` — to reprocess Claude history
-3. `codex-history-ingest` — to reprocess Codex session history
-4. `wiki-folder-ingest` — to reprocess supported text documents and raw notes
-
-Each of these will rebuild the manifest as they go.
-
-**Important:** Don't run the ingest yourself automatically. The user should choose what to re-ingest and in what order. Some sources may no longer be relevant.
-
-### Step 4: Log the rebuild
-
-Append to `log.md`:
-```
-- [TIMESTAMP] REBUILD archived_to="_archives/2026-04-06T10-30-00Z" previous_pages=87
-```
-
-Refresh QMD after clearing and logging the live wiki (see "QMD Refresh After Live Wiki Changes"), then report that the vault is ready for selected re-ingest skills.
-
-## Mode 3: Restore from Archive
-
-When the user wants to go back to a previous state.
-
-### Step 1: List available archives
-
-Read `_archives/` directory. For each archive, read `archive-meta.json` and present:
-
-```markdown
-## Available Archives
-
-| Date | Reason | Pages | Sources |
-|---|---|---|---|
-| 2026-04-06 10:30 | rebuild | 87 | 42 |
-| 2026-03-15 08:00 | snapshot | 65 | 31 |
-```
-
-### Step 2: Confirm which archive to restore
-
-Ask the user which archive they want. Warn them that restoring will overwrite the current live wiki.
-
-### Step 3: Archive current state first
-
-Before restoring, archive the current state (reason: `"pre-restore"`) so nothing is lost.
-
-### Step 4: Restore
-
-1. Clear the live wiki (same as Mode 2, Step 2)
-2. Copy all content from the chosen archive back into the live wiki directories
-3. Restore `index.md`, `log.md`, and `.manifest.json` from the archive
-4. Append to `log.md`:
-   ```
-   - [TIMESTAMP] RESTORE from="_archives/2026-03-15T08-00-00Z" pages_restored=65
-   ```
-
-### Step 5: Report
-
-Refresh QMD after restore (see "QMD Refresh After Live Wiki Changes"), then tell the user what was restored and suggest running `wiki-lint` to check for any issues with the restored state.
-
-## QMD Refresh After Live Wiki Changes
-
-QMD is a search index, not the source of truth. If QMD refresh fails, do not roll back archive, rebuild, or restore work; report the failure and leave the markdown vault intact.
-
-**GUARD: If `$QMD_WIKI_COLLECTION` is empty or unset, skip this step.**
-
-When to run:
-
-| Mode | Refresh QMD? | Reason |
-|---|---|---|
-| Archive only | Optional | Live wiki content is unchanged except `log.md`; refresh if `log.md` is indexed and QMD is configured. |
-| Archive + Rebuild | Required after clearing live wiki | QMD must forget deleted pages or it will return stale search results. Later ingest skills will refresh again as sources are reprocessed. |
-| Restore | Required after restore | The live wiki was replaced with archive content, so QMD must match the restored state. |
-
-This refresh currently requires the local QMD CLI. Use `$QMD_CLI` if set; otherwise use `qmd`. If the CLI is unavailable, report `QMD skipped: qmd CLI unavailable`.
-
-For CLI refresh:
-
-```bash
-${QMD_CLI:-qmd} update
-```
-
-If the output says new hashes need vectors, or if restore replaced live pages and embeddings may be stale, run:
-
-```bash
-${QMD_CLI:-qmd} embed
-```
-
-Verify the wiki collection reflects the operation:
-
-```bash
-${QMD_CLI:-qmd} ls "$QMD_WIKI_COLLECTION"
-```
-
-For restore, also verify one restored page if the archive has a known page path:
-
-```bash
-${QMD_CLI:-qmd} get "qmd://$QMD_WIKI_COLLECTION/<restored-page>.md" -l 5
-```
-
-Record QMD refresh in the final report as one of:
-- `QMD refreshed: update + embed + verified`
-- `QMD refreshed: update only + verified`
-- `QMD skipped: QMD_WIKI_COLLECTION unset`
-- `QMD skipped: archive-only live content unchanged`
-- `QMD skipped: qmd CLI unavailable`
-- `QMD failed: <short error summary>`
-
-## Safety Rules
-
-1. **Always archive before destructive operations.** No exceptions.
-2. **Always confirm with the user** before clearing the live wiki.
-3. **Never delete archives** unless the user explicitly asks. Archives are cheap insurance.
-4. **The `.obsidian/` directory is sacred.** Never touch it during archive/rebuild/restore — it contains the user's Obsidian settings, plugins, and themes.
-5. If something goes wrong mid-rebuild, the archive is there. Tell the user they can restore.
+  - id: refresh_and_report
+    desc: 验证最终状态、条件刷新 QMD 并交付恢复路线
+    do: |
+      1. archive-only 向 live log 幂等追加 ARCHIVE plan_id（pages/destination），live content 不变；QMD 仅在 log 被索引且已配置时可选刷新，否则记录 live unchanged。
+      2. archive+rebuild 必须 QMD update，需时 embed，并验证 collection 不再返回已清除页；restore 必须 update+按需 embed，并 get 一个 restored page。QMD unset/unavailable/error 分别报告，不回滚 Markdown。
+      3. 写 wiki-rebuild-completion.md：mode、archive destination/meta、previous/final counts、preserved dirs、manifest/index/log、QMD、warnings 与 recovery。
+      4. rebuild 模式只建议下一步依次选择 wiki-status、claude-history-ingest、codex-history-ingest、wiki-folder-ingest；不自动执行。restore 建议 wiki-lint。
+      5. 最终事实与磁盘一致后输出 <promise>done</promise>。
+    input: archive verification + live mutation report + 最终 vault/QMD
+    output: 幂等 archive/rebuild/restore tracking + completion + 条件 QMD refresh
+    check_voting:
+      - check: 从最终 vault/archive 重算 pages/sources/projects 和 hashes，确认 completion、log、manifest/index 与 mode 一致且 archive 可恢复
+      - check: 核对 QMD mode guard/update/embed/verification 与报告；失败未回滚 vault，archive-only 未做不必要变更
+      - check: 确认最终没有自动 ingest、没有删除 archive/修改 .obsidian/.env，next workflow 建议符合本 YAML 的模式边界
+    on_pass: done
+    on_fail: refresh_and_report
+    max_fail_count: 3
+````
+<!-- END GENERATED WORKFLOW CONTRACT -->

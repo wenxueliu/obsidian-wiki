@@ -296,6 +296,17 @@ relationships:
     type: supports
 ```
 
+And project the same edges into Wikilink Types top-level keys:
+
+```yaml
+parent_of:
+  - "[[concepts/ml]]"
+supports:
+  - "[[references/paper]]"
+```
+
+The nested block, top-level keys, and inline `@type` links must have identical `(target, type)` sets. Typed links use wikilink aliases even when ordinary links are configured as Markdown.
+
 Do NOT invent new types — only use the standard 24. Skip `@type` annotations in quick mode (`--quick`).
 
 ## Step 6: Update Tracking Files

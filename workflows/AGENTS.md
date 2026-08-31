@@ -2,6 +2,21 @@
 
 本文件适用于 `workflows/` 下的 workflow、辅助脚本、模板和 layout 资源。更具体目录中的 `AGENTS.md` 可以补充规则，但不能放宽以下职责边界。
 
+## Workflow 与 Skill 同步
+
+顶层 `workflows/<name>.yaml` 是运行行为的唯一事实来源，并且必须存在对应的
+`.skills/<name>/SKILL.md`。Skill 必须直接内嵌完整 workflow 契约，而不是摘要、改写或仅仅
+引用 YAML；发生冲突时一律以 workflow 为准。
+
+修改任何顶层 workflow 后运行：
+
+```bash
+python tools/sync_workflow_skills.py
+python tools/sync_workflow_skills.py --check
+```
+
+同步器只重写同名 `SKILL.md`，保留 skill 目录中的 `references/`、`scripts/` 与其他资源。
+
 ## Step 单一职责
 
 每个 step 只负责生成一种明确的目标状态或一组内聚 artifacts。若一个 step 同时处理彼此可以独立执行、失败或回滚的事项，必须拆分。

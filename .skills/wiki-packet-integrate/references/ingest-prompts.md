@@ -43,9 +43,10 @@ Look for these useful connection patterns:
 - **Created-by** — an artifact or concept is attributable to an entity;
 - **Applied-in** — a concept is used by a project, system, or technique.
 
-Use typed `relationships:` only when the direction and a type from the effective allowlist in
-`llm-wiki/SKILL.md` are supported. Prefer its current standard vocabulary over legacy aliases. For
-other useful patterns, add ordinary reciprocal wikilinks rather than inventing a type.
+Use typed relationships only when the direction and a type from the effective allowlist in
+`llm-wiki/SKILL.md` are supported. Persist each edge through the synchronized nested, flat-key, and
+inline `@type` projections defined there. Prefer its current standard vocabulary over legacy
+aliases. For other useful patterns, add ordinary reciprocal wikilinks rather than inventing a type.
 
 ## V1 boundary
 

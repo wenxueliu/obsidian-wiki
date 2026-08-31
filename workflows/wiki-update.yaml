@@ -105,7 +105,7 @@ steps:
       1. 只创建 route resolver 返回目标所需的父目录；overview 由 `project_overview` route 生成。existing page 必须先读后 merge，并验证仍在 content_roots，保留 owner fields、lifecycle 与无关内容，不 append project dump。
       2. 每个新/更新 page 使用 effective owner schema，并至少维护 title/category/tags/sources/summary/provenance/base_confidence/lifecycle/lifecycle_changed/created/updated。title/summary 用 `>-` folded scalar 和两空格缩进，summary 1-2 句且 <=200 字符。
       3. 新 project-sync page 使用 base_confidence=0.59、lifecycle=draft；existing page 只在 material change 时更新时间与 provenance，不擅自改变 human lifecycle。每页粗算 extracted/inferred/ambiguous；未被 doc/commit/ADR 明说的 rationale 标 ^[inferred]，code/docs 冲突或 migration 并存标 ^[ambiguous]。
-      4. sources 中加入 canonical project source id 一次，不假定其目录前缀。按 OBSIDIAN_LINK_FORMAT 生成链接；方向清晰时同时写 inline @type alias 与 relationships frontmatter，使用标准/owner allowed type，不伪造方向。
+      4. sources 中加入 canonical project source id 一次，不假定其目录前缀。按 OBSIDIAN_LINK_FORMAT 生成链接；方向清晰时把同一 `(target,type)` 同步写入 nested `relationships:`、顶层 type-key quoted-wikilink list 与正文 inline `@type` alias，使用标准/owner allowed type，不伪造方向；三种 projection 均不得重复。
       5. overview 链接全部 project-specific pages 和 relevant global pages；为有价值的新链接在 existing targets 增加 reciprocal link，避免机械泛滥。
       6. 只蒸馏知识，不复制代码。先验证 changed pages 的 frontmatter、summary、tags、source、provenance fractions、confidence/lifecycle、relationship targets/types 和 links。
       7. 写 page-write-report.md，列出 created/updated/omitted、evidence/provenance、link/backlink、validation 与 diff。此时不得更新 manifest/index/log/hot 或 QMD。
@@ -114,7 +114,7 @@ steps:
     check_voting:
       - check: 逐页对照 plan 与实际 diff，确认知识是蒸馏/归并而非 code dump，overview 完整，canonical targets/active layout/project-global routing 正确且无重复页
       - check: 复核 folded title/summary、required frontmatter、canonical tags/sources、provenance markers/fractions、0.59 新页 confidence、lifecycle preservation 与 evidence locator
-      - check: 审计 link format、inline @type/relationships 一致性、target existence 与有用 reciprocal links；确认 tracking/special files/QMD 尚未改变，no_change 时 vault 零写入
+      - check: 审计 link format、nested `relationships:`/顶层 type-key/inline `@type` 三种 projection 的 canonical `(target,type)` 集合一致、target existence 与有用 reciprocal links；确认 tracking/special files/QMD 尚未改变，no_change 时 vault 零写入
     on_pass: commit_tracking
     on_fail: write_pages
     max_fail_count: 5
