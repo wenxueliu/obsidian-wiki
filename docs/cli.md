@@ -164,7 +164,8 @@ Available for automation, scripting, and debugging. Skills call some of these in
 | `text-chunk-strategies` | List built-in, registered, and installed custom chunk strategies |
 | `text-chunk-read <source>` | Verify the source hash and materialize exactly one planned byte range |
 | `text-ingest-plan <source>` | Discover sources and atomically create or resume a metadata-only text-ingest Job |
-| `text-ingest-status <job>` | Report deterministic source/unit counts, next unit, and the cross-link gate |
+| `text-ingest-status <job>` | Report deterministic source/unit counts, next unit, and live completion state |
+| `text-ingest-report <job>` | Generate matching JSON and Markdown completion reports from Job and manifest facts |
 | `text-ingest-packet-check <job> <packet>` | Validate one Packet's Job/source/unit/path binding before page integration |
 | `text-ingest-unit-advance <job> <packet>` | Atomically advance one validated direct or staged unit after page validation |
 | `text-ingest-inline-check <job>` | Validate a planned full-source inline unit and current source hash without a Packet |
@@ -193,6 +194,9 @@ obsidian-wiki text-ingest-plan ~/research \
   --chunk-strategy adaptive_sections --strategy-options-file /tmp/chunk-options.json \
   --output /tmp/job-plan.json --pretty
 obsidian-wiki text-ingest-status ~/brain/_meta/ingest-jobs/<job-id> --pretty
+obsidian-wiki text-ingest-report ~/brain/_meta/ingest-jobs/<job-id> \
+  --output /tmp/job-completion.json \
+  --markdown-output /tmp/folder-ingest-completion.md --pretty
 obsidian-wiki text-ingest-packet-check ~/brain/_meta/ingest-jobs/<job-id> packets/<packet>.json
 obsidian-wiki text-ingest-unit-advance ~/brain/_meta/ingest-jobs/<job-id> packets/<packet>.json \
   --mode staged --artifact _staging/concepts/example.md
@@ -227,7 +231,10 @@ range without adding a newline and fails if the source changed after planning.
 source detection, transport selection, and atomic Job creation/resume. The command explicitly
 supports `--min-budget`, `--chunk-strategy`, and `--direct-extract-max-bytes`; the last defaults to
 the smaller of 16,000 bytes and the hard budget, and `0` disables inline extraction.
-`text-ingest-status`, `text-ingest-packet-check`, and `text-ingest-inline-check` are read-only.
+`text-ingest-status`, `text-ingest-report`, `text-ingest-packet-check`, and
+`text-ingest-inline-check` are read-only with respect to the vault. `text-ingest-report` writes
+only its requested artifacts, derives exact-hash manifest coverage directly from the current vault,
+and treats cross-linking as optional post-processing rather than part of Job completion.
 The corresponding advance command revalidates its Packet or inline source binding before atomically
 changing exactly one unit; staged mode requires at least one `--artifact` and never increments the
 integrated count. These commands keep deterministic coordination in code while Packet extraction

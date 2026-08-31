@@ -70,7 +70,8 @@ def test_page_writes_staging_and_cross_references_remain_integrated():
     assert "移除 staged_write metadata" in stage_commit
     assert "永久 manifest" in stage_commit
     assert "live validation 成功后" in stage_commit
-    assert "staged 且不增加 units_integrated" in coordinator
+    assert "staged 且不增加 units_integrated" not in coordinator
+    assert "父 workflow 不复述或重算 write-mode、unit 状态和计数规则" in coordinator
     assert "awaiting_review" in integrator
 
 

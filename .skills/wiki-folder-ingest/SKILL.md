@@ -38,7 +38,7 @@ steps:
   - id: plan_job
     desc: 用确定性 CLI 发现文档并原子创建或恢复 Job
     do: |
-      读取 `wiki-context.json` 中已确认的 vault、write mode、active Knowledge Profile/Layout 和 `text_chunking`。默认使用 `adaptive_sections`，target=48000、min=target/2、hard max=64000；配置值由 resolver 完成类型与大小关系验证。然后只运行 package CLI：
+      读取 `wiki-context.json` 中已确认的 vault、write mode 和 text-ingest 配置，然后只运行 package CLI：
 
       ```bash
       obsidian-wiki text-ingest-plan "<source-root>" \
@@ -54,9 +54,7 @@ steps:
         --pretty
       ```
 
-      CLI 负责 canonical discovery、unsupported inventory、streaming SHA-256、UTF-8 validation、按 effective strategy/budgets 分片、resume/replan 判断、transport 选择和原子 `job.json` 写入。非空且大小不超过 `text_ingest.direct_extract_max_bytes` 的来源标记为 `inline`，用一个覆盖全文的逻辑 unit 取代普通 chunk units，但不分配或落盘 Packet；`0` 禁用快路径，阈值不得超过 hard max。其他来源使用 `packet` transport。`adaptive_sections` 把标题当作优先边界，合并短章节并在 hard cap 内回并小尾块；`strict_sections` 保留 packet transport 下标题变化即分片的旧行为。自定义名称必须是已安装的 `obsidian_wiki.text_chunk_strategies` entry point。不得再调用 workflow-relative helper 或由 agent 手工复现这些规则。若 console script 不在 PATH，使用 `python3 -m obsidian_wiki text-ingest-plan ...`。
-
-      Coordinator 只读取 `job-plan.json` 与 Job metadata，不读取 source body。active Knowledge Profile/Layout 必须为 matched 且 hashes 完整；URL、缺失或未授权 source 直接失败。格式 unsupported 文件保留在 Job 和最终报告中；领域 scope compatibility 由随后冻结的 page contract 执行，不能触发自动换域。
+      CLI 独占 discovery、hash、UTF-8 validation、chunk planning、resume/replan、transport 选择和 Job 原子写入规则；coordinator 不手工复现。Coordinator 只读取 `job-plan.json` 与 Job metadata，不读取 source body。active Knowledge Profile/Layout 必须 matched 且 hashes 完整；URL、缺失或未授权 source 直接失败，unsupported 文件保留在 Job 中。若 console script 不在 PATH，使用 `python3 -m obsidian_wiki text-ingest-plan ...`。
     input: wiki-context.json + 用户给定的本地文本文件或文件夹
     output: 原子 job.json + job-plan.json
     check: 核对 CLI exit status、job-plan.json 指向 vault 内 `_meta/ingest-jobs/<job-id>/job.json`，且 Job 不含 source body；不要重复 hash 或重跑 chunk plan
@@ -81,14 +79,14 @@ steps:
     do: |
       Coordinator 永远不读取 source body。读取 `wiki-context.json` 的 `text_ingest.max_extraction_workers`（默认 4），把它作为当前 Job 的 Packet extraction 并发硬上限；宿主可用槽位更少时使用较小值。恢复 Job 时先对账所有 packet transport 的 `extracting` unit：已有合法 planned Packet 的标为 `packet_ready`，否则标为 failed 供重试，避免陈旧 claim 占用并发额度。按稳定 source discovery order 和 unit order 建立全 Job 队列，同一文档的多个 packet unit 也可并行提取。每轮只领取 packet transport 的 pending/failed unit，最多达到该并发上限，并在一次原子 Job 更新中标为 `extracting`；inline unit 不进入 extraction wave，也不生成 Packet。
 
-      每个 extraction subagent 只获得 Job directory、一个 source_id 和当前 unit_id，并以 bare workflow name 调用 `wiki-source-text`，不添加任何目录前缀。subagent 只能运行 `text-chunk-read` 读取该 range 并写自己的 Packet，不能写 Job、manifest、index、log、hot 或 pages。
+      每个 extraction subagent 只获得 Job directory、一个 source_id 和当前 unit_id，并以 bare workflow name 调用 `wiki-source-text`。以该子 workflow 的 validated Packet 或失败报告为唯一 handoff；coordinator 不重复其 range 读取、extraction 或 Packet contract。
 
-      Coordinator 可按完成顺序收集 Packet，逐个验证其位于 Job `packets/` 且绑定 source/hash/range，并标为 `packet_ready`；已就绪的后序 Packet 留在有界缓冲区。然后严格按 Job 的 source/unit 全局顺序，以 bare workflow name 逐个调用 worker-only `wiki-packet-integrate`。packet transport 传入冻结的 `wiki-context.json`、`page-contract.json`、Packet 和 job.json；inline transport 传入同一冻结 context/contract、Job directory、source_id 和 unit_id，不传 Packet。Inline worker 先用 `text-ingest-inline-check` 校验完整来源绑定，在内存中直接提取并归并，页面验证后用 `text-ingest-inline-advance` 推进；不得写 `packets/*.json`。较早 unit 尚未就绪或失败时暂停后序 integration，但保留已经生成的 Packet。Integrator 不得再次解析 context/contract，所有页面 integration 均不并发。direct mode 在页面验证后标 integrated；staged mode 标 staged 且不增加 units_integrated。
+      Coordinator 可按完成顺序接收 validated Packet 并标为 `packet_ready`，后序 Packet 留在有界缓冲区。然后严格按 Job 的 source/unit 全局顺序，以 bare workflow name 逐个调用 worker-only `wiki-packet-integrate`；packet transport 传入冻结 context/contract、Job 和 Packet，inline transport 传入冻结 context/contract、Job directory、source_id 和 unit_id。以 integrator 的 completion report 和最新 Job 为唯一状态转换结果；父 workflow 不复述或重算 write-mode、unit 状态和计数规则。所有 integration 均不并发；较早 unit 未就绪或失败时暂停后序 integration并保留已有 Packet。
 
-      单文档/subagent 失败只标记对应 unit 并保留其他文档成果。无 subagent 能力时保留 next unit 为 pending 并停止，不允许 coordinator 退化为全文读取。写 `unit-processing-report.md`，只记录 metadata、transport、Packet（如有）、状态、错误和恢复点。
+      单 unit 失败只记录该失败并安全停止在可恢复边界；无 subagent 能力时保留 next unit 为 pending。写 `unit-processing-report.md`，只记录调度 metadata、子 workflow handoff、错误和恢复点。
     input: wiki-context.json + page-contract.json + 已验证 job.json；动态调用 wiki-source-text 与 wiki-packet-integrate
     output: 持续原子更新的 Job/Packets/page-or-staged artifacts + unit-processing-report.md
-    check: 对账 Job、transport 和 Packet 状态，确认 inline unit 没有 packet_path/Packet 文件，packet extracting 数从未超过配置上限、每个 extraction subagent 仅见一个文档的一个 range、同 source 并行 Packet 无重复、所有 integration 严格按序串行、direct/staged 计数分离且 coordinator 未读取 source body
+    check: 对账调度报告、子 workflow handoff 与最新 Job，确认并发上限、单 unit 隔离、无重复派发、integration 全局有序串行且 coordinator 未读取 source body；不重复验收子 workflow 内部状态转换
     on_pass: finalize_completed_sources
     on_fail: process_documents
     max_fail_count: 10
@@ -101,53 +99,28 @@ steps:
     inputs:
       event_type: INGEST
       candidate_scope: 当前 Job 中全部 eligible sources；partial/staged/failed sources 必须 deferred
-    on_pass: assess_completion
+    on_pass: report_completion
     on_fail: finalize_completed_sources
     max_fail_count: 5
 
-  - id: assess_completion
-    desc: 验证 Job 完成边界并决定是否允许 cross-link
+  - id: report_completion
+    desc: 用确定性 CLI 生成 Job 完成事实与可恢复报告
     do: |
-      用确定性 CLI 重算 Job 状态，不由 agent 手工统计：
+      用只读的确定性 CLI 从最新 Job 与 permanent manifest 同时生成 JSON 和 Markdown 报告，不由 agent 手工统计或改写事实：
 
       ```bash
-      obsidian-wiki text-ingest-status "<job-dir>" \
-        --output "{{artifacts_dir}}/job-completion-assessment.json" \
+      obsidian-wiki text-ingest-report "<job-dir>" \
+        --output "{{artifacts_dir}}/job-completion.json" \
+        --markdown-output "{{artifacts_dir}}/folder-ingest-completion.md" \
         --pretty
       ```
 
-      若 console script 不在 PATH，使用 `python3 -m obsidian_wiki text-ingest-status ...`。结合 source-finalization-report 核对 manifest 仅在 exact-hash source 的全部 units live 后由 `wiki-finalize-sources` 最后提交。staged/failed/pending/extracting/packet_ready 均不是完成；coordinator 不补写 manifest。
-    input: 最新 job.json + manifest + unit-processing-report.md + source-finalization-report
-    output: job-completion-assessment.json
-    check: 核对 CLI exit status、next_unit 与 cross_link_allowed；只有 complete/unchanged/unsupported sources 才允许 cross-link，且 staged/failed/pending 均未被误报为完成
-    on_pass: cross_link_completed_job
-    on_fail: assess_completion
-    max_fail_count: 4
-
-  - id: cross_link_completed_job
-    desc: 仅在整个 Job live complete 时运行一次 cross-linker
-    workflow: cross-linker
-    input: job-completion-assessment.json + 本次 Job 的 live pages
-    output: cross-link-completion.md（ran 或 skipped 及原因）
-    inputs:
-      run_condition: 仅当 job-completion-assessment.json 的 cross_link_allowed=true 时执行；否则零写入跳过
-      scope: 优先链接本次 Job 新建或更新的 live pages，并维护全 vault target registry
-    on_pass: complete_job
-    on_fail: cross_link_completed_job
-    max_fail_count: 3
-
-  - id: complete_job
-    desc: 汇总完成、恢复点与 cross-link 结果
-    do: |
-      读取 job-completion-assessment 与子 workflow 的 cross-link-completion.md，写 folder-ingest-completion.md。
-
-      报告 Job path/status；complete/incomplete/unchanged/unsupported/failed source 的 counts+paths；integrated/staged/total units；next pending；manifest commits；Packet/validation failures；cross-linker ran/skipped 与 reason。cross_link_allowed=true 时必须 ran 且恰好一次；false 时必须 skipped 且 vault 零变化。完成或安全停在可恢复状态后输出 <promise>done</promise>。
-    input: job-completion-assessment + cross-link-completion.md
-    output: 可恢复/完成的 Job + folder-ingest-completion.md
-    check: |
-      对照 assessment、Job、manifest 与 cross-link completion 复核最终 counts/paths/next action；cross-link gate 与 ran/skipped 完全一致，完成状态没有把 staged/failed/pending 当 live complete。
+      报告包含 source/unit 状态、精确恢复点、exact-hash manifest entries、失败信息和 `live_complete`。`cross-linker` 仅作为 live-complete 后可单独调用的可选后处理，当前 workflow 不调用它，也不把它的结果纳入 Job 完成定义。若 console script 不在 PATH，使用 `python3 -m obsidian_wiki text-ingest-report ...`。事实一致后输出 <promise>done</promise>。
+    input: 最新 job.json + permanent manifest + source-finalization-report.json
+    output: job-completion.json + folder-ingest-completion.md
+    check: 解析两份报告并对照 Job、manifest 与 finalization report，确认 counts/paths/failures/next action 一致，只有 complete/unchanged/unsupported 且所需 exact-hash manifest entries 完整时 live_complete=true；确认本步骤和整个 ingest workflow 均未调用 cross-linker
     on_pass: done
-    on_fail: complete_job
+    on_fail: report_completion
     max_fail_count: 4
 ````
 <!-- END GENERATED WORKFLOW CONTRACT -->

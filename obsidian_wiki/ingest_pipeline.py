@@ -527,7 +527,7 @@ def summarize_job(job_dir: Path, job: dict[str, Any] | None = None) -> dict[str,
                 resolve_packet_path(directory, unit.get("packet_path", ""))
             )
     complete_statuses = {"complete", "unchanged", "unsupported"}
-    cross_link_allowed = bool(current.get("sources")) and all(
+    live_complete = bool(current.get("sources")) and all(
         source.get("status") in complete_statuses for source in current.get("sources", [])
     )
     return {
@@ -545,8 +545,210 @@ def summarize_job(job_dir: Path, job: dict[str, Any] | None = None) -> dict[str,
             "staged": units_staged,
         },
         "next_unit": next_unit,
-        "cross_link_allowed": cross_link_allowed,
+        "live_complete": live_complete,
     }
+
+
+def build_completion_report(
+    job_dir: Path, job: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Build a deterministic, read-only completion report for one ingest Job."""
+    directory = Path(job_dir).expanduser().resolve()
+    current = load_job(directory) if job is None else job
+    summary = summarize_job(directory, current)
+    vault = directory.parent.parent.parent
+
+    source_paths: dict[str, list[str]] = {}
+    unit_counts: dict[str, int] = {}
+    failures: list[dict[str, Any]] = []
+    manifest_commits: list[dict[str, str]] = []
+    exact_manifest_entries: list[dict[str, str]] = []
+    missing_manifest_entries: list[str] = []
+    next_unit: dict[str, Any] | None = None
+
+    for source in current.get("sources", []):
+        source_status = str(source.get("status", "unknown"))
+        source_path = str(source.get("path", ""))
+        source_paths.setdefault(source_status, []).append(source_path)
+        if source_status == "failed":
+            failures.append({
+                "scope": "source",
+                "source_id": source.get("source_id"),
+                "path": source_path,
+                "reason": source.get("reason") or source.get("error") or "unknown error",
+            })
+
+        for unit in source.get("units", []):
+            unit_status = str(unit.get("status", "unknown"))
+            unit_counts[unit_status] = unit_counts.get(unit_status, 0) + 1
+            if next_unit is None and unit_status not in {
+                "integrated", "staged", "approved_waiting_order"
+            }:
+                next_unit = {
+                    "source_id": source.get("source_id"),
+                    "source_path": source_path,
+                    "unit_id": unit.get("unit_id"),
+                    "status": unit_status,
+                    "transport": unit.get("transport", "packet"),
+                }
+                if unit.get("transport", "packet") == "packet":
+                    next_unit["packet_path"] = str(
+                        resolve_packet_path(directory, unit.get("packet_path", ""))
+                    )
+            if unit_status == "failed":
+                failures.append({
+                    "scope": "unit",
+                    "source_id": source.get("source_id"),
+                    "path": source_path,
+                    "unit_id": unit.get("unit_id"),
+                    "reason": unit.get("reason") or unit.get("error") or "unknown error",
+                    **({"attempt": unit["attempt"]} if "attempt" in unit else {}),
+                })
+
+        if source_status not in {"complete", "unchanged"} or not source_path:
+            continue
+        entry = _matching_manifest_entry(vault, Path(source_path))
+        expected_hash = str(source.get("content_hash", ""))
+        if expected_hash and ":" not in expected_hash:
+            expected_hash = f"sha256:{expected_hash}"
+        actual_hash = str(entry.get("content_hash", "")) if entry else ""
+        if actual_hash and ":" not in actual_hash:
+            actual_hash = f"sha256:{actual_hash}"
+        if entry is not None and actual_hash == expected_hash:
+            exact_entry = {
+                "path": source_path,
+                "content_hash": expected_hash,
+                "source_status": source_status,
+            }
+            exact_manifest_entries.append(exact_entry)
+            if source_status == "complete":
+                manifest_commits.append(exact_entry)
+        else:
+            missing_manifest_entries.append(source_path)
+
+    live_complete = summary["live_complete"] and not missing_manifest_entries
+    if next_unit is not None:
+        action_by_status = {
+            "extracting": "reconcile_extraction",
+            "packet_ready": "integrate_unit",
+            "review_rejected": "review_rejected_artifact",
+            "failed": "retry_failed_unit_or_source",
+        }
+        next_action = {
+            "kind": action_by_status.get(str(next_unit.get("status")), "process_unit"),
+            "source_id": next_unit.get("source_id"),
+            "unit_id": next_unit.get("unit_id"),
+            "transport": next_unit.get("transport"),
+        }
+    elif any(status in source_paths for status in ("awaiting_review",)) or any(
+        status in unit_counts for status in ("staged", "approved_waiting_order")
+    ):
+        next_action = {"kind": "review_staged_writes"}
+    elif any(status in source_paths for status in ("ready_to_commit",)):
+        next_action = {"kind": "finalize_sources"}
+    elif live_complete:
+        next_action = {"kind": "none"}
+    elif failures:
+        next_action = {"kind": "retry_failed_unit_or_source"}
+    else:
+        next_action = {"kind": "inspect_incomplete_job"}
+
+    return {
+        "report_version": 1,
+        "job_id": summary.get("job_id"),
+        "job_dir": summary.get("job_dir"),
+        "job_path": summary.get("job_path"),
+        "status": summary.get("status"),
+        "write_mode": summary.get("write_mode"),
+        "live_complete": live_complete,
+        "source_counts": summary["source_counts"],
+        "source_paths": source_paths,
+        "unit_counts": unit_counts,
+        "units": summary["units"],
+        "next_unit": next_unit,
+        "next_action": next_action,
+        "manifest": {
+            "committed": manifest_commits,
+            "exact_hash_entries": exact_manifest_entries,
+            "missing_for_live_sources": missing_manifest_entries,
+        },
+        "failures": failures,
+        "optional_postprocessing": {
+            "cross_linker": {
+                "eligible": live_complete,
+                "run_by_ingest": False,
+            }
+        },
+    }
+
+
+def render_completion_report_markdown(report: dict[str, Any]) -> str:
+    """Render the human-readable form of :func:`build_completion_report`."""
+    lines = [
+        "# Folder Ingest Completion",
+        "",
+        f"- Job: `{report.get('job_path')}`",
+        f"- Status: `{report.get('status')}`",
+        f"- Write mode: `{report.get('write_mode')}`",
+        f"- Live complete: `{'yes' if report.get('live_complete') else 'no'}`",
+        "",
+        "## Sources",
+        "",
+    ]
+    source_counts = report.get("source_counts", {})
+    source_paths = report.get("source_paths", {})
+    if not source_counts:
+        lines.append("- None")
+    for status, count in source_counts.items():
+        lines.append(f"- `{status}`: {count}")
+        for path in source_paths.get(status, []):
+            lines.append(f"  - `{path}`")
+
+    lines.extend(["", "## Units", ""])
+    unit_counts = report.get("unit_counts", {})
+    if not unit_counts:
+        lines.append("- None")
+    else:
+        for status, count in unit_counts.items():
+            lines.append(f"- `{status}`: {count}")
+
+    lines.extend(["", "## Manifest", ""])
+    committed = report.get("manifest", {}).get("committed", [])
+    missing = report.get("manifest", {}).get("missing_for_live_sources", [])
+    lines.append(f"- Exact-hash committed sources: {len(committed)}")
+    for item in committed:
+        lines.append(f"  - `{item.get('path')}`")
+    if missing:
+        lines.append(f"- Live sources missing an exact-hash manifest entry: {len(missing)}")
+        for path in missing:
+            lines.append(f"  - `{path}`")
+
+    lines.extend(["", "## Failures", ""])
+    failures = report.get("failures", [])
+    if not failures:
+        lines.append("- None")
+    else:
+        for failure in failures:
+            locator = failure.get("unit_id") or failure.get("source_id") or failure.get("path")
+            lines.append(f"- `{locator}`: {failure.get('reason')}")
+
+    lines.extend(["", "## Next action", ""])
+    action = report.get("next_action", {})
+    lines.append(f"- `{action.get('kind', 'inspect_incomplete_job')}`")
+    next_unit = report.get("next_unit")
+    if next_unit:
+        lines.append(
+            f"- Next unit: `{next_unit.get('source_id')}/{next_unit.get('unit_id')}` "
+            f"via `{next_unit.get('transport')}`"
+        )
+
+    cross_linker = report.get("optional_postprocessing", {}).get("cross_linker", {})
+    lines.extend(["", "## Optional post-processing", ""])
+    if cross_linker.get("eligible"):
+        lines.append("- `cross-linker` may be run separately; ingest does not run it.")
+    else:
+        lines.append("- `cross-linker` is deferred until the Job is live complete.")
+    return "\n".join(lines) + "\n"
 
 
 def resolve_packet_path(job_dir: Path, relative_path: str | Path) -> Path:

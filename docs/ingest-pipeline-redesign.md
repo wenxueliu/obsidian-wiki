@@ -74,7 +74,9 @@ wiki-packet-integrate
   integrate Packets serially into the wiki
         |
         v
-cross-linker once after the job
+deterministic Job completion report
+
+optional later: cross-linker
 ```
 
 The folder coordinator only sees paths, hashes, range metadata, statuses, and artifact paths. It
@@ -94,8 +96,8 @@ never reads or receives full source bodies.
   integration while retaining one logical full-source unit;
 - route each larger-source part to `wiki-source-text` in an isolated context;
 - queue Packet and inline transports for serialized `wiki-packet-integrate` integration;
-- report complete, incomplete, unchanged, unsupported, and failed sources;
-- run cross-linking once after integrations finish.
+- generate matching JSON and Markdown reports for complete, incomplete, unchanged, unsupported,
+  and failed sources from current Job and manifest facts.
 
 It must not read full source bodies, extract knowledge, draft wiki pages, or directly advance the
 permanent source manifest.
@@ -130,6 +132,9 @@ read other ranges, write wiki pages, or update shared job or manifest files.
 Packet and inline transports integrate serially in source order. Inline extraction stays in the
 worker context and does not create a Packet file. The wiki acts as the incremental reducer; V1 does not
 add a separate whole-document Reduce stage.
+
+Job completion ends after exact-hash source finalization and deterministic reporting. Cross-linking
+is an optional follow-up workflow and never changes whether the ingest Job is complete.
 
 ## 5. Independent text partitioning feature
 

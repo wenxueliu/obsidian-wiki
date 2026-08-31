@@ -10,6 +10,7 @@ from obsidian_wiki.text_chunker import CHUNKER_VERSION, DEFAULT_CHUNK_STRATEGY
 from obsidian_wiki.ingest_pipeline import (
     PipelineContractError,
     bind_inline_unit,
+    build_completion_report,
     classify_source,
     create_job,
     create_or_resume_job,
@@ -19,8 +20,10 @@ from obsidian_wiki.ingest_pipeline import (
     next_pending_unit,
     resolve_packet_path,
     record_staging_decision,
+    render_completion_report_markdown,
     summarize_job,
     validate_packet,
+    write_job,
     write_packet,
 )
 
@@ -306,8 +309,58 @@ def test_job_summary_reports_next_unit_without_source_body(tmp_path):
     assert summary["job_path"] == str(job_dir / "job.json")
     assert summary["next_unit"]["source_path"] == str(source)
     assert summary["next_unit"]["packet_path"].startswith(str(job_dir / "packets"))
-    assert summary["cross_link_allowed"] is False
+    assert summary["live_complete"] is False
     assert secret not in json.dumps(summary)
+
+
+def test_completion_report_requires_exact_manifest_and_keeps_cross_link_optional(tmp_path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    source_path = tmp_path / "source.md"
+    source_path.write_text("# Heading\n\nbody\n", encoding="utf-8")
+    job_dir, job = create_job(source_path, vault)
+    source = job["sources"][0]
+    unit = source["units"][0]
+    mark_unit_integrated(job, source["source_id"], unit["unit_id"])
+    source["status"] = "complete"
+    job["status"] = "complete"
+    write_job(job_dir, job)
+
+    missing = build_completion_report(job_dir)
+    assert missing["live_complete"] is False
+    assert missing["manifest"]["missing_for_live_sources"] == [str(source_path)]
+
+    (vault / ".manifest.json").write_text(json.dumps({"sources": [{
+        "path": str(source_path),
+        "content_hash": source["content_hash"],
+    }]}), encoding="utf-8")
+    report = build_completion_report(job_dir)
+    markdown = render_completion_report_markdown(report)
+
+    assert report["live_complete"] is True
+    assert report["next_action"] == {"kind": "none"}
+    assert report["manifest"]["committed"][0]["path"] == str(source_path)
+    assert report["optional_postprocessing"]["cross_linker"] == {
+        "eligible": True,
+        "run_by_ingest": False,
+    }
+    assert "may be run separately" in markdown
+
+
+def test_completion_report_exposes_packet_ready_recovery_point(tmp_path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    source_path = tmp_path / "source.md"
+    source_path.write_text("# Heading\n\nbody\n", encoding="utf-8")
+    job_dir, job = create_job(source_path, vault, direct_extract_max_bytes=0)
+    unit = job["sources"][0]["units"][0]
+    unit["status"] = "packet_ready"
+    write_job(job_dir, job)
+
+    report = build_completion_report(job_dir)
+
+    assert report["next_unit"]["status"] == "packet_ready"
+    assert report["next_action"]["kind"] == "integrate_unit"
 
 
 def test_packet_paths_cannot_escape_job_directory(tmp_path):

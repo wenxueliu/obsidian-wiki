@@ -1281,6 +1281,37 @@ def cmd_text_ingest_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_text_ingest_report(args: argparse.Namespace) -> int:
+    from obsidian_wiki.ingest_pipeline import (
+        PipelineContractError,
+        build_completion_report,
+        render_completion_report_markdown,
+    )
+
+    try:
+        result = build_completion_report(Path(args.job))
+        markdown_target = Path(args.markdown_output).expanduser().resolve()
+        markdown_target.parent.mkdir(parents=True, exist_ok=True)
+        markdown_temporary = markdown_target.with_name(
+            f".{markdown_target.name}.tmp-{os.getpid()}"
+        )
+        try:
+            markdown_temporary.write_text(
+                render_completion_report_markdown(result), encoding="utf-8"
+            )
+            os.replace(markdown_temporary, markdown_target)
+        finally:
+            try:
+                markdown_temporary.unlink()
+            except FileNotFoundError:
+                pass
+        _emit_workflow_json(result, pretty=args.pretty, output=args.output)
+    except (OSError, ValueError, PipelineContractError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _load_bound_packet(job_dir: Path, packet_arg: str) -> tuple[dict, dict, dict, dict, str]:
     """Load one Packet and prove that it is the next writable unit for its Job source."""
     from obsidian_wiki.ingest_pipeline import (
@@ -2445,12 +2476,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     tis = sub.add_parser(
         "text-ingest-status",
-        help="summarize one ingest Job and calculate its next unit and cross-link gate",
+        help="summarize one ingest Job and calculate its next unit and live completion state",
     )
     tis.add_argument("job", help="ingest Job directory")
     tis.add_argument("--output", help="atomically write the JSON summary to this artifact path")
     tis.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
     tis.set_defaults(func=cmd_text_ingest_status)
+
+    tir = sub.add_parser(
+        "text-ingest-report",
+        help="generate deterministic JSON and Markdown completion reports for one ingest Job",
+    )
+    tir.add_argument("job", help="ingest Job directory")
+    tir.add_argument("--output", required=True, help="atomically write the JSON completion report")
+    tir.add_argument(
+        "--markdown-output", required=True,
+        help="atomically write the Markdown completion report",
+    )
+    tir.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    tir.set_defaults(func=cmd_text_ingest_report)
 
     tipc = sub.add_parser(
         "text-ingest-packet-check",

@@ -156,7 +156,7 @@ The [original gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519
 
 - **Identity resolution.** `wiki-dedup` finds pages covering the same concept under different names ("RSC" vs. "React Server Components") and merges them.
 
-- **Automated cross-linking.** After ingest, the cross-linker scans for unlinked mentions and weaves them into the graph.
+- **Optional cross-linking.** After ingest completes, run the cross-linker separately to scan for unlinked mentions and weave them into the graph; it is not part of the ingest Job completion boundary.
 
 - **Tag taxonomy.** A controlled vocabulary in `_meta/taxonomy.md`, with a skill that audits and normalizes tags vault-wide.
 

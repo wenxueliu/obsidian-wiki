@@ -106,7 +106,7 @@ def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> 
     assert '--chunk-strategy "<text_chunking.strategy>"' in workflow
     assert '--direct-extract-max-bytes "<text_ingest.direct_extract_max_bytes>"' in workflow
     assert "--strategy-options-file" in workflow
-    assert "obsidian-wiki text-ingest-status" in workflow
+    assert "obsidian-wiki text-ingest-report" in workflow
     assert "wiki/" not in workflow
     assert ".cac/" not in workflow
     assert "同一文档的多个 packet unit 也可并行" in workflow
@@ -116,7 +116,11 @@ def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> 
     assert "workflow: wiki-page-contract" in workflow
     assert workflow.count("workflow: wiki-finalize-sources") == 1
     assert "wiki-packet-integrate" in workflow
+    assert "workflow: cross-linker" not in workflow
+    assert "staged mode 标 staged" not in workflow
+    assert "direct mode 在页面验证后标 integrated" not in workflow
     assert "obsidian-wiki text-ingest-plan" in skill
+    assert "obsidian-wiki text-ingest-report" in skill
     assert "WIKI_TEXT_CHUNK_TARGET_BYTES" in skill
     assert "WIKI_TEXT_CHUNK_MIN_BYTES" in skill
     assert "WIKI_TEXT_CHUNK_HARD_MAX_BYTES" in skill
@@ -124,9 +128,10 @@ def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> 
     assert "WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS" in skill
     assert "WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES" in skill
     assert "同一文档的多个 packet unit 也可并行提取" in skill
-    assert "所有页面 integration 均不并发" in skill
+    assert "所有 integration 均不并发" in skill
     assert ".cac/" not in skill
     assert "`wiki/" not in skill
+    assert "workflow: cross-linker" not in skill
     assert not (ROOT / "workflows" / "wiki-ingest.yaml").exists()
     assert "workflow: wiki-context" not in packet
     assert "workflow: wiki-page-contract" not in packet
@@ -138,6 +143,36 @@ def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> 
     assert "obsidian-wiki text-ingest-unit-advance" in packet
     assert "obsidian-wiki text-ingest-inline-check" in packet
     assert "obsidian-wiki text-ingest-inline-advance" in packet
+
+
+def test_text_ingest_report_writes_matching_json_and_markdown(tmp_path: Path) -> None:
+    source = tmp_path / "source.md"
+    source.write_text("# One\n\nbody\n", encoding="utf-8")
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    planned = run_cli(
+        "text-ingest-plan", str(source), "--vault", str(vault), cwd=tmp_path,
+    )
+    assert planned.returncode == 0, planned.stderr
+    job_dir = Path(json.loads(planned.stdout)["job_dir"])
+    json_report = tmp_path / "reports" / "completion.json"
+    markdown_report = tmp_path / "reports" / "completion.md"
+
+    completed = run_cli(
+        "text-ingest-report", str(job_dir),
+        "--output", str(json_report),
+        "--markdown-output", str(markdown_report),
+        "--pretty", cwd=tmp_path,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(json_report.read_text(encoding="utf-8"))
+    markdown = markdown_report.read_text(encoding="utf-8")
+    assert report["live_complete"] is False
+    assert report["next_action"]["kind"] == "process_unit"
+    assert report["optional_postprocessing"]["cross_linker"]["run_by_ingest"] is False
+    assert report["job_path"] in markdown
+    assert "cross-linker` is deferred" in markdown
 
 
 def _write_planned_packet(job_dir: Path) -> tuple[Path, dict, dict]:
