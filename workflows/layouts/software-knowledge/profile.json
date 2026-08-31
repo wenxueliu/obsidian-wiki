@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "name": "software-knowledge",
+  "description": "Durable software semantics, decisions, constraints, architecture, operations, and reusable engineering knowledge",
+  "purpose": [
+    "Reduce the cost of future software design, review, operation, and incident response",
+    "Preserve intent and constraints that cannot be reliably reconstructed from the current implementation"
+  ],
+  "scope": {
+    "include": [
+      "business terminology and domain boundaries",
+      "capabilities, observable behavior, rules, and data semantics",
+      "stable system responsibilities and interface meaning",
+      "architecture decisions, alternatives, trade-offs, and invalidation conditions",
+      "operational procedures, failure modes, and quality strategy",
+      "reusable concepts, patterns, and engineering skills"
+    ],
+    "exclude": [
+      "symbol inventories",
+      "call graphs and dependency paths derivable from CodeGraph",
+      "file trees and line-number snapshots",
+      "verbatim code listings",
+      "mechanically reproducible API, schema, or configuration dumps",
+      "routine fixes and transient task telemetry"
+    ],
+    "on_mismatch": "ask"
+  },
+  "knowledge_types": [
+    "project",
+    "term",
+    "domain",
+    "capability",
+    "behavior",
+    "rule",
+    "model",
+    "process",
+    "system",
+    "deployable",
+    "component",
+    "interface",
+    "decision",
+    "change",
+    "operation",
+    "quality",
+    "concept",
+    "pattern",
+    "skill",
+    "reference",
+    "synthesis"
+  ],
+  "extraction": {
+    "retain": [
+      "intent and non-goals",
+      "definitions and business semantics",
+      "constraints and invariants",
+      "decisions, alternatives, and trade-offs",
+      "stable responsibilities and cross-system behavior",
+      "failure modes, recovery knowledge, and empirical lessons",
+      "risks, unresolved questions, and invalidation conditions"
+    ],
+    "omit": [
+      "facts that CodeGraph can reliably regenerate from the current repository",
+      "implementation detail without explanatory or decision value",
+      "raw logs, test output, meeting chronology, and source-document restatement"
+    ]
+  },
+  "verification": {
+    "authorities": [
+      "source documents and decision records at their recorded revision",
+      "repository and tests at the recorded Git revision",
+      "CodeGraph for current structural facts",
+      "owner-confirmed operational and domain conventions"
+    ],
+    "checks": [
+      "source traceability",
+      "Git revision binding",
+      "CodeGraph anchor replay when code structure matters",
+      "test or contract reference for executable invariants",
+      "explicit marking of inferred and disputed rationale"
+    ]
+  },
+  "freshness": {
+    "triggers": [
+      "meaningful Git delta",
+      "CodeGraph anchor no longer resolves",
+      "business rule or interface contract changes",
+      "architecture decision is superseded",
+      "incident evidence changes an operational conclusion"
+    ]
+  },
+  "retrieval": {
+    "priorities": [
+      "business term, rule, and behavior match",
+      "decision and operational relevance",
+      "verified source and current Git binding",
+      "stable code anchors before stored implementation detail",
+      "typed paths across domain, capability, system, and interface pages"
+    ]
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "name": "book-knowledge",
+  "description": "Traceable ideas, arguments, literary elements, practices, and reading context distilled from books",
+  "purpose": [
+    "Preserve what a work argues, depicts, or teaches without reducing the wiki to chapter summaries",
+    "Support comparison and synthesis across works while retaining attribution and passage provenance"
+  ],
+  "scope": {
+    "include": [
+      "works, authors, and materially discussed entities",
+      "attributed arguments, premises, objections, and limitations",
+      "concepts, themes, characters, settings, and practices",
+      "dated reading observations",
+      "cross-work synthesis"
+    ],
+    "exclude": [
+      "one page per chapter",
+      "uncontextualized quote collections",
+      "plot or chapter restatement with no retrieval value",
+      "claims detached from their author, work, edition, or passage"
+    ],
+    "on_mismatch": "ask"
+  },
+  "knowledge_types": [
+    "book",
+    "person",
+    "author",
+    "entity",
+    "concept",
+    "argument",
+    "theme",
+    "character",
+    "setting",
+    "practice",
+    "skill",
+    "reading_note",
+    "journal",
+    "reference",
+    "synthesis"
+  ],
+  "extraction": {
+    "retain": [
+      "attributed theses and their support",
+      "definitions and recurring concepts",
+      "objections, limitations, and competing interpretations",
+      "actionable practices with stated conditions",
+      "passage-level locators and edition context"
+    ],
+    "omit": [
+      "unsupported claims promoted from an author's argument to fact",
+      "long quotations",
+      "chapter-by-chapter summaries",
+      "bibliographic repetition already captured on the book page"
+    ]
+  },
+  "verification": {
+    "authorities": [
+      "the cited edition and passage",
+      "owner-confirmed reading notes",
+      "independently cited works for cross-work synthesis"
+    ],
+    "checks": [
+      "work and edition attribution",
+      "passage locator",
+      "argument-versus-fact distinction",
+      "competing interpretation preservation",
+      "canonical merge before create"
+    ]
+  },
+  "freshness": {
+    "triggers": [
+      "a new edition or translation materially changes the cited passage",
+      "later reading revises an interpretation",
+      "new sources challenge a synthesis"
+    ]
+  },
+  "retrieval": {
+    "priorities": [
+      "work, author, and attributed argument match",
+      "edition and passage-specific evidence",
+      "explicit objections and limitations",
+      "cross-work concept and theme relationships"
+    ]
+  }
+}

@@ -19,3 +19,15 @@ _Avoid_: Relationship format, duplicate edge
 **Relationship Vocabulary**:
 The effective allowlist of relationship types for a vault, consisting of the framework vocabulary plus owner-declared extensions.
 _Avoid_: Link types
+
+**Knowledge Pack**:
+A bundled, versioned knowledge-domain contract that combines one Knowledge Profile with one Vault Layout and their supporting schema and workflow guidance.
+_Avoid_: Layout, Domain
+
+**Knowledge Profile**:
+The semantic contract for a vault: its purpose, scope, knowledge types, extraction policy, evidence requirements, freshness triggers, and retrieval priorities.
+_Avoid_: Domain detector, Named Vault Profile, Writing Profile
+
+**Vault Layout**:
+The materialization contract that maps declared page types to paths and defines live content roots, system areas, and naming placeholders.
+_Avoid_: Knowledge Profile, Folder structure

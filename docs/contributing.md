@@ -15,6 +15,32 @@ See [`.skills/skill-creator/SKILL.md`](../.skills/skill-creator/SKILL.md) for th
 
 When you add a skill, also add it to the [skills reference](skills.md) and the routing table in `AGENTS.md`.
 
+## Adding a Knowledge Pack
+
+A directory under `workflows/layouts/<name>/` is a complete Knowledge Pack, not only a folder
+template. It must contain:
+
+```text
+profile.json          # semantic purpose, scope, knowledge and trust contract
+layout.json           # pack identity and references to profile/routing contracts
+routing.json          # deterministic page-type-to-path rules
+routing.md            # semantic placement guidance
+vault/                # missing-only schema, rules, terminology and directory template
+```
+
+Keep the boundary explicit:
+
+- Put purpose, include/exclude scope, durable knowledge types, extraction retain/omit rules,
+  authorities, checks, freshness triggers, and retrieval priorities in `profile.json`.
+- Put content roots, system areas, placeholders, and path templates in the routing/Layout files.
+- Put domain page validation in the vault schema. Do not use a directory name as a substitute for
+  a knowledge-type definition.
+
+The Profile `name` must match the pack/Layout name, every `knowledge_types` entry must have a
+declared route, and a scope mismatch must choose `ask`, `stage`, or `reject`; Profiles never switch
+the target domain automatically. Add loader, marker, context-resolution, and focused tests when the
+contract shape changes.
+
 ## Keeping both READMEs in sync
 
 `README.md` (English) and `README_TW.md` (Traditional Chinese) are **one documentation surface**. Keep headings, examples, links, and user-facing behavior structurally and semantically aligned.

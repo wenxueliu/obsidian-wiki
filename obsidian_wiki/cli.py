@@ -807,9 +807,9 @@ def cmd_setup(args: argparse.Namespace) -> int:
         if not layouts:
             print("No workflow layouts found.")
         else:
-            print("\nAvailable vault layouts:\n")
+            print("\nAvailable Knowledge Packs (Profile + Layout):\n")
             for name, layout in sorted(layouts.items()):
-                print(f"  {name:20s}  {layout.description} ← workflow")
+                print(f"  {name:20s}  {layout.profile['description']} ← workflow")
             print(f"\nUse: obsidian-wiki setup --layout <name>")
         return 0
 
@@ -1548,7 +1548,7 @@ def cmd_wiki_setup_contract_build(args: argparse.Namespace) -> int:
 
 
 def cmd_wiki_layout_apply(args: argparse.Namespace) -> int:
-    """Apply one bundled workflow layout without depending on the caller's CWD."""
+    """Apply one bundled Knowledge Pack without depending on the caller's CWD."""
     try:
         root = workflows_dir()
         script = root / "scripts" / "apply_wiki_layout.py"
@@ -2519,7 +2519,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     wsc = sub.add_parser(
         "wiki-setup-contract-build",
-        help="build setup contracts from bundled workflow templates and layouts",
+        help="build setup contracts from bundled workflow templates and Knowledge Packs",
     )
     wsc.add_argument("phase", choices=("core", "finalize"))
     wsc.add_argument("--output-dir", required=True, help="artifact output directory")
@@ -2527,9 +2527,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     wla = sub.add_parser(
         "wiki-layout-apply",
-        help="apply a bundled workflow layout independently of the current directory",
+        help="apply a bundled Knowledge Pack independently of the current directory",
     )
-    wla.add_argument("--layout", required=True, help="bundled workflow layout name")
+    wla.add_argument("--layout", required=True, help="bundled Knowledge Pack name")
     wla.add_argument("--vault", required=True, help="absolute target vault path")
     wla.add_argument("--output-dir", required=True, help="artifact output directory")
     wla.add_argument(
@@ -2865,12 +2865,12 @@ def _add_setup_args(sp: argparse.ArgumentParser) -> None:
     sp.add_argument(
         "--layout",
         metavar="NAME",
-        help="use a workflow layout (run with --list-layouts to see options)",
+        help="use a Knowledge Pack (Profile + Layout; run with --list-layouts to see options)",
     )
     sp.add_argument(
         "--list-layouts",
         action="store_true",
-        help="list available vault layouts and exit",
+        help="list available Knowledge Packs and exit",
     )
     sp.add_argument(
         "--remote",

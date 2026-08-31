@@ -26,7 +26,25 @@ You can maintain multiple vaults (each a `~/.obsidian-wiki/config.<name>` file m
 
 **After reading config, always read `$OBSIDIAN_VAULT_PATH/AGENTS.md` if it exists.** It contains owner-specific conventions (domain vocabulary, ingest preferences, writing style, project scoping) that override framework defaults for all skills. Apply it for the duration of the session.
 
+## Knowledge Packs
+
+Each initialized vault binds one Knowledge Pack selected during setup. A Pack contains a semantic
+`profile.json` and a physical Vault Layout. The Knowledge Profile defines purpose, scope,
+knowledge types, extraction retain/omit policy, verification, freshness, and retrieval priorities;
+the Layout defines content roots, system areas, and page-type-to-path routing. The current release
+ships them one-to-one under `workflows/layouts/<name>/`, and the CLI retains the `--layout` name.
+
+Do not perform per-source domain detection or switch Packs during ingest. Load the Profile frozen
+under `wiki-context.json.optional_metadata.active_layout.knowledge_profile`, check source
+compatibility, and execute its `scope.on_mismatch` action. `@name` is a Named Vault Profile used to
+select config/vault; it is unrelated to the Knowledge Profile. `WRITING.md` is likewise only a
+Writing Profile.
+
 ## Vault Structure
+
+The tree below is the `default` Knowledge Pack example. Other Packs declare different content
+roots through their Vault Layout; workflows must use the active routing contract rather than these
+directory names.
 
 ```
 $OBSIDIAN_VAULT_PATH/

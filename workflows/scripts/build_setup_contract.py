@@ -160,13 +160,14 @@ def build_core(templates_dir: Path, layouts_dir: Path, output_dir: Path) -> None
             "template": "WRITING.md",
         },
         "layout": {
-            "implementation": "recursively copy layouts/<name>/vault with missing-only semantics; bind routing.json/routing.md in _meta/layout.json",
+            "implementation": "load one bundled Knowledge Pack; recursively copy layouts/<name>/vault with missing-only semantics; bind profile.json and routing.json/routing.md hashes in _meta/layout.json",
             "default": "default",
             "available": layouts,
             "default_dirs": layouts["default"]["directories"],
             "always_create": [".obsidian/", "_staging/"],
             "preserve_custom_dirs": True,
-            "routing_policy": "the model selects a declared page type using routing.md; resolve_wiki_route.py validates and expands routing.json; workflows must not hard-code layout directories",
+            "profile_policy": "profile.json defines the vault purpose, scope, knowledge types, extraction policy, evidence checks, freshness triggers, and retrieval priorities; scope mismatch follows the profile action instead of switching domains",
+            "routing_policy": "the model selects a profile-compatible declared page type using routing.md; resolve_wiki_route.py validates and expands routing.json; workflows must not hard-code layout directories",
             "purposes": {
                 "projects/": "per-project knowledge",
                 "_archives/": "rebuild and restore snapshots",

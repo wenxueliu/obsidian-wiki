@@ -6,6 +6,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from obsidian_wiki.cli import scaffold_vault
+from obsidian_wiki.workflow_layout import load_layout
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -106,6 +109,23 @@ def test_setup_mode_true_allows_an_uninitialized_vault(tmp_path: Path) -> None:
     assert context["setup_mode"] is True
     assert context["optional_metadata"]["active_layout"]["status"] == "uninitialized"
     assert context["warnings"] == []
+
+
+def test_context_freezes_active_knowledge_profile(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    scaffold_vault(vault, load_layout("book-knowledge"))
+
+    result = run_context_resolver(tmp_path, vault, setup_mode="false")
+
+    assert result.returncode == 0, result.stderr
+    context = json.loads(
+        (tmp_path / "artifacts-false" / "wiki-context.json").read_text(encoding="utf-8")
+    )
+    active = context["optional_metadata"]["active_layout"]
+    assert active["status"] == "matched"
+    assert active["knowledge_profile"]["sha256"].startswith("sha256:")
+    assert active["knowledge_profile"]["contract"]["name"] == "book-knowledge"
+    assert "argument" in active["knowledge_profile"]["contract"]["knowledge_types"]
 
 
 def test_setup_mode_false_rejects_a_missing_vault(tmp_path: Path) -> None:

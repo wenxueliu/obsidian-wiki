@@ -6,6 +6,31 @@ Skills tell an AI agent how to operate on the vault. Small dependency-free Pytho
 the parts that must be deterministic, including hashing, text range planning, and exact range
 materialization; extraction and knowledge integration remain agent work.
 
+## Knowledge Packs: Profile versus Layout
+
+Each vault selects one **Knowledge Pack** during setup. A pack deliberately binds two contracts:
+
+- The **Knowledge Profile** (`profile.json`) is semantic. It defines the vault's purpose and scope,
+  its durable knowledge types, what extraction retains or omits, what evidence is authoritative,
+  which checks establish trust, what makes knowledge stale, and how retrieval should rank evidence.
+- The **Vault Layout** (`layout.json`, `routing.json`, and `routing.md`) is physical. It defines live
+  content roots, system and skipped areas, path templates, naming placeholders, and deterministic
+  page-type-to-path routing.
+
+The distinction matters even though the current release packages them one-to-one. A software
+Decision keeps the same meaning and evidence requirements whether it is stored flat under
+`decisions/` or nested under a project; conversely, a generic `concepts/` directory does not tell an
+agent whether it is compiling scientific evidence, historical interpretation, or software design.
+
+One vault is assumed to serve one knowledge purpose. Setup therefore selects the pack once and
+binds the Profile, Layout, and routing hashes in `_meta/layout.json`. Ingest does **not** guess a new
+domain for every source. It checks the source against the active Profile and follows the Profile's
+`ask`, `stage`, or `reject` mismatch action. A source adapter answers only how to read a format; it
+does not decide what the vault should remember.
+
+The bundled packs are `default`, `software-knowledge`, and `book-knowledge`. The CLI option remains
+named `--layout` for compatibility, but it selects the whole Knowledge Pack.
+
 ## The four stages
 
 Every time you feed the brain, it runs through these:
@@ -36,11 +61,16 @@ Each page also gets a 1–2 sentence `summary:` in its frontmatter at write time
 
 `wiki-packet-integrate` validates and integrates Packet or inline transports serially in source
 order. New knowledge merges against what's already there; contradictions and exact source locators
-are retained. Transport boundaries never become page boundaries.
+are retained. Before routing, the integrator applies the active Knowledge Profile's scope and
+extraction policy. Transport boundaries never become page boundaries.
 
 ### 4. Schema
 
-The schema isn't fixed upfront. It emerges from your sources and evolves as you add more. The agent maintains coherence: categories stay consistent, wikilinks point to real pages, the index reflects what's actually there. When you add a new domain, the schema expands without breaking what exists.
+The framework-wide provenance and tracking envelope is shared, while domain-specific knowledge
+types and required fields come from the active Knowledge Pack. The agent maintains coherence:
+categories stay consistent, wikilinks point to real pages, and the index reflects what's actually
+there. Changing a vault to a different Pack is a content-aware migration, not an automatic schema
+expansion during ingest.
 
 A durable Job under `_meta/ingest-jobs/` tracks pending ranges and Packets for interruption-safe
 resume. `.manifest.json` advances only after every unit for one exact source version integrates.
@@ -49,13 +79,17 @@ resume. `.manifest.json` advances only after every unit for one exact source ver
 
 1. Agent resolves the vault path (`@name` → `.env` → `~/.obsidian-wiki/config`)
 2. Agent reads `.manifest.json` to know what's already been done
-3. Agent reads the relevant skill for instructions
-4. Agent uses its built-in tools to do the work
-5. Range workers produce bounded Packets with configured concurrency; integration consumes them serially
-6. Agent updates `.manifest.json`, `index.md`, `log.md`, and `hot.md` only at source completion
-7. Output is standard Obsidian-compatible markdown with frontmatter and `[[wikilinks]]`
+3. Agent loads the active Knowledge Profile and Vault Layout from the bound Knowledge Pack
+4. Agent reads the relevant skill for instructions
+5. Agent uses its built-in tools to do the work
+6. Range workers produce bounded Packets with configured concurrency; integration consumes them serially
+7. Agent updates `.manifest.json`, `index.md`, `log.md`, and `hot.md` only at source completion
+8. Output is standard Obsidian-compatible markdown with frontmatter and `[[wikilinks]]`
 
 ## Vault structure
+
+This is the `default` Knowledge Pack layout. Other Packs provide different content roots; runtime
+workflows enumerate the active Layout instead of assuming these directory names.
 
 ```
 $OBSIDIAN_VAULT_PATH/

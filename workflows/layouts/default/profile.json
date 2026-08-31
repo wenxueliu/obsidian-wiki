@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "name": "default",
+  "description": "General-purpose durable knowledge compiled from heterogeneous textual sources",
+  "purpose": [
+    "Preserve reusable knowledge that would otherwise require repeated interpretation or rediscovery",
+    "Support evidence-backed lookup and synthesis without mirroring source documents"
+  ],
+  "scope": {
+    "include": [
+      "reusable concepts and definitions",
+      "materially described entities",
+      "repeatable procedures and skills",
+      "stable factual references",
+      "cross-source conclusions",
+      "dated observations whose time context matters"
+    ],
+    "exclude": [
+      "navigation and boilerplate",
+      "repeated framing",
+      "raw listings retained only to reconstruct a source",
+      "transient task output with no durable reuse value"
+    ],
+    "on_mismatch": "ask"
+  },
+  "knowledge_types": [
+    "concept",
+    "entity",
+    "skill",
+    "reference",
+    "synthesis",
+    "journal",
+    "project_overview"
+  ],
+  "extraction": {
+    "retain": [
+      "definitions",
+      "claims with preserved qualifications",
+      "procedures and prerequisites",
+      "explicit relationships",
+      "open questions"
+    ],
+    "omit": [
+      "unsupported inference",
+      "verbatim source reproduction",
+      "items that only repeat an existing canonical page"
+    ]
+  },
+  "verification": {
+    "authorities": [
+      "the cited source at its recorded revision",
+      "owner-confirmed vault conventions"
+    ],
+    "checks": [
+      "source traceability",
+      "narrow evidence locators",
+      "provenance classification",
+      "contradiction preservation",
+      "canonical merge before create"
+    ]
+  },
+  "freshness": {
+    "triggers": [
+      "source revision changes",
+      "a cited claim is contradicted",
+      "owner review changes lifecycle or scope"
+    ]
+  },
+  "retrieval": {
+    "priorities": [
+      "exact title or alias match",
+      "summary and tag relevance",
+      "verified and current evidence",
+      "typed relationships"
+    ]
+  }
+}

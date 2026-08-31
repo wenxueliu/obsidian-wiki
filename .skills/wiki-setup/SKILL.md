@@ -55,7 +55,7 @@ steps:
     do: |
       以 `wiki-context.json` 的磁盘事实和 `setup-contract.json/md` 的精确默认值、模板、命令与验收条款为唯一依据，形成 setup plan，不读取外部规范或示例配置。
 
-      先区分新建或 repair，并盘点唯一 config path、canonical vault、active layout、core files、Writing Profile、QMD collection、hooks 与 Git remote。只询问尚未确定或需要用户选择的项目：vault/source/history paths、layout、QMD、token threshold、staged writes，以及是否安装 Stop hook、配置 private Git sync和准确 repo URL。采用默认值时也要在 plan 明示。
+      先区分新建或 repair，并盘点唯一 config path、canonical vault、active Knowledge Pack（固定配对的 Knowledge Profile + Vault Layout）、core files、Writing Profile、QMD collection、hooks 与 Git remote。只询问尚未确定或需要用户选择的项目：vault/source/history paths、Knowledge Pack/layout、QMD、token threshold、staged writes，以及是否安装 Stop hook、配置 private Git sync和准确 repo URL。采用默认值时也要在 plan 明示。
 
       在 `setup-plan.md` 列出 exact targets、每项 create/preserve/minimal-repair、原子写策略、required checks，以及所有需要 home/network/git/QMD 变更的 optional approvals。现有 `.env`、WRITING.md、core files、hooks、custom dirs 和 owner data 默认 preserve；此步骤零写入。
     input: wiki-context.json + setup-contract.json/md + 用户的初始化/修复请求与配置选择
@@ -107,7 +107,7 @@ steps:
   - id: apply_layout
     desc: 生成选定的 Vault layout
     do: |
-      使用 approved layout name、canonical vault 和 artifacts 目录运行 bundled layout copier：
+      使用 approved Knowledge Pack/layout name、canonical vault 和 artifacts 目录运行 bundled layout copier：
 
       ```bash
       obsidian-wiki wiki-layout-apply \
@@ -118,10 +118,10 @@ steps:
 
       console script 不在 PATH 时使用等价的 `python3 -m obsidian_wiki wiki-layout-apply ...`。同名 contract refresh 仅在 approved binding 含该动作时追加 `--refresh-layout-marker`。
 
-      copier 按 missing-only policy 生成 layout 目录、预制文件、`_meta/layout.json` 和 `layout-apply-report.json`。
+      copier 按 missing-only policy 生成 layout 目录、预制文件、绑定 Profile/Layout/Routing hashes 的 `_meta/layout.json` 和 `layout-apply-report.json`。Profile 与 Layout 在当前版本一对一发布；setup 不执行内容级领域识别。
     input: approved-setup.json + setup-contract.json/md + config-report.md + canonical vault
     output: vault layout tree + _meta/layout.json + layout-apply-report.json
-    check: 解析 layout marker/report，核对 approved vault、layout name/version 和 contract hashes，确认 required inventory 存在、overwritten_files 为空，且无 path escape 或未批准 layout 切换
+    check: 解析 layout marker/report，核对 approved vault、Knowledge Profile/Layout name/version 和 profile/layout/routing contract hashes，确认 required inventory 存在、overwritten_files 为空，且无 path escape 或未批准 Knowledge Pack 切换
     on_pass: initialize_core
     on_fail: apply_layout
     max_fail_count: 4

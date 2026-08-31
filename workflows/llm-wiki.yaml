@@ -33,16 +33,16 @@ steps:
     do: |
       基于 requirements-brief.md 写 wiki-architecture.md：
 
-      1. Layer 1 immutable raw sources 与 vault/_raw scratch inbox 明确分离；列出每种 source 的专用 adapter/unsupported 状态。
-      2. Layer 2 compiled wiki 使用 active/proposed vault layout 的 declared page types、routing templates/content roots、项目 overview route、system/skip dirs 与 special files；不得把 default layout 的目录命名当成框架不变量。
-      3. Layer 3 schema 定义 page required/optional frontmatter、summary<=200、provenance markers/fractions、standard+owner relationship types、confidence/lifecycle、tier、visibility 与 link format。
+      1. Layer 1 immutable raw sources 与 vault/_raw scratch inbox 明确分离；列出每种 source 的专用 adapter/unsupported 状态。Source adapter 只回答如何读取，不决定什么值得保留。
+      2. Layer 2 compiled wiki 使用 active/proposed Knowledge Pack。Knowledge Profile 定义 purpose、scope、knowledge types、extraction、verification、freshness 与 retrieval；Vault Layout 定义 routing templates/content roots、项目 overview route、system/skip dirs 与 special files。单领域 Vault 在 setup 时固定 Pack，摄取只做 scope compatibility，不自动识别或切换领域；不得把 default layout 的目录命名当成框架不变量。
+      3. Layer 3 schema 定义 page required/optional frontmatter、summary<=200、provenance markers/fractions、standard+owner relationship types、confidence/lifecycle、tier、visibility 与 link format。领域特定字段与验证规则来自 Knowledge Profile，物理目标只能来自 Vault Layout。
       4. 定义 index.md、append-only log.md、约 500 字 hot.md、manifest canonical absolute source keys/complete-live boundary。
       5. 给出 generic page example，只作为 schema 示例；PDF deep-dive 仅标为 specialized future/source-adapter contract。
       6. 体现 compile-not-retrieve、compound over time、human curates/LLM maintains、Obsidian-compatible Markdown。
 
       不创建 vault 或页面，不把建议冒充 owner 已批准 schema。
     input: requirements-brief.md
-    output: wiki-architecture.md（三层架构、layout、page/special-file schema）
+    output: wiki-architecture.md（三层架构、Knowledge Profile/Layout、page/special-file schema）
     check_voting:
       - check: 逐项对照 llm-wiki 三层架构、layout routing/content roots/special files/page template，确认 raw、live、staging 与 manifest completion boundary 没有混淆
       - check: 审计 provenance、typed relationships、confidence formula/independent lineages、lifecycle state machine、tier/visibility/link format 完整且 owner extension 未被覆盖
@@ -77,7 +77,7 @@ steps:
   - id: deliver_blueprint
     desc: 汇总经验证的 LLM Wiki 实施蓝图
     do: |
-      将前述 artifacts 汇总为 llm-wiki-blueprint.md：目标、关键决策、三层图、effective/proposed schema、layout、source adapter matrix、operational workflow map、风险/权衡、phased rollout、验收标准和下一条推荐命令。
+      将前述 artifacts 汇总为 llm-wiki-blueprint.md：目标、关键决策、三层图、effective/proposed Knowledge Profile、Vault Layout、schema、source adapter matrix、operational workflow map、风险/权衡、phased rollout、验收标准和下一条推荐命令。
 
       明确标记 owner 已确认、framework invariant、proposal、open question；不要伪造现有配置。若用户请求实际初始化，下一步指向 `wiki/wiki-setup`；文本 ingest 指向 `wiki/wiki-folder-ingest`。写 blueprint-validation.md 记录逐项 contract 检查。
 
@@ -86,7 +86,7 @@ steps:
     output: llm-wiki-blueprint.md + blueprint-validation.md
     check_voting:
       - check: 从用户需求重查 blueprint 的可追踪性、决策/假设/open questions、phased acceptance 与下一 workflow 路由，无遗漏或过度设计
-      - check: 从 llm-wiki contract 重查三层、schema、provenance/trust、retrieval、special files、QMD、config 和 operation boundaries，无内部矛盾
+      - check: 从 llm-wiki contract 重查三层、Knowledge Profile/Layout 边界、schema、provenance/trust、retrieval、special files、QMD、config 和 operation boundaries，无内部矛盾
       - check: 确认 artifacts 自洽且全程没有 vault/config/external writes，blueprint 没有把 proposal 表述为已生效事实
     on_pass: done
     on_fail: deliver_blueprint

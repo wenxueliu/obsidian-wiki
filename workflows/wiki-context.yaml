@@ -18,7 +18,7 @@ steps:
 
       否则，先解析 invocation 中的路由意图，并收集调用方 `requested_keys` 中用户显式提供的非秘密 overrides：
 
-      - invocation 含 `@name` 时，移除该路由 token，写 `{"mode":"config","profile":"name","overrides":{...}}`；
+      - invocation 含 `@name` 时，移除该路由 token，写 `{"mode":"config","profile":"name","overrides":{...}}`；这里的 `profile` 是 Named Vault Profile，只选择 config/vault，不是 Knowledge Profile；
       - 用户明确给出 vault 绝对路径时，写 `{"mode":"interactive","vault_path":"<expanded absolute path>","overrides":{...}}`；
       - 其他情况写 `{"mode":"config","overrides":{...}}`，不向用户重复询问 vault。resolver 会按最近 `.env` 再到全局 `~/.obsidian-wiki/config` 的顺序读取 wiki-setup 已写入的设置。
 
@@ -45,10 +45,10 @@ steps:
         --output-dir "{{artifacts_dir}}"
       ```
 
-      console script 不在 PATH 时使用等价的 `python3 -m obsidian_wiki wiki-context-resolve ...`。config mode 严格按 `@name` 指定 config、从 source CWD 向上找第一个含 `OBSIDIAN_VAULT_PATH` 的 `.env`、再到全局 `~/.obsidian-wiki/config` 的顺序解析；都缺失时要求运行 wiki-setup。resolver 将 effective config、owner/Writing Profile metadata、requested optional metadata、active layout 状态、text chunking 配置及 retrieval order 写入声明的 artifacts。
+      console script 不在 PATH 时使用等价的 `python3 -m obsidian_wiki wiki-context-resolve ...`。config mode 严格按 `@name` 指定 config、从 source CWD 向上找第一个含 `OBSIDIAN_VAULT_PATH` 的 `.env`、再到全局 `~/.obsidian-wiki/config` 的顺序解析；都缺失时要求运行 wiki-setup。resolver 将 effective config、owner/Writing Profile metadata、requested optional metadata、active Knowledge Pack 的 Knowledge Profile/Layout 状态、text chunking 配置及 retrieval order 写入声明的 artifacts。
     input: vault-input.json + 调用方传入的 source_cwd、requested_keys、optional_reads、setup_mode
     output: wiki-context.json + wiki-context.md + text-chunk-options.json
-    check: 解析 context artifacts，核对 approved canonical vault、唯一 config source、requested keys 与 mode；核对 text-chunk-options.json 与 context 中的非秘密 chunk options 一致；请求 layout 时确认 marker status/hash 和 frozen routing 存在，skipped 时不带 config/vault 内容；确认除 artifacts 外零写入
+    check: 解析 artifacts，核对 canonical vault/config/mode、requested keys 与 chunk options；请求 layout 时确认 marker matched 且 Knowledge Profile/routing/hash 冻结一致；skipped 不带 config/vault；确认除 artifacts 外零写入
     on_pass: done
     on_fail: collect_vault
     max_fail_count: 3

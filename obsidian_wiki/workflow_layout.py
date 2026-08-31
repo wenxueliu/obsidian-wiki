@@ -1,8 +1,9 @@
-"""Read the vault layout contract published with the Wiki workflows.
+"""Read the Knowledge Pack contracts published with the Wiki workflows.
 
-Layout definitions live exclusively under ``workflows/layouts``.  A vault
-persists its selected definition in ``_meta/layout.json``; environment files
-only locate the vault and never select its structure.
+Knowledge Packs live exclusively under ``workflows/layouts``. Each pack binds
+a semantic Knowledge Profile to one physical Vault Layout. A vault persists
+the selected contract hashes in ``_meta/layout.json``; environment files only
+locate the vault and never select its knowledge contract or structure.
 
 This module is a runtime adapter for Python commands that need to enumerate
 live knowledge pages.  It deliberately does not provide user-level layout
@@ -44,9 +45,12 @@ def layouts_dir() -> Path:
 
 @dataclass(frozen=True)
 class WorkflowLayout:
+    """One bundled Knowledge Pack; the class name is retained for CLI compatibility."""
+
     name: str
     description: str
     categories: tuple[str, ...]
+    profile: dict[str, Any]
     root: Path
     vault_template: Path
     routing: dict[str, Any]
@@ -88,6 +92,50 @@ def _read_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def _string_list(value: Any, label: str, *, allow_empty: bool = False) -> list[str]:
+    if (
+        not isinstance(value, list)
+        or (not allow_empty and not value)
+        or not all(isinstance(item, str) and item.strip() for item in value)
+    ):
+        suffix = "" if allow_empty else " non-empty"
+        raise LayoutContractError(f"profile {label} must be a{suffix} string array")
+    if len(value) != len(set(value)):
+        raise LayoutContractError(f"profile {label} must not contain duplicates")
+    return value
+
+
+def _validate_profile(data: dict[str, Any], name: str, routing: dict[str, Any]) -> dict[str, Any]:
+    if data.get("version") != 1 or data.get("name") != name:
+        raise LayoutContractError(f"profile version/name mismatch: {name}")
+    if not isinstance(data.get("description"), str) or not data["description"].strip():
+        raise LayoutContractError("profile description must be a non-empty string")
+    _string_list(data.get("purpose"), "purpose")
+    scope = data.get("scope")
+    if not isinstance(scope, dict) or scope.get("on_mismatch") not in {"ask", "stage", "reject"}:
+        raise LayoutContractError("profile scope must declare on_mismatch=ask|stage|reject")
+    _string_list(scope.get("include"), "scope.include")
+    _string_list(scope.get("exclude"), "scope.exclude", allow_empty=True)
+    knowledge_types = _string_list(data.get("knowledge_types"), "knowledge_types")
+    unknown_types = sorted(set(knowledge_types) - set(routing.get("routes", {})))
+    if unknown_types:
+        raise LayoutContractError(
+            "profile knowledge_types are missing layout routes: " + ", ".join(unknown_types)
+        )
+    for section, keys in {
+        "extraction": ("retain", "omit"),
+        "verification": ("authorities", "checks"),
+        "freshness": ("triggers",),
+        "retrieval": ("priorities",),
+    }.items():
+        value = data.get(section)
+        if not isinstance(value, dict):
+            raise LayoutContractError(f"profile {section} must be an object")
+        for key in keys:
+            _string_list(value.get(key), f"{section}.{key}")
+    return data
+
+
 def _layout_root(name: str) -> Path:
     if not _SAFE_NAME.fullmatch(name):
         raise LayoutContractError("layout name must match [A-Za-z0-9_-]+")
@@ -100,13 +148,22 @@ def _layout_root(name: str) -> Path:
 def load_layout(name: str) -> WorkflowLayout:
     """Load one named workflow layout and its routing contract."""
     root = _layout_root(name)
+    for contract_name in ("layout.json", "routing.json", "routing.md", "profile.json"):
+        contract_path = root / contract_name
+        if contract_path.is_symlink() or not contract_path.is_file():
+            raise LayoutContractError(
+                f"layout contract must be a regular non-symlink file: {contract_path}"
+            )
     manifest = _read_json(root / "layout.json")
     routing = _read_json(root / "routing.json")
+    profile = _read_json(root / "profile.json")
     vault_template = root / "vault"
     if manifest.get("version") != 1 or manifest.get("name") != name:
         raise LayoutContractError(f"layout manifest identity mismatch: {name}")
     if manifest.get("copy_policy") != "missing-only":
         raise LayoutContractError(f"unsupported copy policy for layout: {name}")
+    if manifest.get("profile") != "profile.json":
+        raise LayoutContractError(f"layout profile must reference profile.json: {name}")
     if not vault_template.is_dir() or vault_template.is_symlink():
         raise LayoutContractError(f"layout vault template is unavailable: {name}")
     for key in ("routes", "content_roots", "system_dirs", "skip_dirs", "system_paths"):
@@ -119,6 +176,7 @@ def load_layout(name: str) -> WorkflowLayout:
         name=name,
         description=str(manifest.get("description", "")),
         categories=tuple(categories),
+        profile=_validate_profile(profile, name, routing),
         root=root,
         vault_template=vault_template,
         routing=routing,
@@ -172,6 +230,10 @@ def _inventory_hash(layout: WorkflowLayout) -> str:
             "prompt_sha256": _digest(prompt_path),
             "prompt": prompt_path.read_text(encoding="utf-8"),
         },
+        "profile": {
+            "sha256": _digest(layout.root / "profile.json"),
+            "contract": layout.profile,
+        },
     }
     encoded = json.dumps(portable, sort_keys=True, separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
@@ -201,6 +263,7 @@ def active_layout(vault: Path, *, allow_uninitialized: bool = True) -> WorkflowL
         "inventory_sha256": _inventory_hash(layout),
         "routing_rules_sha256": _digest(layout.root / "routing.json"),
         "routing_prompt_sha256": _digest(layout.root / "routing.md"),
+        "profile_sha256": _digest(layout.root / "profile.json"),
     }
     stale = [key for key, value in expected.items() if marker.get(key) != value]
     if stale:

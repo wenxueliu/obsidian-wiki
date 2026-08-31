@@ -13,24 +13,42 @@ After resolving, skills also read `$OBSIDIAN_VAULT_PATH/AGENTS.md` if it exists.
 
 Both `~/.obsidian-wiki/config` and `.env` use the same `KEY=value` format. Start from [`.env.example`](../.env.example).
 
-## Vault layout
+## Knowledge Packs and vault layouts
 
-Vault layout is not an environment setting. Setup selects a bundled contract from
-`workflows/layouts/<name>/` and records its identity and integrity hashes in
+A Knowledge Pack is not an environment setting. Setup selects one bundled pack from
+`workflows/layouts/<name>/`. Each pack contains a semantic `profile.json` plus the physical
+`layout.json`, `routing.json`, `routing.md`, schema, terminology policy, rules, and vault template.
+
+The Knowledge Profile defines purpose, scope, knowledge types, extraction policy, evidence checks,
+freshness triggers, and retrieval priorities. The Vault Layout defines content roots, system areas,
+path templates, and deterministic page routing. They are separate concepts but are shipped
+one-to-one in the current version so a single setup choice produces a complete domain contract.
+
+Setup records Profile, Layout, and routing integrity hashes in
 `$OBSIDIAN_VAULT_PATH/_meta/layout.json`. That marker travels with the vault and is the source of
-truth for its content roots, system directories, and page routes. Subsequent workflows reload the
-named bundled contract and fail closed when the recorded hashes are stale.
+truth for the active Knowledge Pack. Subsequent workflows reload the named bundled contract and
+fail closed when any recorded hash is stale.
 
-Use `obsidian-wiki setup --list-layouts` to inspect available layouts and select one during setup.
-Changing an existing vault to another layout requires a content-aware migration; editing `.env`,
-renaming directories, or changing the marker by hand is not a supported switch mechanism.
+Use `obsidian-wiki setup --list-layouts` to inspect available Knowledge Packs and select one during
+setup. The `--layout` option name is retained for CLI compatibility. One vault is assumed to serve
+one knowledge purpose, so ingest checks source compatibility against the fixed Profile rather than
+auto-detecting and switching domains. Changing an existing vault to another Pack requires a
+content-aware migration; editing `.env`, renaming directories, or changing the marker by hand is
+not a supported switch mechanism.
 
-The bundled layouts are:
+The bundled Knowledge Packs are:
 
 - `default`: general-purpose concepts, entities, skills, references, and projects.
 - `software-knowledge`: software-domain entities with explicit architecture and operations types.
 - `book-knowledge`: books, authors, arguments, literary elements, and dated reading notes. It is
   optimized for book/text ingestion and does not provide software project routes.
+
+Do not confuse a Knowledge Profile with either of these existing uses of “profile”:
+
+- A **Named Vault Profile** such as `config.work` selects a vault via `@work`.
+- The global **Writing Profile** in `WRITING.md` controls language and style only.
+
+Neither changes what the active Knowledge Profile considers durable or authoritative.
 
 ## Global wiki writing profile
 

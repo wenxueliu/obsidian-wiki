@@ -20,6 +20,9 @@ def test_lists_only_workflow_layout_contracts() -> None:
 
     assert set(layouts) == {"default", "software-knowledge", "book-knowledge"}
     assert layouts["default"].root.name == "default"
+    assert layouts["software-knowledge"].profile["name"] == "software-knowledge"
+    assert "decision" in layouts["software-knowledge"].profile["knowledge_types"]
+    assert layouts["book-knowledge"].profile["scope"]["on_mismatch"] == "ask"
 
 
 def test_scaffold_persists_and_reloads_active_layout(tmp_path: Path) -> None:
@@ -29,6 +32,7 @@ def test_scaffold_persists_and_reloads_active_layout(tmp_path: Path) -> None:
 
     marker = json.loads((vault / "_meta" / "layout.json").read_text())
     assert marker["name"] == "software-knowledge"
+    assert marker["profile_sha256"].startswith("sha256:")
     assert active_layout(vault, allow_uninitialized=False).name == "software-knowledge"
     assert (vault / "terms").is_dir()
     assert not (vault / "entities").exists()
@@ -67,4 +71,16 @@ def test_stale_active_layout_fails_closed(tmp_path: Path) -> None:
     marker_path.write_text(json.dumps(marker))
 
     with pytest.raises(LayoutContractError, match="stale"):
+        active_layout(vault)
+
+
+def test_stale_knowledge_profile_fails_closed(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    scaffold_vault(vault, load_layout("default"))
+    marker_path = vault / "_meta" / "layout.json"
+    marker = json.loads(marker_path.read_text())
+    marker["profile_sha256"] = "sha256:stale"
+    marker_path.write_text(json.dumps(marker))
+
+    with pytest.raises(LayoutContractError, match="profile_sha256"):
         active_layout(vault)

@@ -21,6 +21,8 @@ Running `obsidian-wiki` with no subcommand defaults to `setup`.
 
 ```bash
 obsidian-wiki setup --vault ~/brain
+obsidian-wiki setup --list-layouts         # list Knowledge Packs (Profile + Layout)
+obsidian-wiki setup --vault ~/brain --layout software-knowledge
 obsidian-wiki setup --project .        # also install project-local skills + bootstrap files
 obsidian-wiki setup --project-only     # skip the global install (use with --project)
 obsidian-wiki setup --copy             # copy skill files instead of symlinking
@@ -168,8 +170,8 @@ Available for automation, scripting, and debugging. Skills call some of these in
 | `text-ingest-inline-check <job>` | Validate a planned full-source inline unit and current source hash without a Packet |
 | `text-ingest-inline-advance <job>` | Atomically advance a revalidated inline unit after page validation |
 | `wiki-context-resolve` | Run the bundled workflow context resolver without depending on the current directory |
-| `wiki-setup-contract-build <phase>` | Build the setup contract from bundled templates and layouts |
-| `wiki-layout-apply` | Apply a bundled workflow layout without depending on the current directory |
+| `wiki-setup-contract-build <phase>` | Build the setup contract from bundled templates and Knowledge Packs |
+| `wiki-layout-apply` | Apply a bundled Knowledge Pack without depending on the current directory; the command name is retained for compatibility |
 | `wiki-route-resolve` | Resolve a declared page type through the bundled deterministic layout router |
 | `ast-extract <path>` | Extract classes, functions, and imports from code — no LLM, no API calls |
 
@@ -204,6 +206,13 @@ obsidian-wiki wiki-route-resolve --routing page-contract.json \
   --page-type concept --slug example
 obsidian-wiki ast-extract ./src --pretty
 ```
+
+`wiki-layout-apply --layout <name>` selects a complete Knowledge Pack. Its `profile.json` defines
+the semantic purpose, scope, extraction, verification, freshness, and retrieval contract; its
+layout and routing files define physical paths. `_meta/layout.json` binds hashes for both sides, so
+changing `profile.json` requires an explicit same-pack marker refresh or a content-aware migration.
+Refresh an existing vault after an intentional same-pack contract update with
+`wiki-layout-apply --refresh-layout-marker`; the flag cannot switch Pack names.
 
 `text-chunk-plan` accepts `.md`, `.markdown`, `.mdx`, `.txt`, and `.rst` encoded as UTF-8 or
 UTF-8 with BOM. `--target-budget` defaults to 48,000 bytes, `--min-budget` to half the target, and
@@ -259,7 +268,7 @@ calling `plan_text_chunks()`.
 `wiki-route-resolve` locate their helper scripts and bundled resources inside the installed package
 or source checkout. Workflows therefore do not depend on a `.cac/...` path or the caller's current
 working directory. A `vault-input.json` with `{"mode":"config"}` makes `wiki-context-resolve`
-load the vault configured by wiki-setup: an optional named `profile` first, otherwise the nearest
+load the vault configured by wiki-setup: an optional Named Vault Profile (`profile`) first, otherwise the nearest
 `.env` containing `OBSIDIAN_VAULT_PATH`, then `~/.obsidian-wiki/config`. An explicit approved vault
 path uses `{"mode":"interactive","vault_path":"/absolute/path"}`.
 

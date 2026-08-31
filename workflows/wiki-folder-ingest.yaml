@@ -25,7 +25,7 @@ steps:
   - id: plan_job
     desc: 用确定性 CLI 发现文档并原子创建或恢复 Job
     do: |
-      读取 `wiki-context.json` 中已确认的 vault、write mode 和 `text_chunking`。默认使用 `adaptive_sections`，target=48000、min=target/2、hard max=64000；配置值由 resolver 完成类型与大小关系验证。然后只运行 package CLI：
+      读取 `wiki-context.json` 中已确认的 vault、write mode、active Knowledge Profile/Layout 和 `text_chunking`。默认使用 `adaptive_sections`，target=48000、min=target/2、hard max=64000；配置值由 resolver 完成类型与大小关系验证。然后只运行 package CLI：
 
       ```bash
       obsidian-wiki text-ingest-plan "<source-root>" \
@@ -43,7 +43,7 @@ steps:
 
       CLI 负责 canonical discovery、unsupported inventory、streaming SHA-256、UTF-8 validation、按 effective strategy/budgets 分片、resume/replan 判断、transport 选择和原子 `job.json` 写入。非空且大小不超过 `text_ingest.direct_extract_max_bytes` 的来源标记为 `inline`，用一个覆盖全文的逻辑 unit 取代普通 chunk units，但不分配或落盘 Packet；`0` 禁用快路径，阈值不得超过 hard max。其他来源使用 `packet` transport。`adaptive_sections` 把标题当作优先边界，合并短章节并在 hard cap 内回并小尾块；`strict_sections` 保留 packet transport 下标题变化即分片的旧行为。自定义名称必须是已安装的 `obsidian_wiki.text_chunk_strategies` entry point。不得再调用 workflow-relative helper 或由 agent 手工复现这些规则。若 console script 不在 PATH，使用 `python3 -m obsidian_wiki text-ingest-plan ...`。
 
-      Coordinator 只读取 `job-plan.json` 与 Job metadata，不读取 source body。active layout 必须为 matched；URL、缺失或未授权 source 直接失败。unsupported 文件保留在 Job 和最终报告中。
+      Coordinator 只读取 `job-plan.json` 与 Job metadata，不读取 source body。active Knowledge Profile/Layout 必须为 matched 且 hashes 完整；URL、缺失或未授权 source 直接失败。格式 unsupported 文件保留在 Job 和最终报告中；领域 scope compatibility 由随后冻结的 page contract 执行，不能触发自动换域。
     input: wiki-context.json + 用户给定的本地文本文件或文件夹
     output: 原子 job.json + job-plan.json
     check: 核对 CLI exit status、job-plan.json 指向 vault 内 `_meta/ingest-jobs/<job-id>/job.json`，且 Job 不含 source body；不要重复 hash 或重跑 chunk plan
@@ -52,7 +52,7 @@ steps:
     max_fail_count: 4
 
   - id: resolve_job_page_contract
-    desc: 为整个 Job 冻结一次页面 schema、路由和写入契约
+    desc: 为整个 Job 冻结一次 Knowledge Profile、页面 schema、路由和写入契约
     workflow: wiki-page-contract
     input: wiki-context.json + job-plan.json
     output: page-contract.json + page-contract.md

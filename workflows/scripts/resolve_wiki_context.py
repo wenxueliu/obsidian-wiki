@@ -166,6 +166,9 @@ def write_outputs(output_dir: Path, context: dict[str, Any]) -> None:
     active_layout = context.get("optional_metadata", {}).get("active_layout")
     if active_layout:
         lines.append(f"- Active layout: `{active_layout.get('name', 'unknown')}` ({active_layout.get('status', 'unknown')})")
+        knowledge_profile = active_layout.get("knowledge_profile", {}).get("contract", {})
+        if knowledge_profile:
+            lines.append(f"- Knowledge Profile: `{knowledge_profile.get('name', 'unknown')}`")
     warnings = context.get("warnings", [])
     if warnings:
         lines.extend(["", "## Warnings", "", *[f"- {warning}" for warning in warnings]])
@@ -320,6 +323,7 @@ def main() -> int:
                     "inventory_sha256": frozen["inventory_sha256"],
                     "routing_rules_sha256": frozen["routing"]["rules_sha256"],
                     "routing_prompt_sha256": frozen["routing"]["prompt_sha256"],
+                    "profile_sha256": frozen["profile"]["sha256"],
                 }
                 mismatches = [key for key, value in expected.items() if marker.get(key) != value]
                 status = "matched" if not mismatches else "stale"
@@ -332,6 +336,10 @@ def main() -> int:
                     "marker_path": str(marker_path), "marker": marker,
                     "categories": frozen["categories"], "directories": frozen["directories"],
                     "routing": frozen["routing"],
+                    "knowledge_profile": {
+                        "sha256": frozen["profile"]["sha256"],
+                        "contract": frozen["profile"]["contract"],
+                    },
                 }
         if wants("vault metadata") and vault.exists():
             stat = vault.stat()

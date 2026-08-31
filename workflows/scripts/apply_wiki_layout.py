@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate, inventory, and missing-only copy packaged Wiki layouts."""
+"""Validate, inventory, and missing-only copy packaged Knowledge Packs."""
 
 from __future__ import annotations
 
@@ -106,21 +106,73 @@ def validate_routing(data: Any) -> dict[str, Any]:
     return data
 
 
+def validate_string_list(value: Any, label: str, *, allow_empty: bool = False) -> list[str]:
+    if (
+        not isinstance(value, list)
+        or (not allow_empty and not value)
+        or not all(isinstance(item, str) and item.strip() for item in value)
+    ):
+        suffix = "" if allow_empty else " non-empty"
+        raise ValueError(f"profile {label} must be a{suffix} string array")
+    if len(value) != len(set(value)):
+        raise ValueError(f"profile {label} must not contain duplicates")
+    return value
+
+
+def validate_profile(data: Any, name: str, routing: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(data, dict) or data.get("version") != 1 or data.get("name") != name:
+        raise ValueError("profile version/name mismatch")
+    if not isinstance(data.get("description"), str) or not data["description"].strip():
+        raise ValueError("profile description must be a non-empty string")
+    validate_string_list(data.get("purpose"), "purpose")
+    scope = data.get("scope")
+    if not isinstance(scope, dict) or scope.get("on_mismatch") not in {"ask", "stage", "reject"}:
+        raise ValueError("profile scope must declare on_mismatch=ask|stage|reject")
+    validate_string_list(scope.get("include"), "scope.include")
+    validate_string_list(scope.get("exclude"), "scope.exclude", allow_empty=True)
+    knowledge_types = validate_string_list(data.get("knowledge_types"), "knowledge_types")
+    unknown_types = sorted(set(knowledge_types) - set(routing.get("routes", {})))
+    if unknown_types:
+        raise ValueError(
+            "profile knowledge_types are missing layout routes: " + ", ".join(unknown_types)
+        )
+    for section, keys in {
+        "extraction": ("retain", "omit"),
+        "verification": ("authorities", "checks"),
+        "freshness": ("triggers",),
+        "retrieval": ("priorities",),
+    }.items():
+        value = data.get(section)
+        if not isinstance(value, dict):
+            raise ValueError(f"profile {section} must be an object")
+        for key in keys:
+            validate_string_list(value.get(key), f"{section}.{key}")
+    return data
+
+
 def load_layout(layouts_dir: Path, name: str) -> tuple[Path, Path, dict[str, Any]]:
     if not name or not SAFE_NAME.fullmatch(name):
         raise ValueError("layout name must match [A-Za-z0-9_-]+")
     root = layouts_dir.resolve() / name
     manifest_path = root / "layout.json"
+    profile_path = root / "profile.json"
     vault_source = root / "vault"
-    if root.is_symlink() or manifest_path.is_symlink() or vault_source.is_symlink():
-        raise ValueError("layout root, manifest, and vault source must not be symlinks")
-    if not manifest_path.is_file() or not vault_source.is_dir():
-        raise ValueError(f"layout {name!r} must contain layout.json and vault/")
+    if (
+        root.is_symlink()
+        or manifest_path.is_symlink()
+        or profile_path.is_symlink()
+        or vault_source.is_symlink()
+    ):
+        raise ValueError("layout root, manifest, profile, and vault source must not be symlinks")
+    if not manifest_path.is_file() or not profile_path.is_file() or not vault_source.is_dir():
+        raise ValueError(f"layout {name!r} must contain layout.json, profile.json, and vault/")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("version") != 1 or manifest.get("name") != name:
         raise ValueError("layout manifest version/name mismatch")
     if manifest.get("copy_policy") != "missing-only":
         raise ValueError("only copy_policy=missing-only is supported")
+    if manifest.get("profile") != "profile.json":
+        raise ValueError("layout profile must reference profile.json")
     if manifest.get("core_template_overrides") not in ({}, None):
         raise ValueError("core_template_overrides are reserved for a future version")
     categories = manifest.get("categories")
@@ -146,9 +198,19 @@ def load_routing(root: Path) -> tuple[dict[str, Any], str]:
     return rules, prompt
 
 
+def load_profile(root: Path, name: str, routing: dict[str, Any]) -> dict[str, Any]:
+    profile_path = root / "profile.json"
+    if profile_path.is_symlink() or not profile_path.is_file():
+        raise ValueError("layout profile.json must be a regular non-symlink file")
+    if profile_path.stat().st_size > MAX_FILE_SIZE:
+        raise ValueError("layout profile.json exceeds size limit")
+    return validate_profile(json.loads(profile_path.read_text(encoding="utf-8")), name, routing)
+
+
 def inventory(layouts_dir: Path, name: str) -> dict[str, Any]:
     root, vault_source, manifest = load_layout(layouts_dir, name)
     routing_rules, routing_prompt = load_routing(root)
+    profile = load_profile(root, name, routing_rules)
     ignored = set(manifest.get("ignore", []))
     directories: list[str] = []
     files: list[dict[str, Any]] = []
@@ -184,6 +246,11 @@ def inventory(layouts_dir: Path, name: str) -> dict[str, Any]:
             "prompt_sha256": digest(root / "routing.md"),
             "prompt": routing_prompt,
         },
+        "profile": {
+            "path": str(root / "profile.json"),
+            "sha256": digest(root / "profile.json"),
+            "contract": profile,
+        },
     }
     portable_inventory = {
         key: value for key, value in frozen.items() if key != "manifest_path"
@@ -191,6 +258,9 @@ def inventory(layouts_dir: Path, name: str) -> dict[str, Any]:
     portable_inventory["routing"] = {
         key: value for key, value in frozen["routing"].items()
         if key not in ("rules_path", "prompt_path")
+    }
+    portable_inventory["profile"] = {
+        key: value for key, value in frozen["profile"].items() if key != "path"
     }
     frozen["inventory_sha256"] = "sha256:" + hashlib.sha256(
         json.dumps(portable_inventory, sort_keys=True, separators=(",", ":")).encode()
@@ -274,6 +344,7 @@ def plan_or_apply(
         "inventory_sha256": frozen["inventory_sha256"],
         "routing_rules_sha256": frozen["routing"]["rules_sha256"],
         "routing_prompt_sha256": frozen["routing"]["prompt_sha256"],
+        "profile_sha256": frozen["profile"]["sha256"],
     }
     if marker_target.is_symlink():
         raise ValueError("active layout marker must not be a symlink")
