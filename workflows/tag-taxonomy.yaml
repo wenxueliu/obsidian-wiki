@@ -48,7 +48,7 @@ steps:
   - id: plan_changes
     desc: 形成确定性标签变更或只读报告计划
     do: |
-      基于用户模式和 tag-inventory.json 写 tag-change-plan.md 与 tag-change-plan.json。
+      基于用户模式和 tag-inventory.json 先在内存中形成唯一 canonical tag change plan result；`tag-change-plan.json` 完整承载该 result，Markdown 只从同一 result 渲染、不得独立推导或补充事实，并在同一批 artifact 写入中提交二者。
 
       1. audit 模式生成 empty write plan，仅保留报告。
       2. normalize 模式只自动规划 taxonomy 明示的 alias→canonical；去重并保证普通标签<=5，超限时列出保留/删除理由。
@@ -61,7 +61,7 @@ steps:
     check_voting:
       - check: 逐项对照 taxonomy 确认 alias mapping 精确、canonical tags 合法、普通标签去重且不超过 5
       - check: unknown/new tag 没有被自动决定，tag selection 的 domain/type/project 配额合理，visibility 完整保留
-      - check: audit 模式 write plan 严格为空，所有模式尚未修改 vault
+      - check: 解析 tag change plan JSON，逐项核对 Markdown 的 plan_id、mode、before/after、paths、evidence、decisions 与 warnings 是同一 canonical result 的准确投影；audit 模式 write plan 严格为空，所有模式尚未修改 vault
     on_pass: approve_changes
     on_fail: plan_changes
     max_fail_count: 3

@@ -44,11 +44,11 @@ steps:
       2. 形成 effective schema，记录 schema source、required/optional frontmatter、lifecycle、relationship types、trust fields 与 provenance markers；owner 扩展和放宽优先，不能强制改回 framework 默认。
       4. 清理并验证 OBSIDIAN_ALLOWED_LIFECYCLES、OBSIDIAN_ALLOWED_RELATIONSHIP_TYPES、OBSIDIAN_REQUIRED_TRUST_FIELDS、OBSIDIAN_SCHEMA_SOURCE。空白值或空列表项 fail closed。
       5. 读取 index.md 与 log.md，并从 active layout routing.content_roots 建立页面 inventory。所有检查排除 routing.skip_dirs/system_dirs/system_paths；staging role 不算 live knowledge page。
-      6. 在产出目录写 lint-context.md 和 lint-context.json，包含 canonical vault path、配置来源、effective schema、active layout name/version/hashes/完整 routing、排除项、页面数量、index/log 状态、审计时间与稳定 audit_id。此步骤不得修改 vault。
+      6. 先在内存中形成唯一 canonical lint context result；`lint-context.json` 完整承载 canonical vault path、配置来源、effective schema、active layout name/version/hashes/完整 routing、排除项、页面数量、index/log 状态、审计时间与稳定 audit_id，Markdown 只从同一 result 渲染、不得独立推导或补充事实，并在同一批 artifact 写入中提交二者。此步骤不得修改 vault。
     input: 用户任务（vault 由 wiki-context 交互式确认；默认等价于 wiki-lint --check）
     output: lint-context.md + lint-context.json（vault、effective schema、active routing、scope、inventory、audit_id）
     check: |
-      独立复核 lint-context.md 与配置、vault/AGENTS.md、index.md、log.md。确认 config precedence、schema precedence、空值 fail-closed 和排除目录准确；schema source 与传给后续 deterministic checks 的参数一致；没有修改任何 vault 文件。任一不符即失败。
+      独立复核 lint-context.json 与配置、vault/AGENTS.md、index.md、log.md。确认 config precedence、schema precedence、空值 fail-closed 和排除目录准确；逐项核对 Markdown 的 audit_id、vault、schema、layout/routing hashes、scope、inventory/counts 与 warnings 是 JSON 的准确投影且无单侧事实；schema source 与传给后续 deterministic checks 的参数一致；没有修改任何 vault 文件。任一不符即失败。
     on_pass: structural_audit
     on_fail: build_lint_context
     max_fail_count: 3

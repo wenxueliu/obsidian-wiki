@@ -47,13 +47,13 @@ steps:
       3. canonicalize staged/final/raw paths，拒绝 traversal、symlink escape、同目标冲突与 staging root 外路径；final target 必须位于 page-contract routing.content_roots，并与 staged artifact 记录的 page type 经 `resolve_wiki_route.py` 重算结果一致。
       4. 对含 staged_write.job_id/job_id 的 artifact 解析 _meta/ingest-jobs 下唯一 Job，核对 artifact↔unit↔source hash/status/order；metadata-derived path 不能逃逸 vault/Job/staging roots。
       5. 对 patch 比较 target 当前 updated/hash 与 staged base，标出 conflicts，但保持只读。
-      6. 写 staging-inventory.md 和 staging-inventory.json。空队列/--list 也形成明确 no-op plan。
+      6. 先在内存中形成唯一 canonical staging inventory result；`staging-inventory.json` 完整承载 items、mode、counts、bindings、conflicts 与 stable inventory id，Markdown 只从同一 result 渲染、不得独立推导或补充事实，并在同一批 artifact 写入中提交二者。空队列/--list 也形成明确 no-op plan。
     input: wiki-stage-commit 请求及 interactive/--all/--reject-all/--list flags
     output: staging-inventory.md + staging-inventory.json
     check_voting:
       - check: 复扫 staging，核对 new/patch/age/target/conflict counts 与 invocation mode，空队列/--list 无遗漏
       - check: 复核所有 canonical boundaries、symlinks、Job/artifact/unit/source hash/status/order bindings，无 path escape
-      - check: 确认尚未修改 staging/live/raw/Job/manifest/index/log/hot/QMD
+      - check: 解析 staging inventory JSON，逐项核对 Markdown 的 inventory id、mode、items、counts、targets、bindings、conflicts 与 warnings 是同一 canonical result 的准确投影；确认尚未修改 staging/live/raw/Job/manifest/index/log/hot/QMD
     on_pass: review_queue
     on_fail: inventory_queue
     max_fail_count: 3

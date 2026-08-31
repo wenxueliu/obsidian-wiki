@@ -85,6 +85,25 @@ def test_setup_chain_uses_single_concise_checks() -> None:
     assert "obsidian-wiki doctor" not in setup
 
 
+def test_same_basename_json_markdown_producers_use_one_canonical_batch() -> None:
+    expected_producers = {
+        "wiki-context.yaml": 1,
+        "wiki-page-contract.yaml": 1,
+        "wiki-finalize-sources.yaml": 3,
+        "wiki-lint.yaml": 1,
+        "wiki-rebuild.yaml": 1,
+        "tag-taxonomy.yaml": 1,
+        "wiki-setup-contract.yaml": 2,
+        "wiki-stage-commit.yaml": 1,
+    }
+
+    for name, expected_count in expected_producers.items():
+        workflow = (ROOT / "workflows" / name).read_text(encoding="utf-8")
+        assert workflow.count("唯一 canonical") == expected_count
+        assert workflow.count("同一批 artifact 写入") == expected_count
+        assert workflow.count("不得独立推导或补充事实") == expected_count
+
+
 def test_workflow_transitions_target_declared_steps_or_done() -> None:
     for path in WORKFLOWS:
         text = path.read_text(encoding="utf-8")

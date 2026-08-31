@@ -48,13 +48,13 @@ steps:
       3. 按 routing.content_roots 统计 live pages、sources/projects 和需要归档的 index/log/manifest；列出必须保留的 archive/config 及其他 routing system/skip dirs。
       4. restore 模式扫描 _archives/*/archive-meta.json，canonicalize 候选，验证目录边界、metadata、必需内容与可读性；绑定用户选择的唯一 archive。
       5. 生成 timestamped destination（不得已存在）、copy manifest、clear allowlist、restore source、验证步骤、failure recovery 和 QMD plan。
-      6. 写 rebuild-plan.md 与 rebuild-plan.json，包含 stable plan_id 和所有路径/hash。不得创建 archive 或修改 vault。
+      6. 先在内存中形成唯一 canonical rebuild plan result；`rebuild-plan.json` 完整承载 stable plan_id、模式、inventory、所有路径/hash、动作与恢复方法，Markdown 只从同一 result 渲染、不得独立推导或补充事实，并在同一批 artifact 写入中提交二者。不得创建 archive 或修改 vault。
     input: archive、archive+rebuild 或 restore 请求（可含 archive id）
     output: rebuild-plan.md + rebuild-plan.json
     check_voting:
       - check: 复核 config/vault/mode、live inventory/counts、active layout 和 archive candidate metadata，所有 canonical paths 无 escape
       - check: 审计 copy/clear/restore allowlists，确认 _archives/.obsidian/.env 永不在删除/覆盖集合且 rebuild 不自动 ingest
-      - check: 确认计划含恢复方法/QMD/验证，当前 vault 完全未改变
+      - check: 解析 rebuild plan JSON，逐项核对 Markdown 的 plan_id、mode、counts、paths/hashes、actions、QMD、warnings 与恢复方法是同一 canonical result 的准确投影；确认当前 vault 完全未改变
     on_pass: approve_operation
     on_fail: inspect_and_plan
     max_fail_count: 3

@@ -25,10 +25,10 @@ steps:
 
       core artifacts 同时写入动态值声明、config defaults、Writing Profile create-only 策略、core file create/minimal-repair 策略，以及每个 Knowledge Pack 的 manifest、Knowledge Profile、routing、prompt、vault inventory 和对应 hashes。
 
-      只生成 `setup-core-contract.json` 与其 Markdown readout，不修改 vault、home 或外部系统。
+      builder 先形成唯一 canonical core contract result；`setup-core-contract.json` 完整承载该 result，Markdown readout 只从同一 result 渲染、不得独立推导或补充事实，并在同一批 artifact 写入中提交二者。只生成这两个 artifacts，不修改 vault、home 或外部系统。
     input: 父 workflow 的 non-secret invocation metadata（仅用于 provenance，不改变模板）
     output: setup-core-contract.json + setup-core-contract.md
-    check: 解析 core JSON/Markdown，核对必需 templates/Knowledge Packs inventory、Profile/Layout/Routing hashes、contract hash、config defaults 和 create-only/minimal-repair 策略；拒绝 symlink/path escape/reserved target，确认除 artifacts 外零写入
+    check: 解析 core JSON，核对 templates/Packs inventory、Profile/Layout/Routing/contract hashes、defaults 与 create/repair policy；核对 Markdown 的 inventory、paths、hashes、defaults、policies、warnings 是 JSON 投影且无单侧事实；拒绝 symlink/path escape/reserved target，确认仅写 artifacts
     on_pass: build_integration_contract
     on_fail: build_core_contract
     max_fail_count: 3
@@ -45,12 +45,12 @@ steps:
 
       console script 不在 PATH 时使用等价的 `python3 -m obsidian_wiki wiki-setup-contract-build finalize ...`。
 
-      builder 将 `integrations.json` 中的 QMD、Stop hook、Git sync、required checks、manual plugins 和 next steps 合并进 core contract，写出 `setup-contract.json` 与 `setup-contract.md`。
+      builder 将 `integrations.json` 中的 QMD、Stop hook、Git sync、required checks、manual plugins 和 next steps 合并进 core contract，先形成唯一 canonical final contract result；`setup-contract.json` 完整承载该 result，Markdown 只从同一 result 渲染、不得独立推导或补充事实，并在同一批 artifact 写入中提交二者。
 
       只生成最终 contract artifacts，不修改 vault、home 或外部系统。
     input: 已验证的 setup-core-contract.json/md + templates/wiki-setup/integrations.json
     output: setup-contract.json + setup-contract.md
-    check: 解析 final JSON/Markdown，核对 core/integration/final hash 链、QMD `_raw/**` exclusion、Stop hook、Git sync、plugins 和 next steps 等必需章节存在；确认只写 contract artifacts
+    check: 解析 final JSON，核对 core/integration/final hashes、QMD exclusion、hook、Git、plugins、checks 与 next steps；核对 Markdown 的对应字段和 warnings 是 JSON 投影且无单侧事实；确认仅写 contract artifacts
     on_pass: done
     on_fail: build_integration_contract
     max_fail_count: 3

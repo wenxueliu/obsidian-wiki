@@ -14,12 +14,13 @@ steps:
       1. 对每个 candidate 重读最新 Job/source/units、Packets、staging decisions、live page reports 和 permanent manifest；不得信任父报告中的缓存计数。
       2. eligible 必须同时满足：canonical source 仍对应 exact content hash；全部 planned units 按 source order integrated；所有相关页面 live 且通过页面校验；无 pending/failed/extracting/packet_ready/staged/rejected artifact。
       3. 不满足条件的 candidate 标 deferred，保留 Job/Packet/历史 manifest，写 exact reason 与 next action；绝不把 awaiting_review 当 complete。
-      4. 对 eligible source 计算去重 created/updated/live pages、source metadata、兼容 manifest fields 与预期 stats，写 `source-finalization-plan.json/md`。此步骤零写入 vault。
+      4. 对 eligible source 计算去重 created/updated/live pages、source metadata、兼容 manifest fields 与预期 stats，先形成唯一 canonical result；`source-finalization-plan.json` 完整承载该 result，Markdown 只从同一 result 渲染、不得独立推导或补充事实，并在同一批 artifact 写入中提交二者。此步骤零写入 vault。
     input: 父 workflow 提供的 candidate Jobs/sources/page reports/event type + 最新 vault state
     output: source-finalization-plan.json + source-finalization-plan.md
     check_voting:
       - check: 从磁盘重算 hash、unit order/status、staging 与 live pages，确认 eligible/deferred 和 next action 准确
       - check: 核对 manifest candidate 保留 unrelated entries/shape/fields，pages 去重且 stats 可复算
+      - check: 解析 finalization plan JSON，逐项核对 Markdown 的 source、eligibility、counts、paths、hash、warnings 与 next action 是同一 canonical result 的准确投影
       - check: 确认此步骤没有修改 Job、pages、index/log/hot/manifest/QMD
     on_pass: update_special_files
     on_fail: verify_completion_gate
@@ -33,12 +34,13 @@ steps:
       3. 以父 workflow event_type/run_id 幂等追加一条 parseable log event；重试只校验已有同 id 事件，不重复追加。
       4. 刷新约 500 字 hot.md，保留 `# Hot Cache`、updated、Recent Activity、Active Threads、Key Takeaways、Flagged Contradictions 与最近 3 次 operations；不得把 staged/deferred 内容写成 live。
       5. 所有文件通过 candidate + validation + temporary sibling + atomic replacement 更新。验证 changed pages 与三个 special files；失败时不得继续 manifest commit。
-      6. 写 `special-files-report.md/json`，记录 before/after、eligible/deferred sources、events、validation 和写入顺序。
+      6. 先形成唯一 canonical report result；`special-files-report.json` 完整承载 before/after、eligible/deferred sources、events、validation 和写入顺序，Markdown 只从同一 result 渲染、不得独立推导或补充事实，并在同一批 artifact 写入中提交二者。
     input: source-finalization-plan + 最新 index/log/hot + 父 workflow event type/run id
     output: 已验证的 index/log/hot（eligible 时）+ special-files-report
     check_voting:
       - check: 从 live pages 重算 index 与 counts，确认每页一次、deferred/staged 不进入 live tracking、unrelated 内容保留
       - check: 核对 log run_id 恰好一次、hot 章节/最近三次/约500字及事实一致性
+      - check: 解析 special-files report JSON，逐项核对 Markdown 的 sources、events、counts、validation、warnings 与 write order 是同一 canonical result 的准确投影
       - check: 验证 candidate/atomic 顺序；任何 special-file failure 都未推进 manifest
     on_pass: commit_manifest
     on_fail: update_special_files
@@ -52,13 +54,13 @@ steps:
       3. 使用同目录 temporary sibling + fsync/atomic replacement 写 `.manifest.json`；它必须是本事务最后一个永久 vault write。
       4. 对每个 eligible source 运行 `obsidian-wiki verify <source>` 或 package `verify_completeness`；修复 missing_entry/empty_pages/phantom_pages 后才把 source/Job 标 complete。验证失败保留可重试状态，不虚报完成。
       5. 只有 live Markdown 实际变化且 QMD wiki collection 已配置时，在 manifest commit 后运行 update/必要 embed，并用 ls/get 验证；QMD 失败记录 warning，不回滚 source of truth。
-      6. 写 `source-finalization-report.md/json`，逐 source 报告 committed/deferred、pages、special files、manifest locator、verify、QMD、warnings 与 next action。事实一致后输出 `<promise>done</promise>`。
+      6. 先形成唯一 canonical report result；`source-finalization-report.json` 完整承载逐 source 的 committed/deferred、pages、special files、manifest locator、verify、QMD、warnings 与 next action，Markdown 只从同一 result 渲染、不得独立推导或补充事实，并在同一批 artifact 写入中提交二者。事实一致后输出 `<promise>done</promise>`。
     input: finalization plan + special-files report + 最新 manifest/Jobs + QMD config
     output: manifest-last commit（eligible 时）+ source-finalization-report
     check_voting:
       - check: 复核 manifest shape/entries/stats/pages/hash、atomic replacement 和 last-write 顺序；deferred source 无永久推进
       - check: 重跑 verify/completeness，确认 eligible source/Job 仅在全部校验后 complete，失败状态可安全重试
-      - check: 核对 QMD guard/update/embed/verification、最终报告和磁盘事实，重试不会重复 index/log/hot/manifest 内容
+      - check: 核对 QMD guard/update/embed/verification、最终报告和磁盘事实；解析 finalization report JSON，逐项核对 Markdown 的 source 状态、pages、manifest locator、verify、QMD、warnings 与 next action 是同一 canonical result 的准确投影；重试不会重复 index/log/hot/manifest 内容
     on_pass: done
     on_fail: commit_manifest
     max_fail_count: 5
