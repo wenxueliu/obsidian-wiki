@@ -95,9 +95,13 @@ Packet extraction 并发硬上限，宿主可用隔离槽位更少时取较小�
    同一文档的多个 packet unit 也可并行提取；inline unit 不进入 extraction wave，也不生成 Packet。
 3. 每轮只领取 packet transport 的 pending/failed unit，最多达到并发上限，并在一次原子
    Job 更新中将它们标为 `extracting`，确保同一 unit 不会重复派发。
-4. 每个 extraction subagent 只获得 Job directory、一个 `source_id` 和当前 `unit_id`，并
-   执行 `wiki-source-text`。只接受该 skill 的 validated Packet 或失败报告作为 handoff；
-   coordinator 不重复 range 读取、extraction 或 Packet contract。
+4. 每个 packet unit 使用一个 fresh isolated extraction subagent。在 task 中明确要求它读取
+   并执行 `wiki-source-text` skill，且只传 Job directory、一个 `source_id` 和当前
+   `unit_id`；不传 source body、Packet body、wiki context、页面内容或相邻 unit metadata。
+   只接收 Packet path、packet-validation report path、source/unit/hash/range、warnings、
+   validated/failed status 与 recovery action；完整 source body 和 extracted items 不得回流
+   coordinator context。Coordinator 不重复 range 读取、extraction、Packet contract 或
+   validation。无 isolated subagent 或 skill 不可用时保留 unit 为 pending，不得降级提取。
 5. 可按完成顺序接收 validated Packet 并标为 `packet_ready`；后序 Packet 留在有界缓冲区。
 6. 严格按 Job 的 source/unit 全局顺序逐个执行 worker-only `wiki-packet-integrate`。packet
    transport 传入冻结 context/contract、Job 和 Packet；inline transport 传入冻结
@@ -112,9 +116,10 @@ Packet extraction 并发硬上限，宿主可用隔离槽位更少时取较小�
 输出：持续原子更新的 Job、Packets、page 或 staged artifacts，以及
 `unit-processing-report.md`。
 
-验收：对账调度报告、skill handoff 与最新 Job，确认并发上限、单 unit 隔离、无重复派发、
-integration 全局有序串行且 coordinator 未读取 source body。不要重复验收下游 skill 已负责的
-内部状态转换。
+验收：对账调度报告、skill handoff 与最新 Job，确认每个 extraction task 明确使用
+`wiki-source-text` skill 且只含三个允许输入，并发上限、单 unit 隔离、无重复派发、handoff
+不回传 source body/extracted items、integration 全局有序串行且 coordinator 未读取 source
+body。不要重复验收下游 skill 已负责的内部状态转换。
 
 ## 5. Finalize eligible sources
 

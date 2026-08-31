@@ -19,7 +19,7 @@ WORKFLOWS_DIR = ROOT / "workflows"
 SKILLS_DIR = ROOT / ".skills"
 BEGIN_MARKER = "<!-- BEGIN GENERATED WORKFLOW CONTRACT -->"
 END_MARKER = "<!-- END GENERATED WORKFLOW CONTRACT -->"
-CURATED_SKILLS = {"wiki-folder-ingest"}
+CURATED_SKILLS = {"wiki-folder-ingest", "wiki-source-text"}
 
 
 def workflow_description(workflow_text: str, path: Path) -> str:

@@ -10,7 +10,7 @@ WORKFLOWS = ROOT / "workflows"
 SKILLS = ROOT / ".skills"
 BEGIN_MARKER = "<!-- BEGIN GENERATED WORKFLOW CONTRACT -->\n````yaml\n"
 END_MARKER = "````\n<!-- END GENERATED WORKFLOW CONTRACT -->\n"
-CURATED_SKILLS = {"wiki-folder-ingest"}
+CURATED_SKILLS = {"wiki-folder-ingest", "wiki-source-text"}
 
 
 def test_every_top_level_workflow_has_a_matching_skill() -> None:
@@ -55,6 +55,31 @@ def test_curated_folder_ingest_skill_preserves_workflow_behavior() -> None:
         "<promise>done</promise>",
     ):
         assert behavior in skill
+
+
+def test_curated_source_text_skill_is_an_isolated_worker_contract() -> None:
+    skill = (SKILLS / "wiki-source-text" / "SKILL.md").read_text(encoding="utf-8")
+    adapter = (WORKFLOWS / "wiki-source-text.yaml").read_text(encoding="utf-8")
+
+    assert BEGIN_MARKER not in skill
+    assert END_MARKER not in skill
+    for behavior in (
+        "canonical Job directory",
+        "exact `source_id`",
+        "exact `unit_id`",
+        "text-chunk-read",
+        "whole-source `content_hash`",
+        "references/extraction-frame.md",
+        "validate_packet",
+        "Do not modify `job.json`",
+        "never call `wiki-packet-integrate`",
+    ):
+        assert behavior in skill
+    assert "fresh isolated subagent" in adapter
+    assert "明确要求读取并执行 `wiki-source-text` skill" in adapter
+    assert "不得在 adapter 内降级读取 source 或执行 extraction" in adapter
+    assert adapter.count("  - id:") == 1
+    assert "obsidian-wiki text-chunk-read" not in adapter
 
 
 def test_sync_checker_reports_clean_repository_contracts() -> None:

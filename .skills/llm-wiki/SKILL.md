@@ -73,7 +73,7 @@ steps:
       2. Retrieval Primitives：index/frontmatter → summary → anchored grep context → whole page last；说明 QMD 是可选 index、Markdown 是 source of truth。
       3. 写入事务：direct/staged 边界、validation、index/log/hot、manifest-last、QMD 仅在 live commit 后刷新。
       4. ingest append/rebuild/restore 路由，canonical sources、delta、idempotency、cross-links、contradictions 与 trust review。
-      5. 为实际任务给出 workflow map：wiki-setup、wiki-folder-ingest → wiki-source-text → wiki-packet-integrate → wiki-finalize-sources、wiki-stage-commit、wiki-query、wiki-lint、wiki-status、wiki-rebuild 等，注明每个读写权限和完成条件。
+      5. 为实际任务给出 workflow map：wiki-setup、wiki-folder-ingest → isolated subagent 的 worker-only wiki-source-text skill → wiki-packet-integrate → wiki-finalize-sources、wiki-stage-commit、wiki-query、wiki-lint、wiki-status、wiki-rebuild 等，注明每个读写权限和完成条件。
       6. 给出 phased adoption 与 acceptance criteria，避免要求全 vault 读取或数据库依赖。
 
       本步骤仍只输出设计，不执行任何专用 workflow。

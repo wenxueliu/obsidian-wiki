@@ -44,11 +44,15 @@ Unsupported formats remain visible in the Job report and are never silently deco
 
 ### 2. Pull information
 
-An isolated `wiki-source-text` worker materializes exactly one hash-verified range and pulls out
-concepts, entities, claims, relationships, and open questions into one bounded Packet. It never
-reads neighboring ranges or writes wiki pages. Multiple workers, including workers for units from
-the same document, may extract concurrently up to `WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS`;
-the host may impose a lower limit.
+For each packet unit, the coordinator starts a fresh isolated subagent and explicitly requires it to
+use the worker-only `wiki-source-text` skill. The task contains only the Job directory, source ID,
+and unit ID. The worker materializes exactly one hash-verified range and pulls out concepts,
+entities, claims, relationships, and open questions into one bounded Packet. It never reads
+neighboring ranges or writes wiki pages, and only Packet/report paths plus bounded validation
+metadata return to the coordinator. Multiple workers, including workers for units from the same
+document, may extract concurrently up to `WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS`; the host may
+impose a lower limit. Without isolated subagents, units remain pending rather than falling back to
+coordinator-side extraction.
 
 Small complete sources (16,000 bytes by default, configurable with
 `WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES`) take an inline fast path: the serial integration worker reads

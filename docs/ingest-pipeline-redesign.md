@@ -66,8 +66,8 @@ independent text-chunker
   produce deterministic source ranges
         |
         v
-wiki-source-text
-  one range per isolated context -> one bounded Packet
+isolated subagent + wiki-source-text skill
+  one coordinator-assigned range -> one bounded Packet
         |
         v
 wiki-packet-integrate
@@ -94,7 +94,8 @@ never reads or receives full source bodies.
 - invoke the partition planner for each changed text source;
 - route sources at or below the configured direct-extraction threshold to serialized inline
   integration while retaining one logical full-source unit;
-- route each larger-source part to `wiki-source-text` in an isolated context;
+- start one fresh isolated subagent per larger-source part and explicitly require it to use the
+  worker-only `wiki-source-text` skill;
 - queue Packet and inline transports for serialized `wiki-packet-integrate` integration;
 - generate matching JSON and Markdown reports for complete, incomplete, unchanged, unsupported,
   and failed sources from current Job and manifest facts.
@@ -113,9 +114,12 @@ summarize, infer, call a model, create Packets, or know about the vault.
 
 ### 4.3 `wiki-source-text`
 
-This skill processes one planned packet-transport source range at a time. It reads only that range through the
-partitioner, extracts bounded knowledge with exact provenance, and writes one Packet. It does not
-read other ranges, write wiki pages, or update shared job or manifest files.
+This worker-only skill processes one coordinator-assigned packet-transport source range at a time.
+The coordinator starts a fresh isolated subagent and passes only the canonical Job directory,
+source ID, and unit ID. The skill reads only that range through the partitioner, extracts bounded
+knowledge with exact provenance, validates one Packet, and returns only a bounded handoff. It does
+not read other ranges, write wiki pages, update shared Job or manifest files, or spawn workers of
+its own. Without isolated subagent support, the coordinator leaves the unit pending.
 
 ### 4.4 `wiki-packet-integrate`
 
@@ -406,8 +410,10 @@ For one or more changed sources:
    normal ranges with one logical full-source inline unit and do not allocate a Packet path;
 4. reconcile interrupted packet-transport `extracting` units from their planned Packet paths;
 5. claim up to `WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS` pending packet units in one atomic Job update;
-6. use isolated workers to run `text-chunk-read` and materialize only each assigned packet unit;
-7. create one independent Packet per packet unit with `wiki-source-text`;
+6. start one fresh isolated subagent per claimed packet unit, pass only Job directory/source ID/unit
+   ID, and explicitly require the `wiki-source-text` skill;
+7. let that skill run `text-chunk-read`, create and validate one independent Packet, and return only
+   its Packet/report paths plus bounded status metadata;
 8. buffer Packets that finish ahead of earlier units;
 9. integrate Packet and inline transports serially in stable source/unit order with
    `wiki-packet-integrate`; inline extraction remains in memory;

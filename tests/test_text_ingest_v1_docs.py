@@ -6,17 +6,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_v1_skills_are_packaged_and_have_clear_write_ownership():
     folder = (ROOT / "workflows" / "wiki-folder-ingest.yaml").read_text()
-    worker = (ROOT / "workflows" / "wiki-source-text.yaml").read_text()
+    worker = (ROOT / ".skills" / "wiki-source-text" / "SKILL.md").read_text()
+    adapter = (ROOT / "workflows" / "wiki-source-text.yaml").read_text()
     integrator = (ROOT / "workflows" / "wiki-packet-integrate.yaml").read_text()
 
     assert "不能读取或接收完整 source body" in folder
-    assert "不修改 job.json 或任何共享文件" in worker
+    assert "Do not modify `job.json` or any shared file" in worker
+    assert "fresh isolated subagent" in adapter
     assert "不得更新 index/log/hot/manifest" in integrator
     assert "串行增量 reducer" in integrator
 
 
 def test_extraction_and_synthesis_guidance_remain_in_the_correct_stage():
-    worker = (ROOT / "workflows" / "wiki-source-text.yaml").read_text()
+    worker = (ROOT / ".skills" / "wiki-source-text" / "SKILL.md").read_text()
     extraction = (
         ROOT / ".skills" / "wiki-source-text" / "references" / "extraction-frame.md"
     ).read_text()
@@ -43,6 +45,17 @@ def test_extraction_and_synthesis_guidance_remain_in_the_correct_stage():
         assert f"**{relationship}**" in prompts
     assert "Paper Extraction Frame is intentionally absent" in prompts
     assert "do not reconcile with\nother ranges or the wiki" in extraction
+
+
+def test_folder_ingest_dispatches_source_text_as_an_isolated_skill_worker():
+    coordinator = (ROOT / "workflows" / "wiki-folder-ingest.yaml").read_text()
+
+    assert "fresh isolated extraction subagent" in coordinator
+    assert "明确要求 subagent 读取并执行 `wiki-source-text` skill" in coordinator
+    assert "Job directory、一个 source_id 和当前 unit_id" in coordinator
+    assert "完整 source body 和 extracted items 不得回流 coordinator context" in coordinator
+    assert "无 isolated subagent 或 skill 不可用时保留 unit 为 pending" in coordinator
+    assert "以 bare workflow name 调用 `wiki-source-text`" not in coordinator
 
 
 def test_page_writes_staging_and_cross_references_remain_integrated():
