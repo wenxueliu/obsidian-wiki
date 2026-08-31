@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Generate one Agent Skill contract for every top-level workflow YAML.
+"""Generate Agent Skill contracts from top-level workflow YAML files.
 
-The workflow is the source of truth.  Generated SKILL.md files embed the full
-workflow byte-for-byte so agents receive the contract directly instead of a
-summary or a pointer to another file.
+Most generated skills embed their workflow byte-for-byte.  Curated skills are
+maintained as agent-native instructions and intentionally excluded from this
+mechanical sync.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ WORKFLOWS_DIR = ROOT / "workflows"
 SKILLS_DIR = ROOT / ".skills"
 BEGIN_MARKER = "<!-- BEGIN GENERATED WORKFLOW CONTRACT -->"
 END_MARKER = "<!-- END GENERATED WORKFLOW CONTRACT -->"
+CURATED_SKILLS = {"wiki-folder-ingest"}
 
 
 def workflow_description(workflow_text: str, path: Path) -> str:
@@ -63,11 +64,16 @@ def expected_skills() -> dict[Path, str]:
     return {
         SKILLS_DIR / workflow_path.stem / "SKILL.md": render_skill(workflow_path)
         for workflow_path in sorted(WORKFLOWS_DIR.glob("*.yaml"))
+        if workflow_path.stem not in CURATED_SKILLS
     }
 
 
 def check() -> list[str]:
     errors: list[str] = []
+    for name in sorted(CURATED_SKILLS):
+        skill_path = SKILLS_DIR / name / "SKILL.md"
+        if not skill_path.is_file():
+            errors.append(f"missing curated skill: {skill_path.relative_to(ROOT)}")
     for skill_path, expected in expected_skills().items():
         relative = skill_path.relative_to(ROOT)
         if not skill_path.is_file():
@@ -113,13 +119,20 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 1
-            print(f"workflow/skill parity OK ({len(expected_skills())} pairs)")
+            pair_count = len(expected_skills()) + len(CURATED_SKILLS)
+            print(f"workflow/skill parity OK ({pair_count} pairs)")
             return 0
 
         changed = sync()
         for path in changed:
             print(f"synced: {path.relative_to(ROOT)}")
-        print(f"workflow/skill parity OK ({len(expected_skills())} pairs)")
+        errors = check()
+        if errors:
+            for error in errors:
+                print(error, file=sys.stderr)
+            return 1
+        pair_count = len(expected_skills()) + len(CURATED_SKILLS)
+        print(f"workflow/skill parity OK ({pair_count} pairs)")
         return 0
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
