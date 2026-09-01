@@ -56,6 +56,11 @@ def sha256(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
+def normalize_text(data: bytes) -> str:
+    """Decode UTF-8 text with one canonical LF newline convention."""
+    return data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+
+
 def atomic_write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}-", suffix=".tmp", dir=path.parent)
@@ -101,13 +106,13 @@ def build_core(templates_dir: Path, layouts_dir: Path, output_dir: Path) -> None
     templates: dict[str, Any] = {}
     for name, allowed in TEMPLATE_RULES.items():
         path = templates_dir / name
-        data = path.read_bytes()
-        text = data.decode("utf-8")
+        text = normalize_text(path.read_bytes())
+        data = text.encode("utf-8")
         found = set(PLACEHOLDER.findall(text))
         if found != allowed:
             raise ValueError(f"{name} placeholders {sorted(found)} != expected {sorted(allowed)}")
         if name.endswith(".json"):
-            load_json(path)
+            json.loads(text)
         else:
             validate_markdown(name, text)
         templates[name] = {
