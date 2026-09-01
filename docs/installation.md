@@ -27,6 +27,22 @@ obsidian-wiki setup --project .   # also drop project-local skills + AGENTS.md i
 obsidian-wiki setup --copy        # copy skill files instead of symlinking
 ```
 
+For a self-contained project installation using the software-knowledge layout, run:
+
+```bash
+obsidian-wiki setup --layout software-knowledge --project . --project-only --copy
+```
+
+This selects the `software-knowledge` Knowledge Pack, initializes the configured vault, and
+installs project-local skills, bootstrap files, and a missing `.env` from the packaged template
+under the current repository. `--project-only`
+skips global agent installation; it does not skip vault/configuration setup. `--copy` stores
+independent skill files instead of symlinks, which is useful when the project must remain
+self-contained.
+
+The project `.env` is created only when it does not already exist; setup never overwrites an
+existing project configuration.
+
 `OBSIDIAN_VAULT_PATH` is just any directory where you want your digital brain to live — a new empty folder or an existing Obsidian vault. Omit `--vault` to be prompted, or set it later in `~/.obsidian-wiki/config`.
 
 Run `obsidian-wiki info` to see the resolved paths and `obsidian-wiki doctor` to health-check the result. See the [CLI reference](cli.md) for everything else the package ships.

@@ -75,6 +75,23 @@ def test_setup_parser_accepts_skills_only_and_marker_refresh() -> None:
     assert refresh_args.refresh_layout_marker is True
 
 
+def test_project_setup_copies_packaged_env_template_only_when_missing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    template = tmp_path / "packaged.env.example"
+    template.write_text("OBSIDIAN_VAULT_PATH=\n", encoding="utf-8")
+    project = tmp_path / "project"
+    monkeypatch.setattr(cli, "_env_example_path", lambda: template)
+
+    assert cli.ensure_project_env(project) is True
+    assert (project / ".env").read_text(encoding="utf-8") == template.read_text(encoding="utf-8")
+
+    (project / ".env").write_text("OBSIDIAN_VAULT_PATH=/custom\n", encoding="utf-8")
+    assert cli.ensure_project_env(project) is False
+    assert (project / ".env").read_text(encoding="utf-8") == "OBSIDIAN_VAULT_PATH=/custom\n"
+
+
 def test_setup_without_layout_preserves_existing_custom_pack(
     tmp_path: Path,
     monkeypatch,

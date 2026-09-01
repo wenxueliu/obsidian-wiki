@@ -301,6 +301,31 @@ def install_project(project_dir: Path, mode: str) -> None:
     print(f"✅  Linked AGENTS.md aliases ({', '.join(AGENTS_ALIASES)})")
 
 
+def _env_example_path() -> Path:
+    """Return the packaged project configuration template."""
+    for candidate in (
+        _pkg_dir() / "_data" / ".env.example",
+        _pkg_dir().parent / ".env.example",
+    ):
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        "Could not locate bundled .env.example. Reinstall obsidian-wiki "
+        "(`pip install --force-reinstall obsidian-wiki`)."
+    )
+
+
+def ensure_project_env(project_dir: Path) -> bool:
+    """Create a project-local .env from the bundled template if it is missing."""
+    project_dir.mkdir(parents=True, exist_ok=True)
+    target = project_dir / ".env"
+    if target.exists():
+        return False
+    shutil.copyfile(_env_example_path(), target)
+    print(f"✅  Created project config → {target}")
+    return True
+
+
 # ── Config ───────────────────────────────────────────────────────────────────
 def _read_config_value(key: str) -> str:
     if not GLOBAL_CONFIG.is_file():
@@ -918,6 +943,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
 
     if args.project is not None:
         project_dir = Path(args.project or os.getcwd()).expanduser().resolve()
+        ensure_project_env(project_dir)
         install_project(project_dir, mode)
 
     sync_configured = False
