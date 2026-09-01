@@ -41,7 +41,8 @@ independent skill files instead of symlinks, which is useful when the project mu
 self-contained.
 
 The project `.env` is created only when it does not already exist; setup never overwrites an
-existing project configuration.
+existing project configuration. When `--vault` is supplied, its resolved absolute path is
+written to `OBSIDIAN_VAULT_PATH` in the new `.env`.
 
 `OBSIDIAN_VAULT_PATH` is just any directory where you want your digital brain to live — a new empty folder or an existing Obsidian vault. Omit `--vault` to be prompted, or set it later in `~/.obsidian-wiki/config`.
 

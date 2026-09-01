@@ -318,13 +318,24 @@ def _env_example_path() -> Path:
     )
 
 
-def ensure_project_env(project_dir: Path) -> bool:
-    """Create a project-local .env from the bundled template if it is missing."""
+def ensure_project_env(
+    project_dir: Path,
+    overrides: dict[str, str] | None = None,
+) -> bool:
+    """Create a project-local .env from the template, applying setup overrides."""
     project_dir.mkdir(parents=True, exist_ok=True)
     target = project_dir / ".env"
     if target.exists():
         return False
-    shutil.copyfile(_env_example_path(), target)
+    content = _env_example_path().read_text(encoding="utf-8")
+    for key, value in (overrides or {}).items():
+        replacement = f'{key}="{value}"'
+        content, count = re.subn(rf"^{re.escape(key)}=.*$", replacement, content, count=1, flags=re.MULTILINE)
+        if count == 0:
+            if content and not content.endswith("\n"):
+                content += "\n"
+            content += replacement + "\n"
+    target.write_text(content, encoding="utf-8")
     print(f"✅  Created project config → {target}")
     return True
 
@@ -946,7 +957,8 @@ def cmd_setup(args: argparse.Namespace) -> int:
 
     if args.project is not None:
         project_dir = Path(args.project or os.getcwd()).expanduser().resolve()
-        ensure_project_env(project_dir)
+        env_overrides = {"OBSIDIAN_VAULT_PATH": vault_path} if vault_path else None
+        ensure_project_env(project_dir, env_overrides)
         install_project(project_dir, mode)
 
     sync_configured = False

@@ -101,6 +101,19 @@ def test_project_setup_copies_packaged_env_template_only_when_missing(
     assert (project / ".env").read_text(encoding="utf-8") == "OBSIDIAN_VAULT_PATH=/custom\n"
 
 
+def test_project_setup_applies_vault_override_to_new_env(tmp_path: Path, monkeypatch) -> None:
+    template = tmp_path / "packaged.env.example"
+    template.write_text("# config\nOBSIDIAN_VAULT_PATH=\n", encoding="utf-8")
+    project = tmp_path / "project"
+    monkeypatch.setattr(cli, "_env_example_path", lambda: template)
+
+    cli.ensure_project_env(project, {"OBSIDIAN_VAULT_PATH": "/tmp/my-vault"})
+
+    assert (project / ".env").read_text(encoding="utf-8") == (
+        '# config\nOBSIDIAN_VAULT_PATH="/tmp/my-vault"\n'
+    )
+
+
 def test_setup_without_layout_preserves_existing_custom_pack(
     tmp_path: Path,
     monkeypatch,
