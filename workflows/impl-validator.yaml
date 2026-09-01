@@ -12,7 +12,7 @@ steps:
   - id: bind_validation
     desc: 绑定目标、产物与逐项检查清单
     do: |
-      本 YAML 是 implementation validation 的完整运行时规范。解析用户输入或调用方提供的 `impl-validator check:` block。
+      本 skill 是 implementation validation 的完整运行时规范。解析用户输入或调用方提供的 `impl-validator check:` block。
 
       1. 将 goal 重述为一个可验证句子；subagent 模式严格使用 goal/artifacts/checks，不自行扩大范围。
       2. 用户模式从当前对话识别目标和实际产物；若关键目标含糊，在继续前只问一个必要问题，不凭猜测做关键检查。

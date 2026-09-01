@@ -1222,6 +1222,73 @@ def cmd_text_chunk_read(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_text_document_plan(args: argparse.Namespace) -> int:
+    from obsidian_wiki.ingest_documents import plan_ingest_documents
+    from obsidian_wiki.ingest_pipeline import PipelineContractError
+
+    try:
+        result = plan_ingest_documents(
+            Path(args.source), Path(args.vault),
+            target_budget=args.target_budget,
+            hard_budget=args.hard_budget,
+            min_budget=args.min_budget,
+            chunk_strategy=args.chunk_strategy,
+            strategy_options=_load_strategy_options(args),
+        )
+        _emit_workflow_json(result, pretty=args.pretty, output=args.output)
+    except (OSError, ValueError, PipelineContractError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_text_document_read(args: argparse.Namespace) -> int:
+    from obsidian_wiki.ingest_documents import read_document
+    from obsidian_wiki.ingest_pipeline import PipelineContractError
+
+    try:
+        content = read_document(Path(args.plan), args.document_id)
+    except (OSError, ValueError, PipelineContractError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    sys.stdout.buffer.write(content.encode("utf-8"))
+    return 0
+
+
+def cmd_text_document_commit(args: argparse.Namespace) -> int:
+    from obsidian_wiki.ingest_documents import commit_document
+    from obsidian_wiki.ingest_pipeline import PipelineContractError
+
+    try:
+        result = commit_document(
+            Path(args.plan), args.document_id,
+            pages_created=args.created_page,
+            pages_updated=args.updated_page,
+        )
+        _emit_workflow_json(result, pretty=args.pretty, output=args.output)
+    except (OSError, ValueError, PipelineContractError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_text_document_run(args: argparse.Namespace) -> int:
+    from obsidian_wiki.ingest_documents import run_document_sessions
+    from obsidian_wiki.ingest_pipeline import PipelineContractError
+
+    try:
+        result = run_document_sessions(
+            Path(args.plan), Path(args.context),
+            claude_executable=args.claude_executable,
+            timeout_seconds=args.worker_timeout_seconds,
+        )
+        _emit_workflow_json(result, pretty=args.pretty, output=args.output)
+    except (OSError, ValueError, PipelineContractError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 1 if result["failed"] else 0
+
+
 def _emit_workflow_json(value: dict, *, pretty: bool, output: str | None) -> None:
     rendered = json.dumps(value, ensure_ascii=False, indent=2 if pretty else None) + "\n"
     if output is None:
@@ -1279,6 +1346,24 @@ def cmd_text_ingest_status(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return 0
+
+
+def cmd_text_ingest_extract(args: argparse.Namespace) -> int:
+    from obsidian_wiki.claude_workers import run_claude_extraction_pool
+    from obsidian_wiki.ingest_pipeline import PipelineContractError
+
+    try:
+        result = run_claude_extraction_pool(
+            Path(args.job),
+            max_workers=args.max_workers,
+            timeout_seconds=args.worker_timeout_seconds,
+            claude_executable=args.claude_executable,
+        )
+        _emit_workflow_json(result, pretty=args.pretty, output=args.output)
+    except (OSError, ValueError, PipelineContractError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 1 if result["failed"] else 0
 
 
 def cmd_text_ingest_report(args: argparse.Namespace) -> int:
@@ -2453,6 +2538,51 @@ def build_parser() -> argparse.ArgumentParser:
                      help="explicitly allow reading a planned range above 64000 bytes")
     tcr.set_defaults(func=cmd_text_chunk_read)
 
+    tdp = sub.add_parser(
+        "text-document-plan",
+        help="normalize text sources into independent manifest-backed ingest documents",
+    )
+    tdp.add_argument("source", help="supported text file or directory to ingest")
+    tdp.add_argument("--vault", required=True, help="resolved Obsidian vault path")
+    tdp.add_argument("--target-budget", type=int, default=48_000)
+    tdp.add_argument("--hard-budget", type=int, default=64_000)
+    _add_chunk_strategy_args(tdp)
+    tdp.add_argument("--output", required=True, help="atomically write the document plan")
+    tdp.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    tdp.set_defaults(func=cmd_text_document_plan)
+
+    tdr = sub.add_parser(
+        "text-document-read",
+        help="verify and write exactly one ingest document from a document plan",
+    )
+    tdr.add_argument("plan", help="document plan JSON")
+    tdr.add_argument("--document-id", required=True, help="planned ingest document id")
+    tdr.set_defaults(func=cmd_text_document_read)
+
+    tdc = sub.add_parser(
+        "text-document-commit",
+        help="atomically record one integrated ingest document in .manifest.json",
+    )
+    tdc.add_argument("plan", help="document plan JSON")
+    tdc.add_argument("--document-id", required=True, help="planned ingest document id")
+    tdc.add_argument("--created-page", action="append", default=[], metavar="PATH")
+    tdc.add_argument("--updated-page", action="append", default=[], metavar="PATH")
+    tdc.add_argument("--output", help="atomically write the JSON commit result")
+    tdc.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    tdc.set_defaults(func=cmd_text_document_commit)
+
+    tdx = sub.add_parser(
+        "text-document-run",
+        help="process pending ingest documents in fresh serialized Claude sessions",
+    )
+    tdx.add_argument("plan", help="document plan JSON")
+    tdx.add_argument("--context", required=True, help="frozen wiki-context.json")
+    tdx.add_argument("--worker-timeout-seconds", type=int, default=3600)
+    tdx.add_argument("--claude-executable", default="claude")
+    tdx.add_argument("--output", help="atomically write the JSON session report")
+    tdx.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    tdx.set_defaults(func=cmd_text_document_run)
+
     tip = sub.add_parser(
         "text-ingest-plan",
         help="discover text sources and atomically create or resume a deterministic ingest Job",
@@ -2482,6 +2612,21 @@ def build_parser() -> argparse.ArgumentParser:
     tis.add_argument("--output", help="atomically write the JSON summary to this artifact path")
     tis.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
     tis.set_defaults(func=cmd_text_ingest_status)
+
+    tie = sub.add_parser(
+        "text-ingest-extract",
+        help="run packet extraction through a bounded pool of isolated claude -p workers",
+    )
+    tie.add_argument("job", help="ingest Job directory")
+    tie.add_argument("--max-workers", type=int, default=4,
+                     help="maximum concurrent Claude workers (default: 4; hard max: 32)")
+    tie.add_argument("--worker-timeout-seconds", type=int, default=3600,
+                     help="timeout for each unit worker (default: 3600)")
+    tie.add_argument("--claude-executable", default="claude",
+                     help="Claude Code executable (default: claude)")
+    tie.add_argument("--output", help="atomically write the JSON scheduling report")
+    tie.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    tie.set_defaults(func=cmd_text_ingest_extract)
 
     tir = sub.add_parser(
         "text-ingest-report",

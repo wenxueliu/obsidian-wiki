@@ -80,6 +80,8 @@ Skills live in `.skills/<name>/SKILL.md`. Match the user's intent to the right s
 | "set up my wiki" / "initialize" | `wiki-setup` |
 | "/wiki-history-ingest claude" / "/wiki-history-ingest codex" / "/wiki-history-ingest hermes" / "/wiki-history-ingest pi" | `wiki-history-ingest` |
 | "ingest this folder" / "process these text docs" / a local `.md`, `.markdown`, `.mdx`, `.txt`, or `.rst` source | `wiki-folder-ingest` |
+| "lightweight ingest" / "ingest without Job or Packet" / `/wiki-ingest` | `wiki-ingest` |
+| One lightweight ingest document assigned by `wiki-ingest` | `wiki-ingest-document` (worker-only) |
 | One planned text range assigned by an ingest Job | `wiki-source-text` |
 | One coordinator-assigned Packet transaction | `wiki-packet-integrate` (worker-only) |
 | PDF, Office, structured data, logs/transcripts, HTML/URLs, media, archives, or source code | Explicitly unsupported by text ingest V1; use a dedicated skill when one exists |

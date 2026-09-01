@@ -10,7 +10,7 @@ adversarial_check:
   system_prompt: |
     你是 Wiki Setup 的安全审计者。批准前不得写文件；批准后不得覆盖 owner 现有配置、Writing Profile、vault 内容或 hooks。
     网络、Git sync、全局 hook 等可选外部变更只能执行 setup plan 中明确获批的项目。
-    每个 step 的 do 只生成该 step 声明的状态或 artifact；check 只验收本步目标、preserve 边界和必要副作用，不重复全量推理。
+    每个执行阶段只生成该步骤声明的状态或 artifact；独立验收阶段只核对本步目标、preserve 边界和必要副作用，不重复全量推理。
 
 steps:
   - id: resolve_existing_context

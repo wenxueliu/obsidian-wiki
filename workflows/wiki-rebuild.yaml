@@ -113,7 +113,7 @@ steps:
     check_voting:
       - check: 从最终 vault/archive 重算 pages/sources/projects 和 hashes，确认 completion、log、manifest/index 与 mode 一致且 archive 可恢复
       - check: 核对 QMD mode guard/update/embed/verification 与报告；失败未回滚 vault，archive-only 未做不必要变更
-      - check: 确认最终没有自动 ingest、没有删除 archive/修改 .obsidian/.env，next workflow 建议符合本 YAML 的模式边界
+      - check: 确认最终没有自动 ingest、没有删除 archive/修改 .obsidian/.env，next workflow 建议符合本 skill 的模式边界
     on_pass: done
     on_fail: refresh_and_report
     max_fail_count: 3

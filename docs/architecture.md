@@ -37,36 +37,34 @@ Every time you feed the brain, it runs through these:
 
 ### 1. Ingest
 
-Text ingest V1 discovers local UTF-8 Markdown, plain-text, and reStructuredText files. The folder
-coordinator classifies and hashes files but never receives their bodies. A deterministic streaming
-chunker plans exhaustive line/byte ranges so even a large document never enters one agent context.
-Unsupported formats remain visible in the Job report and are never silently decoded as text.
+Text ingest discovers local UTF-8 Markdown, plain-text, and reStructuredText files and offers two
+entry points. `wiki-folder-ingest` is the recoverable Job/Packet pipeline. `wiki-ingest` is the
+lightweight, skill-only path: a deterministic streaming chunker normalizes every Source File into
+Ingest Documents, so a small file produces one document and a large file produces several.
+Unsupported formats remain visible and are never silently decoded as text.
 
 ### 2. Pull information
 
-For each packet unit, the coordinator starts a fresh isolated subagent and explicitly requires it to
-use the worker-only `wiki-source-text` skill. The task contains only the Job directory, source ID,
-and unit ID. The worker materializes exactly one hash-verified range and pulls out concepts,
-entities, claims, relationships, and open questions into one bounded Packet. It never reads
-neighboring ranges or writes wiki pages, and only Packet/report paths plus bounded validation
-metadata return to the coordinator. Multiple workers, including workers for units from the same
-document, may extract concurrently up to `WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS`; the host may
-impose a lower limit. Without isolated subagents, units remain pending rather than falling back to
-coordinator-side extraction.
+Each pending Ingest Document runs in a fresh model session with only its plan binding and frozen
+wiki context. The worker materializes exactly one hash-verified range and treats it as a complete
+input document. Sessions do not share source bodies or model context, so the original file size can
+never overflow a single session. Writes remain serialized to avoid two sessions overwriting the
+same canonical page.
 
-Small complete sources (16,000 bytes by default, configurable with
-`WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES`) take an inline fast path: the serial integration worker reads
-and extracts the single full-source unit in memory, without creating a Packet file. The logical unit
-and source-hash checks remain, preserving provenance, review state, retries, and manifest finalization.
+In the recoverable `wiki-folder-ingest` path, small sources use inline integration while larger
+ranges are extracted through bounded isolated workers into validated Packets. The durable Job owns
+resume, ordering, staged review, and source-level completion.
 
 Each page also gets a 1–2 sentence `summary:` in its frontmatter at write time — later queries use this to preview pages without opening them.
 
 ### 3. Merge
 
-`wiki-packet-integrate` validates and integrates Packet or inline transports serially in source
-order. New knowledge merges against what's already there; contradictions and exact source locators
-are retained. Before routing, the integrator applies the active Knowledge Profile's scope and
-extraction policy. Transport boundaries never become page boundaries.
+The lightweight worker directly merges new knowledge against existing canonical pages; contradictions and exact
+source/document locators are retained. It applies the active Knowledge Profile before routing.
+Ingest Document boundaries never become Wiki page boundaries. After page and special-file
+validation, one atomic manifest record marks that document complete; failures leave no record and
+are retried naturally. The recoverable path performs the equivalent merge through
+`wiki-packet-integrate` and finalizes complete sources through `wiki-finalize-sources`.
 
 ### 4. Schema
 
@@ -76,8 +74,9 @@ categories stay consistent, wikilinks point to real pages, and the index reflect
 there. Changing a vault to a different Pack is a content-aware migration, not an automatic schema
 expansion during ingest.
 
-A durable Job under `_meta/ingest-jobs/` tracks pending ranges and Packets for interruption-safe
-resume. `.manifest.json` advances only after every unit for one exact source version integrates.
+`wiki-ingest` creates no Job, unit state machine, Packet, extraction dump, or durable worker
+directory; `.manifest.json` itself is its completion ledger. `wiki-folder-ingest` intentionally
+retains durable Jobs and Packets for interruption-safe resume and staged review.
 
 ## The loop
 
@@ -86,8 +85,8 @@ resume. `.manifest.json` advances only after every unit for one exact source ver
 3. Agent loads the active Knowledge Profile and Vault Layout from the bound Knowledge Pack
 4. Agent reads the relevant skill for instructions
 5. Agent uses its built-in tools to do the work
-6. Range workers produce bounded Packets with configured concurrency; integration consumes them serially
-7. Agent updates `.manifest.json`, `index.md`, `log.md`, and `hot.md` only at source completion
+6. The selected skill runs either fresh Ingest Document sessions or Job-bound range workers
+7. The selected completion boundary commits either one validated document or one complete source
 8. Output is standard Obsidian-compatible markdown with frontmatter and `[[wikilinks]]`
 
 ## Vault structure
@@ -103,7 +102,7 @@ $OBSIDIAN_VAULT_PATH/
 ├── .manifest.json          # Ingest ledger: path, timestamps, pages produced
 ├── _meta/
 │   ├── taxonomy.md         # Controlled tag vocabulary
-│   ├── ingest-jobs/        # Durable text-ingest Jobs and bounded Packets
+│   ├── ingest-jobs/        # Durable wiki-folder-ingest Jobs and bounded Packets
 │   └── *.base              # Obsidian Bases dashboard definitions
 ├── _insights.md            # Graph analysis: hubs, bridges, dead ends
 ├── _raw/                   # Staging — drop rough notes, next ingest promotes them

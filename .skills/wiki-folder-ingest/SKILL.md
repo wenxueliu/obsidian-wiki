@@ -87,21 +87,31 @@ sources/units，且契约不得包含 source body。
 `wiki-source-text` 与 `wiki-packet-integrate`。
 
 从 `wiki-context.json` 读取 `text_ingest.max_extraction_workers`，默认 4；它是当前 Job 的
-Packet extraction 并发硬上限，宿主可用隔离槽位更少时取较小值。
+Packet extraction 并发硬上限，宿主资源更少时取较小值。运行：
 
-1. 恢复 Job 时先对账所有 packet transport 的 `extracting` unit：已有合法 planned Packet
-   的标为 `packet_ready`，否则标为 failed 供重试，避免陈旧 claim 占用并发额度。
-2. 按稳定 source discovery order 和 unit order 建立全 Job 队列。
-   同一文档的多个 packet unit 也可并行提取；inline unit 不进入 extraction wave，也不生成 Packet。
-3. 每轮只领取 packet transport 的 pending/failed unit，最多达到并发上限，并在一次原子
-   Job 更新中将它们标为 `extracting`，确保同一 unit 不会重复派发。
-4. 每个 packet unit 使用一个 fresh isolated extraction subagent。在 task 中明确要求它读取
-   并执行 `wiki-source-text` skill，且只传 Job directory、一个 `source_id` 和当前
-   `unit_id`；不传 source body、Packet body、wiki context、页面内容或相邻 unit metadata。
-   只接收 Packet path、packet-validation report path、source/unit/hash/range、warnings、
-   validated/failed status 与 recovery action；完整 source body 和 extracted items 不得回流
-   coordinator context。Coordinator 不重复 range 读取、extraction、Packet contract 或
-   validation。无 isolated subagent 或 skill 不可用时保留 unit 为 pending，不得降级提取。
+```bash
+obsidian-wiki text-ingest-extract "<job-dir>" \
+  --max-workers "<text_ingest.max_extraction_workers>" \
+  --worker-timeout-seconds 3600 \
+  --output "<artifacts-dir>/packet-extraction-report.json" \
+  --pretty
+```
+
+若 console script 不在 `PATH`，使用 `python3 -m obsidian_wiki text-ingest-extract ...`。
+
+1. Scheduler 恢复时对账所有 packet transport 的 `extracting` unit：已有合法 planned Packet
+   的标为 `packet_ready`，否则标为 failed 供本次恢复重试。
+2. Scheduler 按稳定 source/unit 顺序动态补满 worker pool；同一文档的多个 packet unit 也可并行提取，
+   inline unit 不进入 extraction pool。每个 eligible unit 在一次 invocation 中最多执行一次。
+3. Scheduler 原子 claim/completion Job 状态，并给每个 attempt 独立 worker directory，在其中
+   映射 package 自带的当前 `wiki-source-text` skill。它用固定
+   argv（不用 shell）启动 `claude -p --dangerously-skip-permissions --no-session-persistence
+   --disallowed-tools Agent,Task --output-format json`，直接调用 `/wiki-source-text`；危险权限
+   只用于已验证 Job 边界内的 worker，Agent/Task tools 被禁用，worker 不得再派生 subagent。
+4. 每个 process 只接收 Job directory、一个 `source_id` 和当前 `unit_id`。Scheduler 只依据
+   磁盘 planned Packet 的 contract validation 更新 `packet_ready`/failed；stdout、完整 source
+   body 和 extracted items 不回流 coordinator。缺少 Claude/skill、timeout 或验证失败均留下
+   可恢复 failed unit，不得由 coordinator 降级提取。
 5. 可按完成顺序接收 validated Packet 并标为 `packet_ready`；后序 Packet 留在有界缓冲区。
 6. 严格按 Job 的 source/unit 全局顺序逐个执行 worker-only `wiki-packet-integrate`。packet
    transport 传入冻结 context/contract、Job 和 Packet；inline transport 传入冻结
@@ -110,16 +120,17 @@ Packet extraction 并发硬上限，宿主可用隔离槽位更少时取较小�
 7. 以 integrator 的 completion report 和最新 Job 为唯一状态转换结果；不要在 coordinator
    中复述或重算 write mode、unit 状态和计数规则。
 
-单 unit 失败时只记录该失败，并安全停在可恢复边界。无 subagent 能力时，保留 next unit
-为 pending。写 `unit-processing-report.md`，只记录调度 metadata、skill handoff、错误和恢复点。
+单 unit 失败时只记录该失败，并安全停在可恢复边界。写 `unit-processing-report.md`，只记录
+调度 metadata、skill/integrator handoff、错误和恢复点。
 
 输出：持续原子更新的 Job、Packets、page 或 staged artifacts，以及
 `unit-processing-report.md`。
 
-验收：对账调度报告、skill handoff 与最新 Job，确认每个 extraction task 明确使用
-`wiki-source-text` skill 且只含三个允许输入，并发上限、单 unit 隔离、无重复派发、handoff
-不回传 source body/extracted items、integration 全局有序串行且 coordinator 未读取 source
-body。不要重复验收下游 skill 已负责的内部状态转换。
+验收：对账 `packet-extraction-report.json`、skill handoff 与最新 Job，确认 argv 包含
+`claude -p`、`--dangerously-skip-permissions`、`--no-session-persistence` 和直接
+`/wiki-source-text` 调用；task 只含三个允许输入，并发有硬上限、worker directory 单 unit
+隔离、无重复派发、无 nested subagent、handoff 不回传 source body/extracted items、integration
+全局有序串行且 coordinator 未读取 source body。不要重复验收下游 skill 已负责的内部状态转换。
 
 ## 5. Finalize eligible sources
 

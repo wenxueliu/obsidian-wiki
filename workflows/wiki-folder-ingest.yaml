@@ -62,18 +62,28 @@ steps:
     max_fail_count: 3
 
   - id: process_documents
-    desc: 小文档 inline 集成，大文档有界并行提取 Packet，并按 Job 顺序串行集成
+    desc: 小文档 inline 集成，大文档由有界 claude -p worker pool 提取 Packet，并按 Job 顺序串行集成
     do: |
-      Coordinator 永远不读取 source body。读取 `wiki-context.json` 的 `text_ingest.max_extraction_workers`（默认 4），把它作为当前 Job 的 Packet extraction 并发硬上限；宿主可用槽位更少时使用较小值。恢复 Job 时先对账所有 packet transport 的 `extracting` unit：已有合法 planned Packet 的标为 `packet_ready`，否则标为 failed 供重试，避免陈旧 claim 占用并发额度。按稳定 source discovery order 和 unit order 建立全 Job 队列，同一文档的多个 packet unit 也可并行提取。每轮只领取 packet transport 的 pending/failed unit，最多达到该并发上限，并在一次原子 Job 更新中标为 `extracting`；inline unit 不进入 extraction wave，也不生成 Packet。
+      Coordinator 永远不读取 source body。读取 `wiki-context.json` 的 `text_ingest.max_extraction_workers`（默认 4），把它作为当前 Job 的 Packet extraction 并发硬上限；宿主资源更少时使用较小值。使用确定性 scheduler 执行当前全部 eligible packet units：
 
-      每个 packet unit 使用一个 fresh isolated extraction subagent。Task 中明确要求 subagent 读取并执行 `wiki-source-text` skill，且只传 Job directory、一个 source_id 和当前 unit_id；不传 source body、Packet body、wiki context、页面内容或相邻 unit metadata。只接收该 skill 的 Packet path、packet-validation report path、source/unit/hash/range、warnings、validated/failed status 与 recovery action，完整 source body 和 extracted items 不得回流 coordinator context。以该 skill 的 validated Packet handoff 或失败 handoff 为唯一结果；coordinator 不重复其 range 读取、extraction、Packet contract 或 validation。无 isolated subagent 或 skill 不可用时保留 unit 为 pending，不得在 coordinator 中降级提取。
+      ```bash
+      obsidian-wiki text-ingest-extract "<job-dir>" \
+        --max-workers "<text_ingest.max_extraction_workers>" \
+        --worker-timeout-seconds 3600 \
+        --output "{{artifacts_dir}}/packet-extraction-report.json" \
+        --pretty
+      ```
+
+      若 console script 不在 PATH，使用 `python3 -m obsidian_wiki text-ingest-extract ...`。Scheduler 先对账陈旧 `extracting` units，再按稳定 source/unit 顺序动态补满 worker pool；同一文档的多个 packet unit 也可并行，每个 unit 每次 invocation 最多运行一次。它原子 claim/completion Job 状态，为每个 attempt 创建独立 worker directory 并映射 package 自带的当前 `wiki-source-text` skill，再以固定 argv（不用 shell）启动 `claude -p --dangerously-skip-permissions --no-session-persistence --disallowed-tools Agent,Task --output-format json`，直接调用 `/wiki-source-text`。危险权限只允许用于已验证 Job 边界内的该 worker；Agent/Task tools 被禁用，worker 不得再派生 subagent。
+
+      每个 Claude process 只收到 Job directory、一个 source_id 和当前 unit_id；不传 source body、Packet body、wiki context、页面内容或相邻 unit metadata。Scheduler 只依据磁盘上的 planned Packet 及其 contract validation 标记 `packet_ready`/failed，不把 worker stdout、完整 source body 或 extracted items 带回 coordinator context。无 Claude executable、skill 不可用、timeout 或 Packet validation 失败时记录该 unit 为 failed；下次 invocation 可恢复重试，不得在 coordinator 中降级提取。
 
       Coordinator 可按完成顺序接收 validated Packet 并标为 `packet_ready`，后序 Packet 留在有界缓冲区。然后严格按 Job 的 source/unit 全局顺序，以 bare workflow name 逐个调用 worker-only `wiki-packet-integrate`；packet transport 传入冻结 context/contract、Job 和 Packet，inline transport 传入冻结 context/contract、Job directory、source_id 和 unit_id。以 integrator 的 completion report 和最新 Job 为唯一状态转换结果；父 workflow 不复述或重算 write-mode、unit 状态和计数规则。所有 integration 均不并发；较早 unit 未就绪或失败时暂停后序 integration并保留已有 Packet。
 
-      单 unit 失败只记录该失败并安全停止在可恢复边界；无 subagent 能力时保留 next unit 为 pending。写 `unit-processing-report.md`，只记录调度 metadata、skill/integrator handoff、错误和恢复点。
-    input: wiki-context.json + page-contract.json + 已验证 job.json；用 isolated subagent 执行 wiki-source-text skill，并动态调用 wiki-packet-integrate
+      单 unit 失败只记录该失败并安全停止在可恢复边界。写 `unit-processing-report.md`，只记录调度 metadata、skill/integrator handoff、错误和恢复点。
+    input: wiki-context.json + page-contract.json + 已验证 job.json；用 bounded claude -p pool 执行 wiki-source-text skill，并动态调用 wiki-packet-integrate
     output: 持续原子更新的 Job/Packets/page-or-staged artifacts + unit-processing-report.md
-    check: 对账调度报告、skill handoff 与最新 Job，确认每个 extraction task 明确使用 wiki-source-text skill 且只含 job directory/source_id/unit_id，并发上限、单 unit 隔离、无重复派发、handoff 不回传 source body/extracted items、integration 全局有序串行且 coordinator 未读取 source body；不重复验收 skill 或 integrator 内部状态转换
+    check: 对账 packet-extraction-report、skill handoff 与最新 Job，确认 argv 含 claude -p、--dangerously-skip-permissions、--no-session-persistence 和直接 /wiki-source-text 调用；每个 task 只含 job directory/source_id/unit_id，并发上限、worker directory 单 unit 隔离、无重复派发、无 nested subagent、handoff 不回传 source body/extracted items、integration 全局有序串行且 coordinator 未读取 source body；不重复验收 skill 或 integrator 内部状态转换
     on_pass: finalize_completed_sources
     on_fail: process_documents
     max_fail_count: 10

@@ -1,4 +1,4 @@
-description: 兼容入口：在隔离 subagent 中执行 worker-only wiki-source-text skill 处理一个 Job unit
+description: 兼容入口：用隔离 claude -p process 直接执行 worker-only wiki-source-text skill 处理一个 Job unit
 
 auto_reset: true
 
@@ -9,19 +9,19 @@ adversarial_check:
 
 steps:
   - id: dispatch_skill_worker
-    desc: 将唯一 source unit 委派给隔离 subagent 的 wiki-source-text skill
+    desc: 将唯一 source unit 交给隔离 claude -p process 的 wiki-source-text skill
     do: |
-      此 workflow 只保留兼容入口；实际 binding、range extraction、Packet write 与 validation 的唯一运行时契约位于 `wiki-source-text` skill。
+      此 workflow 只保留单 unit 兼容入口；批量执行由 `obsidian-wiki text-ingest-extract` 的有界 worker pool 负责。实际 binding、range extraction、Packet write 与 validation 的唯一运行时契约位于 `wiki-source-text` skill。
 
       1. 从调用方取得 canonical Job directory、source_id 和 unit_id；缺一即失败，不自行选择其他 unit。
-      2. 启动一个 fresh isolated subagent，在 task 中明确要求读取并执行 `wiki-source-text` skill。只传 Job directory、source_id 和 unit_id，不传 source body、Packet body、wiki context、页面内容或相邻 unit metadata。
-      3. 等待 subagent 返回 validated/failed handoff。只接收 Packet path、packet-validation report path、source_id、unit_id、hash/range、warnings、status 与 recovery action；不得让完整 source body 或 extracted items 回流 coordinator context。
-      4. 无 isolated subagent 或 skill 不可用时返回 failed handoff，要求父 coordinator 保留 unit 为 pending；不得在 adapter 内降级读取 source 或执行 extraction。
-      5. 不修改 job.json、unit status、manifest、index、log、hot、wiki pages 或其他 Packets。父 coordinator 独占 `packet_ready`/failed 状态转换。
+      2. 在该 unit 独立的 worker directory 中，以固定 argv（不用 shell）启动 `claude -p --dangerously-skip-permissions --no-session-persistence --disallowed-tools Agent,Task --output-format json`，prompt 直接调用 `/wiki-source-text` 且只包含 Job directory、source_id 和 unit_id。危险权限只用于已验证 Job 边界内的 worker；Agent/Task tools 被禁用，worker 不得再派生 subagent。
+      3. 等待 process 结束，并以磁盘 planned Packet 的 contract validation 作为 validated/failed 事实。只向父 coordinator 返回 Packet path、packet-validation report path、source_id、unit_id、hash/range、warnings、status 与 recovery action；不得回传 stdout、完整 source body 或 extracted items。
+      4. Claude executable/skill 不可用、timeout 或 Packet validation 失败时返回 failed handoff；不得在 adapter 内降级读取 source 或执行 extraction。
+      5. Worker 不修改 job.json、unit status、manifest、index、log、hot、wiki pages 或其他 Packets。父 coordinator 独占 `packet_ready`/failed 状态转换。
     input: canonical Job directory + source_id + unit_id
     output: wiki-source-text skill 的 validated Packet handoff 或 failed handoff
     check: |
-      核对 subagent task 明确使用 wiki-source-text skill 且只含三个允许输入；核对 handoff 精确绑定 source/unit/hash/range，validated 时 Packet/report paths 位于 Job 边界内，failed 时 recovery action 明确。确认 adapter/coordinator 未读取 source/Packet body，subagent 未修改共享状态，且无 subagent 时没有本地降级 extraction。
+      核对固定 argv 含 claude -p、--dangerously-skip-permissions、--no-session-persistence、--output-format json 和直接 /wiki-source-text 调用；prompt 只含三个允许输入。核对 handoff 精确绑定 source/unit/hash/range，validated 时 Packet/report paths 位于 Job 边界内，failed 时 recovery action 明确。确认 adapter/coordinator 未读取 source/Packet body，worker 未修改共享状态且未派生 subagent，也没有本地降级 extraction。
     on_pass: done
     on_fail: dispatch_skill_worker
     max_fail_count: 3

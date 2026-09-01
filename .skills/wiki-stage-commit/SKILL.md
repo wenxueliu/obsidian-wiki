@@ -5,165 +5,325 @@ description: "经人工逐项审批，将 staged Wiki 页面或 patch 安全提�
 
 # wiki-stage-commit
 
-此 skill 直接执行下方从 `workflows/wiki-stage-commit.yaml` 同步的完整契约。内嵌 YAML 是实际指令，不是摘要或外部参考；按 `steps`、输入输出、检查、跳转、失败上限和人工审批要求逐项执行。
+此 skill 是 `workflows/wiki-stage-commit.yaml` 的 Agent Skill 格式投影；workflow 是行为事实来源，本文件把其字段渲染为可直接执行的 Markdown 指令。
 
-发生任何冲突时，以内嵌 workflow 契约为准。不要用历史 skill 文案补写、弱化或覆盖它。修改行为时先编辑 workflow，再运行 `python tools/sync_workflow_skills.py`。
+<!-- BEGIN GENERATED SKILL INSTRUCTIONS -->
 
-<!-- BEGIN GENERATED WORKFLOW CONTRACT -->
-````yaml
-description: 经人工逐项审批，将 staged Wiki 页面或 patch 安全提升为 live 内容并推进绑定 ingest Job
+## 执行规则
 
-auto_reset: true
+按下列步骤和流程控制执行。每个步骤只读取其声明的输入，只产生其声明的产出；执行与独立验收分开进行。修改行为时先编辑权威 workflow，再运行 `python tools/sync_workflow_skills.py`。
 
-manual_step:
-  - review_queue
+- 自动重置：开启。
 
-adversarial_check:
-  timeout_ms: 3600000
-  system_prompt: |
-    你是 Wiki Stage Commit 的事务审计者。人工门之前不得修改 staging/live/raw/tracking。
-    永久 manifest 只能在 live 页面验证和 source-completion audit 后最后原子推进；Job unit 必须保持 source order。
+- 人工审批步骤：`review_queue`。
 
-steps:
-  - id: resolve_context
-    desc: 复用共享子 workflow 解析 staged review 上下文
-    workflow: wiki-context
-    input: invocation 与当前 CWD
-    output: wiki-context.json + wiki-context.md
-    inputs:
-      requested_keys: OBSIDIAN_VAULT_PATH,WIKI_STAGED_WRITES,OBSIDIAN_LINK_FORMAT,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_CLI_SEARCH_MODE
-      optional_reads: owner AGENTS,taxonomy,index,manifest,active layout,writing profile
-      setup_mode: "false"
-    on_pass: resolve_page_contract
-    on_fail: resolve_context
-    max_fail_count: 3
+## 独立验收规则
 
-  - id: resolve_page_contract
-    desc: 复用共享子 workflow 固化 staged promotion 页面契约
-    workflow: wiki-page-contract
-    input: wiki-context.json + invocation
-    output: page-contract.json + page-contract.md
-    inputs:
-      transaction_kind: staged_promotion
-      source_scope: 当前 _staging review queue
-    on_pass: inventory_queue
-    on_fail: resolve_page_contract
-    max_fail_count: 3
+你是 Wiki Stage Commit 的事务审计者。人工门之前不得修改 staging/live/raw/tracking。
+永久 manifest 只能在 live 页面验证和 source-completion audit 后最后原子推进；Job unit 必须保持 source order。
 
-  - id: inventory_queue
-    desc: 解析 staged 模式并建立安全队列
-    do: |
-      使用 wiki-context.json 与 page-contract.json 建立 staged review/commit 队列。
+单次验收超时：`3600000` 毫秒。
 
-      1. 使用共享 context 的 canonical vault 与 WIKI_STAGED_WRITES；非 true 时停止并给启用说明，不写任何文件。
-      2. 解析 invocation：interactive、--all、--reject-all、--list。扫描 _staging/**/*.md，将 `.patch.md` 与 new pages 分开，记录 age/title/tags/summary/tier/confidence/source/target。
-      3. canonicalize staged/final/raw paths，拒绝 traversal、symlink escape、同目标冲突与 staging root 外路径；final target 必须位于 page-contract routing.content_roots，并与 staged artifact 记录的 page type 经 `resolve_wiki_route.py` 重算结果一致。
-      4. 对含 staged_write.job_id/job_id 的 artifact 解析 _meta/ingest-jobs 下唯一 Job，核对 artifact↔unit↔source hash/status/order；metadata-derived path 不能逃逸 vault/Job/staging roots。
-      5. 对 patch 比较 target 当前 updated/hash 与 staged base，标出 conflicts，但保持只读。
-      6. 先在内存中形成唯一 canonical staging inventory result；`staging-inventory.json` 完整承载 items、mode、counts、bindings、conflicts 与 stable inventory id，Markdown 只从同一 result 渲染、不得独立推导或补充事实，并在同一批 artifact 写入中提交二者。空队列/--list 也形成明确 no-op plan。
-    input: wiki-stage-commit 请求及 interactive/--all/--reject-all/--list flags
-    output: staging-inventory.md + staging-inventory.json
-    check_voting:
-      - check: 复扫 staging，核对 new/patch/age/target/conflict counts 与 invocation mode，空队列/--list 无遗漏
-      - check: 复核所有 canonical boundaries、symlinks、Job/artifact/unit/source hash/status/order bindings，无 path escape
-      - check: 解析 staging inventory JSON，逐项核对 Markdown 的 inventory id、mode、items、counts、targets、bindings、conflicts 与 warnings 是同一 canonical result 的准确投影；确认尚未修改 staging/live/raw/Job/manifest/index/log/hot/QMD
-    on_pass: review_queue
-    on_fail: inventory_queue
-    max_fail_count: 3
+## 工作流
 
-  - id: review_queue
-    desc: 人工逐项接受、拒绝、跳过 staged 内容与冲突
-    do: |
-      展示 staging-inventory.md。interactive 模式按 new pages 后 patches 的顺序展示 frontmatter、summary 和 preview/diff，收集 accept/reject/skip/full-preview；发生 target-newer conflict 时单独要求 apply-anyway/skip/reject。
+### 1. 复用共享子 workflow 解析 staged review 上下文 (`resolve_context`)
 
-      --all 将所有无 unresolved conflict 的文件列为 accept，conflict 仍明确列示；--reject-all 全 reject；--list/empty 生成 no-op。将决定写 approved-stage-decisions.json，绑定 inventory hash、vault、每个 staged artifact hash、target base hash、Job bindings 与 stable review_id。输出 <promise>done</promise> 后等待人工门；之前不得移动、删除或修改任何 vault 文件。
-    input: staging-inventory + 用户逐项决策或 invocation flag
-    output: approved-stage-decisions.json（accept/reject/skip 与 conflict overrides）
-    check: |
-      确认每个 inventory item 恰有一个合法决定，accept/reject/skip 与模式/用户选择一致；conflict accept 有显式 override；hash/Job binding 完整且人工门前 vault 零变化。
-    on_pass: apply_decisions
-    on_fail: review_queue
-    max_fail_count: 3
+#### 执行
 
-  - id: apply_decisions
-    desc: 原子提升 accepted 内容并隔离 rejected 内容
-    do: |
-      只执行 approved-stage-decisions.json：
+调用 `wiki-context` skill，并把下列输入传给它。以被调用 skill 的验收结果作为本步骤结果。
 
-      1. 写前重算 staged/target hash；任何未批准 drift 停止，不覆盖并发修改。
-      2. accepted new page：再次重算 declared page type 的 route，移除 staged_write metadata，移动到 resolver 返回的 final path，验证 live page 后删除 staging source。
-      3. accepted patch：读取 current target，应用 additions/deletions 做 merge 而非 overwrite，更新 updated，验证页面后删除 patch。删除项不精确匹配或 conflict override 缺失即停止。
-      4. rejected：移动到 _raw/rejected-<category>-<name>，避免覆盖现有 rejected 名；Job-bound 标 artifact rejected、units review_rejected、source/Job incomplete，保留 Packets，绝不写 permanent manifest。
-      5. skipped 保持 staged 且 Job awaiting_review。accepted 只有在 live validation 成功后才调用 record_staging_decision(... accepted=true)。
-      6. 写 stage-apply-report.md，记录每项结果、live validation、moves、diff、Job pending state。此时不推进 source-complete manifest 或 shared tracking。
-    input: approved-stage-decisions.json + 最新 staged/live/raw/Job state
-    output: accepted live pages + rejected raw files + Job artifact decisions + stage-apply-report.md
-    check_voting:
-      - check: 将每个 move/merge/delete 与 approved decision/hash 对账，new page metadata removed、patch merged、reject naming 安全、skip 未变化
-      - check: 验证所有 accepted live pages 与 index-ready metadata；accepted=true 只发生在 live validation 后，失败未删除 staged evidence
-      - check: 复核 rejected/skip Job states、Packets retained、manifest 尚未推进且没有 path escape/并发覆盖
-    on_pass: reconcile_jobs
-    on_fail: apply_decisions
-    max_fail_count: 4
+#### 输入
 
-  - id: reconcile_jobs
-    desc: 按 source order 推进 Job 并在完整时原子提交 manifest
-    do: |
-      对每个受影响 Job按 source order 重算状态，并准备 shared finalization candidates：
+invocation 与当前 CWD
 
-      1. unit 只有其全部 artifacts accepted 才 integrated；后续 unit 先完成时保持 approved_waiting_order，不能越过前序。
-      2. exact source hash 的全部 units integrated 才列入 finalization candidates；其他 source 标 deferred/awaiting_review/incomplete 并记录 next action。
-      3. 本步骤不得更新 index/log/hot/permanent manifest。写 job-reconciliation-report.md，列每个 unit/artifact/order/source status、candidate/deferred 与原因。
-    input: stage-apply-report.md + Job/Packets/live pages + finalization policy
-    output: reconciled Jobs + finalization candidates + job-reconciliation-report.md；shared tracking 尚未推进
-    check_voting:
-      - check: 逐 Job 重算 artifact→unit→source 状态，确认 multi-artifact units、approved_waiting_order、rejected/incomplete 与 staged/awaiting_review 正确
-      - check: 对 complete source 重算 exact hash/live pages 并确认 candidate 准确；incomplete source 无永久 entry 推进
-      - check: index/log/hot/manifest 在本步骤字节不变，pending/rejected/deferred 状态与 next action 清晰
-    on_pass: finalize_sources
-    on_fail: reconcile_jobs
-    max_fail_count: 4
+调用参数：
 
-  - id: finalize_sources
-    desc: 复用共享子 workflow 提交 eligible sources
-    workflow: wiki-finalize-sources
-    input: job-reconciliation-report.md + stage-apply-report.md + 最新 Jobs/manifest + wiki-context.json
-    output: source-finalization-report.md + source-finalization-report.json
-    inputs:
-      event_type: STAGE_COMMIT
-      candidate_scope: job-reconciliation-report 中的全部 eligible source candidates
-    on_pass: cross_link_completed_jobs
-    on_fail: finalize_sources
-    max_fail_count: 5
+- `requested_keys`: OBSIDIAN_VAULT_PATH,WIKI_STAGED_WRITES,OBSIDIAN_LINK_FORMAT,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_CLI_SEARCH_MODE
 
-  - id: cross_link_completed_jobs
-    desc: 仅为本轮新完成的 ingest Job 运行一次 cross-linker
-    workflow: cross-linker
-    input: source-finalization-report.md + 本轮 accepted live pages
-    output: cross-link-completion.md（ran 或 skipped 及原因）
-    inputs:
-      run_condition: 仅当 source-finalization-report.md 表明至少一个 Job 的全部 sources/units 首次 committed live complete 时执行；否则零写入跳过
-      scope: 优先链接本轮 accepted 且 newly-completed Job 的 live pages，并维护全 vault target registry
-    on_pass: report_stage_commit
-    on_fail: cross_link_completed_jobs
-    max_fail_count: 3
+- `optional_reads`: owner AGENTS,taxonomy,index,manifest,active layout,writing profile
 
-  - id: report_stage_commit
-    desc: 完成队列报告并条件刷新 QMD
-    do: |
-      1. 从最终磁盘重算 accepted/rejected/skipped/remaining，向 log.md 幂等写 STAGE_COMMIT review_id（若 source finalization 已写相同事件则校验而非重复）。
-      2. 更新 hot.md Recent Activity 为 committed/rejected counts，保留最近3次；--list/empty no-op 不伪报 commit。
-      3. 只有 live Markdown 实际变化且 QMD_WIKI_COLLECTION 配置时运行 update，需时 embed，并用 ls/get accepted page 验证；失败不回滚 live pages。
-      4. 读取 cross-link-completion.md；newly-completed Job 必须 ran 一次，其他情况必须 skipped 且说明 reason。
-      5. 写 wiki-stage-commit-completion.md，逐项列 accepted live、rejected raw、skipped staged、remaining queue、Job/source manifest status、cross-link、warnings 与 QMD。事实一致后输出 <promise>done</promise>。
-    input: approved decisions + apply/reconciliation/cross-link reports + 最终 queue/tracking/QMD
-    output: 幂等 STAGE_COMMIT tracking + completion report + 可选 QMD refresh
-    check_voting:
-      - check: 复扫 staging/live/raw 与 decisions，确认 accepted/rejected/skipped/remaining、paths 与 completion 完全一致
-      - check: 核对 STAGE_COMMIT review_id 恰好一次、hot 更新适用且 counts 正确，--list/empty 无伪写入
-      - check: QMD guard/update/embed/verification 状态准确；cross-link gate 与 ran/skipped 一致且 newly-completed Job 恰好运行一次；最终 manifest/Job/live page 事务边界仍成立
-    on_pass: done
-    on_fail: report_stage_commit
-    max_fail_count: 3
-````
-<!-- END GENERATED WORKFLOW CONTRACT -->
+- `setup_mode`: false
+
+#### 产出
+
+wiki-context.json + wiki-context.md
+
+#### 验收
+
+采用被调用 skill 的验收结论，不在本步骤重复验收。
+
+#### 流程控制
+
+- 验收通过：转到 `resolve_page_contract`。
+
+- 验收失败：返回 `resolve_context`。
+
+- 最多连续失败 `3` 次；达到上限后停止并报告阻塞。
+
+### 2. 复用共享子 workflow 固化 staged promotion 页面契约 (`resolve_page_contract`)
+
+#### 执行
+
+调用 `wiki-page-contract` skill，并把下列输入传给它。以被调用 skill 的验收结果作为本步骤结果。
+
+#### 输入
+
+wiki-context.json + invocation
+
+调用参数：
+
+- `transaction_kind`: staged_promotion
+
+- `source_scope`: 当前 _staging review queue
+
+#### 产出
+
+page-contract.json + page-contract.md
+
+#### 验收
+
+采用被调用 skill 的验收结论，不在本步骤重复验收。
+
+#### 流程控制
+
+- 验收通过：转到 `inventory_queue`。
+
+- 验收失败：返回 `resolve_page_contract`。
+
+- 最多连续失败 `3` 次；达到上限后停止并报告阻塞。
+
+### 3. 解析 staged 模式并建立安全队列 (`inventory_queue`)
+
+#### 执行
+
+使用 wiki-context.json 与 page-contract.json 建立 staged review/commit 队列。
+
+1. 使用共享 context 的 canonical vault 与 WIKI_STAGED_WRITES；非 true 时停止并给启用说明，不写任何文件。
+2. 解析 invocation：interactive、--all、--reject-all、--list。扫描 _staging/**/*.md，将 `.patch.md` 与 new pages 分开，记录 age/title/tags/summary/tier/confidence/source/target。
+3. canonicalize staged/final/raw paths，拒绝 traversal、symlink escape、同目标冲突与 staging root 外路径；final target 必须位于 page-contract routing.content_roots，并与 staged artifact 记录的 page type 经 `resolve_wiki_route.py` 重算结果一致。
+4. 对含 staged_write.job_id/job_id 的 artifact 解析 _meta/ingest-jobs 下唯一 Job，核对 artifact↔unit↔source hash/status/order；metadata-derived path 不能逃逸 vault/Job/staging roots。
+5. 对 patch 比较 target 当前 updated/hash 与 staged base，标出 conflicts，但保持只读。
+6. 先在内存中形成唯一 canonical staging inventory result；`staging-inventory.json` 完整承载 items、mode、counts、bindings、conflicts 与 stable inventory id，Markdown 只从同一 result 渲染、不得独立推导或补充事实，并在同一批 artifact 写入中提交二者。空队列/--list 也形成明确 no-op plan。
+
+#### 输入
+
+wiki-stage-commit 请求及 interactive/--all/--reject-all/--list flags
+
+#### 产出
+
+staging-inventory.md + staging-inventory.json
+
+#### 验收
+
+1. 复扫 staging，核对 new/patch/age/target/conflict counts 与 invocation mode，空队列/--list 无遗漏
+
+2. 复核所有 canonical boundaries、symlinks、Job/artifact/unit/source hash/status/order bindings，无 path escape
+
+3. 解析 staging inventory JSON，逐项核对 Markdown 的 inventory id、mode、items、counts、targets、bindings、conflicts 与 warnings 是同一 canonical result 的准确投影；确认尚未修改 staging/live/raw/Job/manifest/index/log/hot/QMD
+
+#### 流程控制
+
+- 验收通过：转到 `review_queue`。
+
+- 验收失败：返回 `inventory_queue`。
+
+- 最多连续失败 `3` 次；达到上限后停止并报告阻塞。
+
+### 4. 人工逐项接受、拒绝、跳过 staged 内容与冲突 (`review_queue`)
+
+#### 执行
+
+展示 staging-inventory.md。interactive 模式按 new pages 后 patches 的顺序展示 frontmatter、summary 和 preview/diff，收集 accept/reject/skip/full-preview；发生 target-newer conflict 时单独要求 apply-anyway/skip/reject。
+
+--all 将所有无 unresolved conflict 的文件列为 accept，conflict 仍明确列示；--reject-all 全 reject；--list/empty 生成 no-op。将决定写 approved-stage-decisions.json，绑定 inventory hash、vault、每个 staged artifact hash、target base hash、Job bindings 与 stable review_id。输出 <promise>done</promise> 后等待人工门；之前不得移动、删除或修改任何 vault 文件。
+
+#### 输入
+
+staging-inventory + 用户逐项决策或 invocation flag
+
+#### 产出
+
+approved-stage-decisions.json（accept/reject/skip 与 conflict overrides）
+
+#### 验收
+
+确认每个 inventory item 恰有一个合法决定，accept/reject/skip 与模式/用户选择一致；conflict accept 有显式 override；hash/Job binding 完整且人工门前 vault 零变化。
+
+#### 流程控制
+
+- 验收通过：转到 `apply_decisions`。
+
+- 验收失败：返回 `review_queue`。
+
+- 最多连续失败 `3` 次；达到上限后停止并报告阻塞。
+
+### 5. 原子提升 accepted 内容并隔离 rejected 内容 (`apply_decisions`)
+
+#### 执行
+
+只执行 approved-stage-decisions.json：
+
+1. 写前重算 staged/target hash；任何未批准 drift 停止，不覆盖并发修改。
+2. accepted new page：再次重算 declared page type 的 route，移除 staged_write metadata，移动到 resolver 返回的 final path，验证 live page 后删除 staging source。
+3. accepted patch：读取 current target，应用 additions/deletions 做 merge 而非 overwrite，更新 updated，验证页面后删除 patch。删除项不精确匹配或 conflict override 缺失即停止。
+4. rejected：移动到 _raw/rejected-<category>-<name>，避免覆盖现有 rejected 名；Job-bound 标 artifact rejected、units review_rejected、source/Job incomplete，保留 Packets，绝不写 permanent manifest。
+5. skipped 保持 staged 且 Job awaiting_review。accepted 只有在 live validation 成功后才调用 record_staging_decision(... accepted=true)。
+6. 写 stage-apply-report.md，记录每项结果、live validation、moves、diff、Job pending state。此时不推进 source-complete manifest 或 shared tracking。
+
+#### 输入
+
+approved-stage-decisions.json + 最新 staged/live/raw/Job state
+
+#### 产出
+
+accepted live pages + rejected raw files + Job artifact decisions + stage-apply-report.md
+
+#### 验收
+
+1. 将每个 move/merge/delete 与 approved decision/hash 对账，new page metadata removed、patch merged、reject naming 安全、skip 未变化
+
+2. 验证所有 accepted live pages 与 index-ready metadata；accepted=true 只发生在 live validation 后，失败未删除 staged evidence
+
+3. 复核 rejected/skip Job states、Packets retained、manifest 尚未推进且没有 path escape/并发覆盖
+
+#### 流程控制
+
+- 验收通过：转到 `reconcile_jobs`。
+
+- 验收失败：返回 `apply_decisions`。
+
+- 最多连续失败 `4` 次；达到上限后停止并报告阻塞。
+
+### 6. 按 source order 推进 Job 并在完整时原子提交 manifest (`reconcile_jobs`)
+
+#### 执行
+
+对每个受影响 Job按 source order 重算状态，并准备 shared finalization candidates：
+
+1. unit 只有其全部 artifacts accepted 才 integrated；后续 unit 先完成时保持 approved_waiting_order，不能越过前序。
+2. exact source hash 的全部 units integrated 才列入 finalization candidates；其他 source 标 deferred/awaiting_review/incomplete 并记录 next action。
+3. 本步骤不得更新 index/log/hot/permanent manifest。写 job-reconciliation-report.md，列每个 unit/artifact/order/source status、candidate/deferred 与原因。
+
+#### 输入
+
+stage-apply-report.md + Job/Packets/live pages + finalization policy
+
+#### 产出
+
+reconciled Jobs + finalization candidates + job-reconciliation-report.md；shared tracking 尚未推进
+
+#### 验收
+
+1. 逐 Job 重算 artifact→unit→source 状态，确认 multi-artifact units、approved_waiting_order、rejected/incomplete 与 staged/awaiting_review 正确
+
+2. 对 complete source 重算 exact hash/live pages 并确认 candidate 准确；incomplete source 无永久 entry 推进
+
+3. index/log/hot/manifest 在本步骤字节不变，pending/rejected/deferred 状态与 next action 清晰
+
+#### 流程控制
+
+- 验收通过：转到 `finalize_sources`。
+
+- 验收失败：返回 `reconcile_jobs`。
+
+- 最多连续失败 `4` 次；达到上限后停止并报告阻塞。
+
+### 7. 复用共享子 workflow 提交 eligible sources (`finalize_sources`)
+
+#### 执行
+
+调用 `wiki-finalize-sources` skill，并把下列输入传给它。以被调用 skill 的验收结果作为本步骤结果。
+
+#### 输入
+
+job-reconciliation-report.md + stage-apply-report.md + 最新 Jobs/manifest + wiki-context.json
+
+调用参数：
+
+- `event_type`: STAGE_COMMIT
+
+- `candidate_scope`: job-reconciliation-report 中的全部 eligible source candidates
+
+#### 产出
+
+source-finalization-report.md + source-finalization-report.json
+
+#### 验收
+
+采用被调用 skill 的验收结论，不在本步骤重复验收。
+
+#### 流程控制
+
+- 验收通过：转到 `cross_link_completed_jobs`。
+
+- 验收失败：返回 `finalize_sources`。
+
+- 最多连续失败 `5` 次；达到上限后停止并报告阻塞。
+
+### 8. 仅为本轮新完成的 ingest Job 运行一次 cross-linker (`cross_link_completed_jobs`)
+
+#### 执行
+
+调用 `cross-linker` skill，并把下列输入传给它。以被调用 skill 的验收结果作为本步骤结果。
+
+#### 输入
+
+source-finalization-report.md + 本轮 accepted live pages
+
+调用参数：
+
+- `run_condition`: 仅当 source-finalization-report.md 表明至少一个 Job 的全部 sources/units 首次 committed live complete 时执行；否则零写入跳过
+
+- `scope`: 优先链接本轮 accepted 且 newly-completed Job 的 live pages，并维护全 vault target registry
+
+#### 产出
+
+cross-link-completion.md（ran 或 skipped 及原因）
+
+#### 验收
+
+采用被调用 skill 的验收结论，不在本步骤重复验收。
+
+#### 流程控制
+
+- 验收通过：转到 `report_stage_commit`。
+
+- 验收失败：返回 `cross_link_completed_jobs`。
+
+- 最多连续失败 `3` 次；达到上限后停止并报告阻塞。
+
+### 9. 完成队列报告并条件刷新 QMD (`report_stage_commit`)
+
+#### 执行
+
+1. 从最终磁盘重算 accepted/rejected/skipped/remaining，向 log.md 幂等写 STAGE_COMMIT review_id（若 source finalization 已写相同事件则校验而非重复）。
+2. 更新 hot.md Recent Activity 为 committed/rejected counts，保留最近3次；--list/empty no-op 不伪报 commit。
+3. 只有 live Markdown 实际变化且 QMD_WIKI_COLLECTION 配置时运行 update，需时 embed，并用 ls/get accepted page 验证；失败不回滚 live pages。
+4. 读取 cross-link-completion.md；newly-completed Job 必须 ran 一次，其他情况必须 skipped 且说明 reason。
+5. 写 wiki-stage-commit-completion.md，逐项列 accepted live、rejected raw、skipped staged、remaining queue、Job/source manifest status、cross-link、warnings 与 QMD。事实一致后输出 <promise>done</promise>。
+
+#### 输入
+
+approved decisions + apply/reconciliation/cross-link reports + 最终 queue/tracking/QMD
+
+#### 产出
+
+幂等 STAGE_COMMIT tracking + completion report + 可选 QMD refresh
+
+#### 验收
+
+1. 复扫 staging/live/raw 与 decisions，确认 accepted/rejected/skipped/remaining、paths 与 completion 完全一致
+
+2. 核对 STAGE_COMMIT review_id 恰好一次、hot 更新适用且 counts 正确，--list/empty 无伪写入
+
+3. QMD guard/update/embed/verification 状态准确；cross-link gate 与 ran/skipped 一致且 newly-completed Job 恰好运行一次；最终 manifest/Job/live page 事务边界仍成立
+
+#### 流程控制
+
+- 验收通过：转到 `done`。
+
+- 验收失败：返回 `report_stage_commit`。
+
+- 最多连续失败 `3` 次；达到上限后停止并报告阻塞。
+
+<!-- END GENERATED SKILL INSTRUCTIONS -->

@@ -57,7 +57,7 @@ class InlineVaultTargetingDocsTest(unittest.TestCase):
             ".skills/wiki-update/SKILL.md",
         ):
             with self.subTest(relpath=relpath):
-                self.assertIn("workflow: wiki-context", self.read(relpath))
+                self.assertIn("调用 `wiki-context` skill", self.read(relpath))
         self.assertIn("@research save this", self.read(".skills/wiki-capture/SKILL.md"))
 
     def test_wiki_query_does_not_prefer_default_over_inline_override(self) -> None:

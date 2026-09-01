@@ -87,12 +87,18 @@ def test_text_ingest_plan_help_exposes_chunk_and_inline_options(tmp_path: Path) 
     assert "adaptive_sections" in result.stdout
 
 
-def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> None:
+def test_recoverable_folder_workflow_and_lightweight_skill_coexist() -> None:
     workflow = (ROOT / "workflows" / "wiki-folder-ingest.yaml").read_text(encoding="utf-8")
     skill = (ROOT / ".skills" / "wiki-folder-ingest" / "SKILL.md").read_text(encoding="utf-8")
+    lightweight = (ROOT / ".skills" / "wiki-ingest" / "SKILL.md").read_text(encoding="utf-8")
     packet = (ROOT / "workflows" / "wiki-packet-integrate.yaml").read_text(encoding="utf-8")
 
     assert "obsidian-wiki text-ingest-plan" in workflow
+    assert "obsidian-wiki text-ingest-extract" in workflow
+    assert "obsidian-wiki text-ingest-report" in workflow
+    assert "wiki-packet-integrate" in workflow
+    assert "workflow: wiki-page-contract" in workflow
+    assert workflow.count("workflow: wiki-finalize-sources") == 1
     assert "WIKI_TEXT_CHUNK_TARGET_BYTES" in workflow
     assert "WIKI_TEXT_CHUNK_MIN_BYTES" in workflow
     assert "WIKI_TEXT_CHUNK_HARD_MAX_BYTES" in workflow
@@ -106,33 +112,31 @@ def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> 
     assert '--chunk-strategy "<text_chunking.strategy>"' in workflow
     assert '--direct-extract-max-bytes "<text_ingest.direct_extract_max_bytes>"' in workflow
     assert "--strategy-options-file" in workflow
-    assert "obsidian-wiki text-ingest-report" in workflow
+    assert "claude -p --dangerously-skip-permissions" in workflow
+    assert "直接调用 `/wiki-source-text`" in workflow
+    assert "同一文档的多个 packet unit 也可并行" in workflow
     assert "wiki/" not in workflow
     assert ".cac/" not in workflow
-    assert "同一文档的多个 packet unit 也可并行" in workflow
-    assert "text_ingest.max_extraction_workers" in workflow
-    assert "integration 均不并发" in workflow
     assert workflow.count("check_voting:") == 0
-    assert "workflow: wiki-page-contract" in workflow
-    assert workflow.count("workflow: wiki-finalize-sources") == 1
-    assert "wiki-packet-integrate" in workflow
     assert "workflow: cross-linker" not in workflow
-    assert "staged mode 标 staged" not in workflow
-    assert "direct mode 在页面验证后标 integrated" not in workflow
     assert "obsidian-wiki text-ingest-plan" in skill
+    assert "obsidian-wiki text-ingest-extract" in skill
     assert "obsidian-wiki text-ingest-report" in skill
+    assert "所有 integration 均不并发" in skill
+    assert "obsidian-wiki text-document-plan" in lightweight
+    assert "obsidian-wiki text-document-run" in lightweight
+    assert "text-document-commit" in lightweight
+    assert "不创建 Job、unit 状态机、Packet" in lightweight
+    assert "Wiki writes 严格串行" in lightweight
+    assert "wiki-folder-ingest" in lightweight
+    assert not (ROOT / "workflows" / "wiki-ingest.yaml").exists()
     assert "WIKI_TEXT_CHUNK_TARGET_BYTES" in skill
     assert "WIKI_TEXT_CHUNK_MIN_BYTES" in skill
     assert "WIKI_TEXT_CHUNK_HARD_MAX_BYTES" in skill
     assert "WIKI_TEXT_CHUNK_STRATEGY" in skill
-    assert "WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS" in skill
-    assert "WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES" in skill
-    assert "同一文档的多个 packet unit 也可并行提取" in skill
-    assert "所有 integration 均不并发" in skill
     assert ".cac/" not in skill
     assert "`wiki/" not in skill
     assert "workflow: cross-linker" not in skill
-    assert not (ROOT / "workflows" / "wiki-ingest.yaml").exists()
     assert "workflow: wiki-context" not in packet
     assert "workflow: wiki-page-contract" not in packet
     assert "workflow: wiki-finalize-sources" not in packet
@@ -143,6 +147,83 @@ def test_folder_workflow_uses_unprefixed_subworkflows_and_cli_coordination() -> 
     assert "obsidian-wiki text-ingest-unit-advance" in packet
     assert "obsidian-wiki text-ingest-inline-check" in packet
     assert "obsidian-wiki text-ingest-inline-advance" in packet
+
+
+def test_text_ingest_extract_uses_bounded_direct_claude_workers(tmp_path: Path) -> None:
+    source = tmp_path / "source.md"
+    source.write_text("# One\n\n" + "line of durable text\n" * 12, encoding="utf-8")
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    planned = run_cli(
+        "text-ingest-plan", str(source), "--vault", str(vault),
+        "--target-budget", "40", "--min-budget", "20", "--hard-budget", "56",
+        "--direct-extract-max-bytes", "0", cwd=tmp_path,
+    )
+    assert planned.returncode == 0, planned.stderr
+    job_dir = Path(json.loads(planned.stdout)["job_dir"])
+
+    fake_claude = tmp_path / "fake-claude"
+    fake_claude.write_text(
+        """#!/usr/bin/env python3
+import json
+import pathlib
+import sys
+
+args = sys.argv[1:]
+required = {"-p", "--dangerously-skip-permissions", "--no-session-persistence", "--disallowed-tools", "Agent,Task", "--output-format", "json"}
+if not required.issubset(set(args)):
+    raise SystemExit(9)
+prompt = next(value for value in args if value.startswith("/wiki-source-text "))
+payload = json.loads(prompt.split(" ", 1)[1])
+job_dir = pathlib.Path(payload["job_directory"])
+job = json.loads((job_dir / "job.json").read_text(encoding="utf-8"))
+source = next(item for item in job["sources"] if item["source_id"] == payload["source_id"])
+unit = next(item for item in source["units"] if item["unit_id"] == payload["unit_id"])
+if unit["status"] != "extracting":
+    raise SystemExit(8)
+packet = {
+    "packet_version": 1,
+    "packet_id": "pkt-" + unit["unit_id"],
+    "source": {key: source[key] for key in ("source_id", "path", "content_hash")},
+    "unit": {key: unit[key] for key in ("unit_id", "start_line", "end_line", "start_byte", "end_byte")},
+    "extracted": {"summary": "", "concepts": [], "claims": [], "entities": [], "relationships": [], "questions": []},
+    "warnings": [],
+}
+(job_dir / unit["packet_path"]).write_text(json.dumps(packet), encoding="utf-8")
+pathlib.Path("packet-validation.md").write_text("validated\\n", encoding="utf-8")
+print(json.dumps({"status": "validated", "packet_path": unit["packet_path"]}))
+""",
+        encoding="utf-8",
+    )
+    fake_claude.chmod(0o755)
+
+    report_path = tmp_path / "packet-extraction-report.json"
+    extracted = run_cli(
+        "text-ingest-extract", str(job_dir),
+        "--max-workers", "2",
+        "--claude-executable", str(fake_claude),
+        "--output", str(report_path),
+        "--pretty", cwd=tmp_path,
+    )
+
+    assert extracted.returncode == 0, extracted.stderr
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["worker_backend"] == "claude-print"
+    assert report["dangerously_skip_permissions"] is True
+    assert report["max_workers"] == 2
+    assert report["eligible_units"] >= 2
+    assert report["packet_ready"] == report["eligible_units"]
+    assert report["failed"] == 0
+    assert len({item["worker_dir"] for item in report["units"]}) == report["eligible_units"]
+    assert all(
+        (Path(item["worker_dir"]) / ".claude" / "skills" / "wiki-source-text" / "SKILL.md").is_file()
+        for item in report["units"]
+    )
+    stored = json.loads((job_dir / "job.json").read_text(encoding="utf-8"))
+    units = [unit for item in stored["sources"] for unit in item.get("units", [])]
+    assert all(unit["status"] == "packet_ready" for unit in units)
+    assert all(unit["attempt"] == 1 for unit in units)
+    assert not (job_dir / ".claude-extraction.lock").exists()
 
 
 def test_text_ingest_report_writes_matching_json_and_markdown(tmp_path: Path) -> None:

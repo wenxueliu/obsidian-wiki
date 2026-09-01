@@ -1,6 +1,11 @@
 # Text Ingest Pipeline V1 Design
 
-Status: **V1 implemented**
+Status: **V1 implemented (`wiki-folder-ingest`)**
+
+This document remains the contract for the recoverable `wiki-folder-ingest` Job/Packet pipeline.
+The separate, workflow-free `wiki-ingest` skill provides the lightweight alternative: every Source
+File is normalized into one or more independent documents, each handled in a fresh serialized
+session and committed directly to `.manifest.json`.
 
 Implementation mapping:
 
@@ -66,7 +71,7 @@ independent text-chunker
   produce deterministic source ranges
         |
         v
-isolated subagent + wiki-source-text skill
+bounded claude -p pool + wiki-source-text skill
   one coordinator-assigned range -> one bounded Packet
         |
         v
@@ -94,8 +99,8 @@ never reads or receives full source bodies.
 - invoke the partition planner for each changed text source;
 - route sources at or below the configured direct-extraction threshold to serialized inline
   integration while retaining one logical full-source unit;
-- start one fresh isolated subagent per larger-source part and explicitly require it to use the
-  worker-only `wiki-source-text` skill;
+- schedule each larger-source part through a bounded isolated `claude -p` pool that directly calls
+  the worker-only `/wiki-source-text` skill;
 - queue Packet and inline transports for serialized `wiki-packet-integrate` integration;
 - generate matching JSON and Markdown reports for complete, incomplete, unchanged, unsupported,
   and failed sources from current Job and manifest facts.
@@ -115,11 +120,13 @@ summarize, infer, call a model, create Packets, or know about the vault.
 ### 4.3 `wiki-source-text`
 
 This worker-only skill processes one coordinator-assigned packet-transport source range at a time.
-The coordinator starts a fresh isolated subagent and passes only the canonical Job directory,
-source ID, and unit ID. The skill reads only that range through the partitioner, extracts bounded
+The coordinator starts one isolated `claude -p` process per active slot and passes only the canonical
+Job directory, source ID, and unit ID to `/wiki-source-text`. The skill reads only that range through the partitioner, extracts bounded
 knowledge with exact provenance, validates one Packet, and returns only a bounded handoff. It does
 not read other ranges, write wiki pages, update shared Job or manifest files, or spawn workers of
-its own. Without isolated subagent support, the coordinator leaves the unit pending.
+its own or spawn nested subagents. The process uses `--dangerously-skip-permissions` only inside the
+validated Job boundary and disables session persistence. Worker startup or validation failures leave
+the unit in a resumable failed state.
 
 ### 4.4 `wiki-packet-integrate`
 
@@ -409,9 +416,9 @@ For one or more changed sources:
 3. if the complete non-empty source is at or below `WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES`, replace
    normal ranges with one logical full-source inline unit and do not allocate a Packet path;
 4. reconcile interrupted packet-transport `extracting` units from their planned Packet paths;
-5. claim up to `WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS` pending packet units in one atomic Job update;
-6. start one fresh isolated subagent per claimed packet unit, pass only Job directory/source ID/unit
-   ID, and explicitly require the `wiki-source-text` skill;
+5. dynamically claim no more than `WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS` pending packet units;
+6. start one isolated `claude -p --dangerously-skip-permissions --no-session-persistence` process per
+   claimed packet unit, pass only Job directory/source ID/unit ID, and call `/wiki-source-text` directly;
 7. let that skill run `text-chunk-read`, create and validate one independent Packet, and return only
    its Packet/report paths plus bounded status metadata;
 8. buffer Packets that finish ahead of earlier units;

@@ -59,8 +59,9 @@ python tools/sync_workflow_skills.py
 python tools/sync_workflow_skills.py --check
 ```
 
-生成的 skill 会直接内嵌完整 workflow，不是对 workflow 的摘要或外部引用。不要手工编辑
-生成的同名 `SKILL.md`；行为变更应先落在 workflow。
+生成器会把 workflow 的 `do`、`input`、`output`、`check` 和流程控制字段确定性地渲染为
+Agent Skill Markdown 指令，不会把 YAML 原文交给 agent 运行时解释。不要手工编辑生成的同名
+`SKILL.md`；行为变更应先落在 workflow。
 
 It lists the commits that changed `README.md` without a later `README_TW.md` update, plus the pending English diff. Translate and backfill those into `README_TW.md`. Reviewers assess translation quality.
 

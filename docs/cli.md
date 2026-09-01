@@ -163,8 +163,13 @@ Available for automation, scripting, and debugging. Skills call some of these in
 | `text-chunk-plan <source>` | Plan deterministic, exhaustive UTF-8 byte ranges for one supported text source |
 | `text-chunk-strategies` | List built-in, registered, and installed custom chunk strategies |
 | `text-chunk-read <source>` | Verify the source hash and materialize exactly one planned byte range |
-| `text-ingest-plan <source>` | Discover sources and atomically create or resume a metadata-only text-ingest Job |
+| `text-document-plan <source>` | Normalize all supported sources into manifest-backed Ingest Documents; small files produce one, large files produce several |
+| `text-document-read <plan>` | Verify and materialize exactly one planned Ingest Document |
+| `text-document-run <plan>` | Process pending documents in fresh, serialized `claude -p` sessions |
+| `text-document-commit <plan>` | Atomically record one validated Ingest Document in `.manifest.json` |
+| `text-ingest-plan <source>` | Recoverable `wiki-folder-ingest`: create or resume a metadata-only text-ingest Job |
 | `text-ingest-status <job>` | Report deterministic source/unit counts, next unit, and live completion state |
+| `text-ingest-extract <job>` | Run eligible Packet units through a bounded pool of isolated `claude -p` workers |
 | `text-ingest-report <job>` | Generate matching JSON and Markdown completion reports from Job and manifest facts |
 | `text-ingest-packet-check <job> <packet>` | Validate one Packet's Job/source/unit/path binding before page integration |
 | `text-ingest-unit-advance <job> <packet>` | Atomically advance one validated direct or staged unit after page validation |
@@ -187,13 +192,23 @@ obsidian-wiki text-chunk-plan ~/research/large.md \
 obsidian-wiki text-chunk-strategies --pretty
 obsidian-wiki text-chunk-read ~/research/large.md \
   --start-byte 0 --end-byte 47231 --expect-hash sha256:9e9f...
-obsidian-wiki text-ingest-plan ~/research \
-  --vault ~/brain --write-mode direct \
+obsidian-wiki text-document-plan ~/research \
+  --vault ~/brain \
   --target-budget 48000 --min-budget 24000 --hard-budget 64000 \
-  --direct-extract-max-bytes 16000 \
   --chunk-strategy adaptive_sections --strategy-options-file /tmp/chunk-options.json \
-  --output /tmp/job-plan.json --pretty
+  --output /tmp/document-plan.json --pretty
+obsidian-wiki text-document-run /tmp/document-plan.json \
+  --context /tmp/wiki-context.json --output /tmp/document-session-report.json --pretty
+obsidian-wiki text-document-read /tmp/document-plan.json --document-id doc-...
+obsidian-wiki text-document-commit /tmp/document-plan.json \
+  --document-id doc-... --created-page concepts/example.md --pretty
+
+# Recoverable wiki-folder-ingest Job/Packet commands
+obsidian-wiki text-ingest-plan ~/research --vault ~/brain --output /tmp/job-plan.json --pretty
 obsidian-wiki text-ingest-status ~/brain/_meta/ingest-jobs/<job-id> --pretty
+obsidian-wiki text-ingest-extract ~/brain/_meta/ingest-jobs/<job-id> \
+  --max-workers 4 --worker-timeout-seconds 3600 \
+  --output /tmp/packet-extraction-report.json --pretty
 obsidian-wiki text-ingest-report ~/brain/_meta/ingest-jobs/<job-id> \
   --output /tmp/job-completion.json \
   --markdown-output /tmp/folder-ingest-completion.md --pretty
@@ -227,10 +242,24 @@ object and `--strategy-options-file` accepts the same object from a file. Raisin
 requires the explicit `--allow-unsafe-hard-budget` override. `text-chunk-read` writes the exact
 range without adding a newline and fails if the source changed after planning.
 
-`text-ingest-plan` combines metadata-only discovery, streaming hashing, chunk planning, unchanged
-source detection, transport selection, and atomic Job creation/resume. The command explicitly
-supports `--min-budget`, `--chunk-strategy`, and `--direct-extract-max-bytes`; the last defaults to
-the smaller of 16,000 bytes and the hard budget, and `0` disables inline extraction.
+`text-document-plan` is the `wiki-ingest` planner. It applies the same deterministic
+chunker to every file, consults `.manifest.json`, and emits only metadata. Every pending document is
+processed in a fresh session; writes are serialized. `text-document-read` revalidates the whole
+Source File hash before returning one exact range, while `text-document-commit` repeats that check
+before atomically recording completion. A failed session therefore has no manifest record and is
+retried on the next run. The lightweight path creates no Job, unit state machine, Packet, extraction
+dump, or durable worker directory.
+
+The `text-ingest-*` commands implement the recoverable `wiki-folder-ingest` Job/Packet path.
+`text-ingest-extract` dynamically fills a bounded worker pool (default 4, hard maximum 32), atomically
+claims and completes Packet units, and invokes `/wiki-source-text` directly through isolated
+`claude -p --dangerously-skip-permissions --no-session-persistence` processes with the Agent and Task
+tools disabled. It never uses a shell,
+gives each attempt a separate worker directory with the package's current `wiki-source-text` skill,
+discards process stdout/stderr, and trusts only the
+planned Packet plus `packet-validation.md` on disk. The dangerous permission bypass is therefore
+limited to an already validated Job boundary. Each eligible unit runs at most once per invocation;
+failed or interrupted units remain resumable.
 `text-ingest-status`, `text-ingest-report`, `text-ingest-packet-check`, and
 `text-ingest-inline-check` are read-only with respect to the vault. `text-ingest-report` writes
 only its requested artifacts, derives exact-hash manifest coverage directly from the current vault,

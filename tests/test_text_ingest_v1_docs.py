@@ -4,15 +4,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_v1_skills_are_packaged_and_have_clear_write_ownership():
+def test_lightweight_and_legacy_skills_have_clear_write_ownership():
     folder = (ROOT / "workflows" / "wiki-folder-ingest.yaml").read_text()
+    lightweight = (ROOT / ".skills" / "wiki-ingest" / "SKILL.md").read_text()
+    document_worker = (ROOT / ".skills" / "wiki-ingest-document" / "SKILL.md").read_text()
     worker = (ROOT / ".skills" / "wiki-source-text" / "SKILL.md").read_text()
     adapter = (ROOT / "workflows" / "wiki-source-text.yaml").read_text()
     integrator = (ROOT / "workflows" / "wiki-packet-integrate.yaml").read_text()
 
-    assert "不能读取或接收完整 source body" in folder
+    assert "Coordinator 永远不读取 source body" in folder
+    assert "不创建 Job、unit 状态机、Packet" in lightweight
+    assert "text-document-commit" in document_worker
+    assert "Never edit the ingest-document manifest" in document_worker
     assert "Do not modify `job.json` or any shared file" in worker
-    assert "fresh isolated subagent" in adapter
+    assert "claude -p --dangerously-skip-permissions" in adapter
+    assert "直接调用 `/wiki-source-text`" in adapter
     assert "不得更新 index/log/hot/manifest" in integrator
     assert "串行增量 reducer" in integrator
 
@@ -47,15 +53,20 @@ def test_extraction_and_synthesis_guidance_remain_in_the_correct_stage():
     assert "do not reconcile with\nother ranges or the wiki" in extraction
 
 
-def test_folder_ingest_dispatches_source_text_as_an_isolated_skill_worker():
+def test_recoverable_and_lightweight_ingest_dispatch_differ_intentionally():
     coordinator = (ROOT / "workflows" / "wiki-folder-ingest.yaml").read_text()
+    lightweight = (ROOT / ".skills" / "wiki-ingest" / "SKILL.md").read_text()
 
-    assert "fresh isolated extraction subagent" in coordinator
-    assert "明确要求 subagent 读取并执行 `wiki-source-text` skill" in coordinator
+    assert "obsidian-wiki text-ingest-extract" in coordinator
+    assert "claude -p --dangerously-skip-permissions" in coordinator
+    assert "直接调用 `/wiki-source-text`" in coordinator
     assert "Job directory、一个 source_id 和当前 unit_id" in coordinator
-    assert "完整 source body 和 extracted items 不得回流 coordinator context" in coordinator
-    assert "无 isolated subagent 或 skill 不可用时保留 unit 为 pending" in coordinator
-    assert "以 bare workflow name 调用 `wiki-source-text`" not in coordinator
+    assert "worker 不得再派生 subagent" in coordinator
+    assert "obsidian-wiki text-document-run" in lightweight
+    assert "fresh `claude -p` session" in lightweight
+    assert "`/wiki-ingest-document` skill" in lightweight
+    assert "一个 `document_id`" in lightweight
+    assert "Wiki writes 严格串行" in lightweight
 
 
 def test_page_writes_staging_and_cross_references_remain_integrated():
@@ -83,12 +94,11 @@ def test_page_writes_staging_and_cross_references_remain_integrated():
     assert "移除 staged_write metadata" in stage_commit
     assert "永久 manifest" in stage_commit
     assert "live validation 成功后" in stage_commit
-    assert "staged 且不增加 units_integrated" not in coordinator
     assert "父 workflow 不复述或重算 write-mode、unit 状态和计数规则" in coordinator
     assert "awaiting_review" in integrator
 
 
-def test_manifest_and_special_file_finalization_is_a_shared_complete_source_policy():
+def test_source_and_document_completion_boundaries_coexist():
     integrator = (ROOT / "workflows" / "wiki-packet-integrate.yaml").read_text()
     coordinator = (ROOT / "workflows" / "wiki-folder-ingest.yaml").read_text()
     stage_commit = (ROOT / "workflows" / "wiki-stage-commit.yaml").read_text()
@@ -97,9 +107,9 @@ def test_manifest_and_special_file_finalization_is_a_shared_complete_source_poli
     assert "source finalization 由父 coordinator" in integrator
     assert "workflow: wiki-finalize-sources" in coordinator
     assert "workflow: wiki-finalize-sources" in stage_commit
-    folder_workflow = (ROOT / "workflows" / "wiki-folder-ingest.yaml").read_text()
-    assert "workflow: wiki-finalize-sources" in folder_workflow
-    assert "当前 Job 中全部 eligible sources" in folder_workflow
+    lightweight = (ROOT / ".skills" / "wiki-ingest" / "SKILL.md").read_text()
+    assert "text-document-commit" in lightweight
+    assert "wiki-finalize-sources" not in lightweight
     for field in ("content hash", "created", "updated", "live pages", "stats"):
         assert field in finalizer
     for heading in ("Recent Activity", "Active Threads", "Key Takeaways", "Flagged Contradictions"):

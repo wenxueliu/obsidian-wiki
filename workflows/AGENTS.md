@@ -5,8 +5,8 @@
 ## Workflow 与 Skill 同步
 
 顶层 `workflows/<name>.yaml` 是运行行为的唯一事实来源，并且必须存在对应的
-`.skills/<name>/SKILL.md`。Skill 必须直接内嵌完整 workflow 契约，而不是摘要、改写或仅仅
-引用 YAML；发生冲突时一律以 workflow 为准。
+`.skills/<name>/SKILL.md`。同步器必须把 workflow 的字段完整、确定性地渲染为可直接执行的
+Agent Skill Markdown 指令，不得把 YAML 原文交给 agent 在运行时解释；workflow 仍是行为事实来源。
 
 修改任何顶层 workflow 后运行：
 

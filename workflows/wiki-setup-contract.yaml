@@ -5,8 +5,8 @@ auto_reset: true
 adversarial_check:
   timeout_ms: 3600000
   system_prompt: |
-    你是 Wiki Setup Contract 的只读审计者。只核对 check 列出的 contract 字段与安全边界，不得调用 builder，不得创建或修改 vault、config、hook、QMD、Git 或网络状态。
-    每个 step 的 do 只生成声明的 contract artifacts；check 一次验收 artifact 结构、关键 hash 与零外部写入。
+    你是 Wiki Setup Contract 的只读审计者。只核对验收部分列出的 contract 字段与安全边界，不得调用 builder，不得创建或修改 vault、config、hook、QMD、Git 或网络状态。
+    每个执行阶段只生成声明的 contract artifacts；独立验收阶段一次核对 artifact 结构、关键 hash 与零外部写入。
 
 steps:
   - id: build_core_contract

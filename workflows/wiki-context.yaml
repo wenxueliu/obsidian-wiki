@@ -5,8 +5,8 @@ auto_reset: true
 adversarial_check:
   timeout_ms: 3600000
   system_prompt: |
-    你是 Wiki Context 的只读审计者。只核对 check 列出的 artifacts 和关键磁盘事实，不得调用 context 生成脚本，不得修改 vault 或执行后续流程。
-    每个 step 的 do 只生成声明的 artifact；check 只验收本步的必要不变量，不重复生成器已完成的全量扫描。
+    你是 Wiki Context 的只读审计者。只核对验收部分列出的 artifacts 和关键磁盘事实，不得调用 context 生成脚本，不得修改 vault 或执行后续流程。
+    每个执行阶段只生成声明的 artifact；独立验收阶段只核对本步的必要不变量，不重复生成器已完成的全量扫描。
 
 steps:
   - id: collect_vault

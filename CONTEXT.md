@@ -31,3 +31,11 @@ _Avoid_: Domain detector, Named Vault Profile, Writing Profile
 **Vault Layout**:
 The materialization contract that maps declared page types to paths and defines live content roots, system areas, and naming placeholders.
 _Avoid_: Knowledge Profile, Folder structure
+
+**Source File**:
+A user-owned physical text file that supplies provenance and is deterministically normalized into one or more Ingest Documents.
+_Avoid_: Document, Unit
+
+**Ingest Document**:
+A bounded, independently processable text input handled in one fresh model session. A small Source File produces one Ingest Document and a large Source File produces multiple Ingest Documents; this boundary never implies a Wiki page boundary.
+_Avoid_: Unit, Packet, Chunk page, Virtual page

@@ -12,12 +12,12 @@ steps:
   - id: frame_requirements
     desc: 澄清知识边界、用户目标与现有环境
     do: |
-      本 YAML 是 LLM Wiki 架构规划的完整运行时规范。根据用户任务识别：
+      本 skill 是 LLM Wiki 架构规划的完整运行时规范。根据用户任务识别：
 
       1. 原始 sources 的种类、位置、可变性、敏感度与现有 ingest adapters；明确 text V1 仅支持本地 UTF-8 .md/.markdown/.mdx/.txt/.rst，其他格式不能冒充纯文本。
       2. 用户希望查询/维护的知识、项目范围、交互式 vault 路径、config defaults/overrides、owner AGENTS、writing profile、link format、staged writes 与 QMD 状态。
       3. 规模、token/检索约束、协作/审批要求、provenance 与 trust 风险。
-      4. 哪些需求属于 llm-wiki 架构设计，哪些必须路由 wiki-setup、wiki-folder-ingest、wiki-query、wiki-lint、wiki-status、wiki-rebuild 等具体 workflow。
+      4. 哪些需求属于 llm-wiki 架构设计，哪些必须路由 wiki-setup、可恢复的 wiki-folder-ingest、轻量且 workflow-free 的 wiki-ingest、wiki-query、wiki-lint、wiki-status、wiki-rebuild 等具体能力。
 
       写 requirements-brief.md，包含 assumptions、open questions、in/out of scope 和不得执行的写入。此 workflow 全程只写 artifacts，不修改 vault/config。
     input: 用户的知识库架构、schema 或组织需求
@@ -60,7 +60,7 @@ steps:
       2. Retrieval Primitives：index/frontmatter → summary → anchored grep context → whole page last；说明 QMD 是可选 index、Markdown 是 source of truth。
       3. 写入事务：direct/staged 边界、validation、index/log/hot、manifest-last、QMD 仅在 live commit 后刷新。
       4. ingest append/rebuild/restore 路由，canonical sources、delta、idempotency、cross-links、contradictions 与 trust review。
-      5. 为实际任务给出 workflow map：wiki-setup、wiki-folder-ingest → isolated subagent 的 worker-only wiki-source-text skill → wiki-packet-integrate → wiki-finalize-sources、wiki-stage-commit、wiki-query、wiki-lint、wiki-status、wiki-rebuild 等，注明每个读写权限和完成条件。
+      5. 为实际任务给出 workflow map：可恢复路径为 wiki-folder-ingest → bounded claude -p pool 的 worker-only wiki-source-text → wiki-packet-integrate → wiki-finalize-sources；轻量路径为 workflow-free wiki-ingest → 每个 Ingest Document 一个 fresh session 的 wiki-ingest-document → per-document manifest commit。并覆盖 wiki-setup、wiki-stage-commit、wiki-query、wiki-lint、wiki-status、wiki-rebuild 等，注明选择条件、读写权限和完成边界。
       6. 给出 phased adoption 与 acceptance criteria，避免要求全 vault 读取或数据库依赖。
 
       本步骤仍只输出设计，不执行任何专用 workflow。
@@ -79,7 +79,7 @@ steps:
     do: |
       将前述 artifacts 汇总为 llm-wiki-blueprint.md：目标、关键决策、三层图、effective/proposed Knowledge Profile、Vault Layout、schema、source adapter matrix、operational workflow map、风险/权衡、phased rollout、验收标准和下一条推荐命令。
 
-      明确标记 owner 已确认、framework invariant、proposal、open question；不要伪造现有配置。若用户请求实际初始化，下一步指向 `wiki/wiki-setup`；文本 ingest 指向 `wiki/wiki-folder-ingest`。写 blueprint-validation.md 记录逐项 contract 检查。
+      明确标记 owner 已确认、framework invariant、proposal、open question；不要伪造现有配置。若用户请求实际初始化，下一步指向 `wiki/wiki-setup`；需要 staged review/Job 恢复的文本 ingest 指向 `wiki/wiki-folder-ingest`，明确要求轻量无 Job/Packet 时指向 skill-only `wiki-ingest`。写 blueprint-validation.md 记录逐项 contract 检查。
 
       确认全程没有修改 vault/config 后输出 <promise>done</promise>。
     input: requirements-brief.md + wiki-architecture.md + operations-design.md

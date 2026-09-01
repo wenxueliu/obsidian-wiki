@@ -16,8 +16,10 @@ Slash commands (`/skill-name`) work in Claude Code, Cursor, Windsurf, and most C
 
 | Skill | What it does | Slash command |
 |---|---|---|
-| `wiki-folder-ingest` | Coordinate resumable ingestion with bounded parallel extraction, ordered integration, and deterministic completion reports; report unsupported inputs | `/wiki-folder-ingest` |
-| `wiki-source-text` | In a fresh isolated subagent, extract exactly one coordinator-assigned source range into one validated bounded Packet | worker-only |
+| `wiki-folder-ingest` | Coordinate resumable ingestion with bounded parallel extraction, ordered integration, and deterministic completion reports | `/wiki-folder-ingest` |
+| `wiki-ingest` | Lightweight ingest: normalize files into independent Ingest Documents and process each in a fresh serialized session without Job/Packet artifacts | `/wiki-ingest` |
+| `wiki-ingest-document` | Directly integrate one planned Ingest Document and atomically record it in `.manifest.json` after validation | worker-only |
+| `wiki-source-text` | In one isolated worker, extract one coordinator-assigned Job range into a validated Packet | worker-only |
 | `wiki-packet-integrate` | Validate and serially integrate one coordinator-assigned Packet using frozen Job context | worker-only |
 | `wiki-capture` | Save the current conversation as a wiki note; `--quick` stages findings to `_raw/` in under 60 seconds | `/wiki-capture` |
 | `wiki-update` | Sync the current project's knowledge into the vault — works from any repo | `/wiki-update` |

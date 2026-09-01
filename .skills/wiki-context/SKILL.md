@@ -5,65 +5,97 @@ description: "按配置解析 Wiki vault，并用确定性脚本生成共享运�
 
 # wiki-context
 
-此 skill 直接执行下方从 `workflows/wiki-context.yaml` 同步的完整契约。内嵌 YAML 是实际指令，不是摘要或外部参考；按 `steps`、输入输出、检查、跳转、失败上限和人工审批要求逐项执行。
+此 skill 是 `workflows/wiki-context.yaml` 的 Agent Skill 格式投影；workflow 是行为事实来源，本文件把其字段渲染为可直接执行的 Markdown 指令。
 
-发生任何冲突时，以内嵌 workflow 契约为准。不要用历史 skill 文案补写、弱化或覆盖它。修改行为时先编辑 workflow，再运行 `python tools/sync_workflow_skills.py`。
+<!-- BEGIN GENERATED SKILL INSTRUCTIONS -->
 
-<!-- BEGIN GENERATED WORKFLOW CONTRACT -->
-````yaml
-description: 按配置解析 Wiki vault，并用确定性脚本生成共享运行时上下文
+## 执行规则
 
-auto_reset: true
+按下列步骤和流程控制执行。每个步骤只读取其声明的输入，只产生其声明的产出；执行与独立验收分开进行。修改行为时先编辑权威 workflow，再运行 `python tools/sync_workflow_skills.py`。
 
-adversarial_check:
-  timeout_ms: 3600000
-  system_prompt: |
-    你是 Wiki Context 的只读审计者。只核对 check 列出的 artifacts 和关键磁盘事实，不得调用 context 生成脚本，不得修改 vault 或执行后续流程。
-    每个 step 的 do 只生成声明的 artifact；check 只验收本步的必要不变量，不重复生成器已完成的全量扫描。
+- 自动重置：开启。
 
-steps:
-  - id: collect_vault
-    desc: 从 invocation 生成不含秘密的 vault 解析输入 artifact
-    do: |
-      只生成 `vault-input.json`，不读取 config 或 vault 内容。
+## 独立验收规则
 
-      若调用方 inputs 含 `run_condition` 且父报告证明条件不成立，不向用户询问，直接写 `{"mode":"skipped","reason":"...","evidence":"..."}`。
+你是 Wiki Context 的只读审计者。只核对验收部分列出的 artifacts 和关键磁盘事实，不得调用 context 生成脚本，不得修改 vault 或执行后续流程。
+每个执行阶段只生成声明的 artifact；独立验收阶段只核对本步的必要不变量，不重复生成器已完成的全量扫描。
 
-      否则，先解析 invocation 中的路由意图，并收集调用方 `requested_keys` 中用户显式提供的非秘密 overrides：
+单次验收超时：`3600000` 毫秒。
 
-      - invocation 含 `@name` 时，移除该路由 token，写 `{"mode":"config","profile":"name","overrides":{...}}`；这里的 `profile` 是 Named Vault Profile，只选择 config/vault，不是 Knowledge Profile；
-      - 用户明确给出 vault 绝对路径时，写 `{"mode":"interactive","vault_path":"<expanded absolute path>","overrides":{...}}`；
-      - 其他情况写 `{"mode":"config","overrides":{...}}`，不向用户重复询问 vault。resolver 会按最近 `.env` 再到全局 `~/.obsidian-wiki/config` 的顺序读取 wiki-setup 已写入的设置。
+## 工作流
 
-      准备好后输出 `<promise>done</promise>`。
-    input: 调用方 invocation、run_condition（如有）、requested_keys 和用户输入
-    output: vault-input.json
-    check: 解析 vault-input.json；skipped 时核对 reason/evidence，config 时核对可选 profile，interactive 时核对用户明确给出的绝对 vault path；核对 requested_keys 内的非秘密 overrides；确认本步只产生该 artifact
-    on_pass: resolve_context
-    on_fail: collect_vault
-    max_fail_count: 3
+### 1. 从 invocation 生成不含秘密的 vault 解析输入 artifact (`collect_vault`)
 
-  - id: resolve_context
-    desc: 调用随包发布的 resolver 生成 Wiki 共享上下文
-    do: |
-      使用已批准的 `vault-input.json` 和调用方 inputs 生成 `wiki-context.json`、`wiki-context.md` 与仅含非秘密策略选项的 `text-chunk-options.json`：
+#### 执行
 
-      ```bash
-      obsidian-wiki wiki-context-resolve \
-        --input "{{artifacts_dir}}/vault-input.json" \
-        --source-cwd "<source-cwd>" \
-        --requested-keys "<comma-separated requested_keys>" \
-        --optional-reads "<comma-separated optional_reads>" \
-        --setup-mode "<true-or-false>" \
-        --output-dir "{{artifacts_dir}}"
-      ```
+只生成 `vault-input.json`，不读取 config 或 vault 内容。
 
-      console script 不在 PATH 时使用等价的 `python3 -m obsidian_wiki wiki-context-resolve ...`。config mode 严格按 `@name` 指定 config、从 source CWD 向上找第一个含 `OBSIDIAN_VAULT_PATH` 的 `.env`、再到全局 `~/.obsidian-wiki/config` 的顺序解析；都缺失时要求运行 wiki-setup。resolver 将 effective config、owner/Writing Profile metadata、requested optional metadata、active Knowledge Pack 的 Knowledge Profile/Layout 状态、text chunking 配置及 retrieval order 写入声明的 artifacts。`wiki-context.json` 是唯一 canonical result，`wiki-context.md` 只从同一 result 渲染、不得独立推导或补充事实；resolver 在同一批 artifact 写入中提交二者。
-    input: vault-input.json + 调用方传入的 source_cwd、requested_keys、optional_reads、setup_mode
-    output: wiki-context.json + wiki-context.md + text-chunk-options.json
-    check: 解析 artifacts；核对 context JSON/Markdown 的 mode、vault、config source、write mode、layout/profile、warnings 一致及 requested keys/chunk options；请求 layout 时确认 marker matched 且 profile/routing/hash 冻结一致；skipped 不带 config/vault；确认除 artifacts 外零写入
-    on_pass: done
-    on_fail: collect_vault
-    max_fail_count: 3
-````
-<!-- END GENERATED WORKFLOW CONTRACT -->
+若调用方 inputs 含 `run_condition` 且父报告证明条件不成立，不向用户询问，直接写 `{"mode":"skipped","reason":"...","evidence":"..."}`。
+
+否则，先解析 invocation 中的路由意图，并收集调用方 `requested_keys` 中用户显式提供的非秘密 overrides：
+
+- invocation 含 `@name` 时，移除该路由 token，写 `{"mode":"config","profile":"name","overrides":{...}}`；这里的 `profile` 是 Named Vault Profile，只选择 config/vault，不是 Knowledge Profile；
+- 用户明确给出 vault 绝对路径时，写 `{"mode":"interactive","vault_path":"<expanded absolute path>","overrides":{...}}`；
+- 其他情况写 `{"mode":"config","overrides":{...}}`，不向用户重复询问 vault。resolver 会按最近 `.env` 再到全局 `~/.obsidian-wiki/config` 的顺序读取 wiki-setup 已写入的设置。
+
+准备好后输出 `<promise>done</promise>`。
+
+#### 输入
+
+调用方 invocation、run_condition（如有）、requested_keys 和用户输入
+
+#### 产出
+
+vault-input.json
+
+#### 验收
+
+解析 vault-input.json；skipped 时核对 reason/evidence，config 时核对可选 profile，interactive 时核对用户明确给出的绝对 vault path；核对 requested_keys 内的非秘密 overrides；确认本步只产生该 artifact
+
+#### 流程控制
+
+- 验收通过：转到 `resolve_context`。
+
+- 验收失败：返回 `collect_vault`。
+
+- 最多连续失败 `3` 次；达到上限后停止并报告阻塞。
+
+### 2. 调用随包发布的 resolver 生成 Wiki 共享上下文 (`resolve_context`)
+
+#### 执行
+
+使用已批准的 `vault-input.json` 和调用方 inputs 生成 `wiki-context.json`、`wiki-context.md` 与仅含非秘密策略选项的 `text-chunk-options.json`：
+
+```bash
+obsidian-wiki wiki-context-resolve \
+  --input "{{artifacts_dir}}/vault-input.json" \
+  --source-cwd "<source-cwd>" \
+  --requested-keys "<comma-separated requested_keys>" \
+  --optional-reads "<comma-separated optional_reads>" \
+  --setup-mode "<true-or-false>" \
+  --output-dir "{{artifacts_dir}}"
+```
+
+console script 不在 PATH 时使用等价的 `python3 -m obsidian_wiki wiki-context-resolve ...`。config mode 严格按 `@name` 指定 config、从 source CWD 向上找第一个含 `OBSIDIAN_VAULT_PATH` 的 `.env`、再到全局 `~/.obsidian-wiki/config` 的顺序解析；都缺失时要求运行 wiki-setup。resolver 将 effective config、owner/Writing Profile metadata、requested optional metadata、active Knowledge Pack 的 Knowledge Profile/Layout 状态、text chunking 配置及 retrieval order 写入声明的 artifacts。`wiki-context.json` 是唯一 canonical result，`wiki-context.md` 只从同一 result 渲染、不得独立推导或补充事实；resolver 在同一批 artifact 写入中提交二者。
+
+#### 输入
+
+vault-input.json + 调用方传入的 source_cwd、requested_keys、optional_reads、setup_mode
+
+#### 产出
+
+wiki-context.json + wiki-context.md + text-chunk-options.json
+
+#### 验收
+
+解析 artifacts；核对 context JSON/Markdown 的 mode、vault、config source、write mode、layout/profile、warnings 一致及 requested keys/chunk options；请求 layout 时确认 marker matched 且 profile/routing/hash 冻结一致；skipped 不带 config/vault；确认除 artifacts 外零写入
+
+#### 流程控制
+
+- 验收通过：转到 `done`。
+
+- 验收失败：返回 `collect_vault`。
+
+- 最多连续失败 `3` 次；达到上限后停止并报告阻塞。
+
+<!-- END GENERATED SKILL INSTRUCTIONS -->
