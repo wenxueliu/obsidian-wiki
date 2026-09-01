@@ -181,8 +181,7 @@ def test_v1_routing_and_cli_are_documented():
     cli = (ROOT / "docs" / "cli.md").read_text()
     skills = (ROOT / "docs" / "skills.md").read_text()
 
-    assert "`wiki-folder-ingest`" in agents
-    assert "`wiki-source-text`" in agents
+    assert "`wiki-ingest`" in agents
     assert "text-chunk-plan <source>" in cli
     assert "text-chunk-read <source>" in cli
     assert "Text ingest V1 accepts UTF-8" in skills
