@@ -26,6 +26,8 @@ obsidian-wiki setup --vault ~/brain --layout software-knowledge
 obsidian-wiki setup --project .        # also install project-local skills + bootstrap files
 obsidian-wiki setup --project-only     # skip the global install (use with --project)
 obsidian-wiki setup --copy             # copy skill files instead of symlinking
+obsidian-wiki setup --project . --project-only --copy --skills-only  # local files only; do not touch a vault
+obsidian-wiki setup --vault ~/brain --layout default --refresh-layout-marker  # refresh one same-Pack marker
 obsidian-wiki setup --remote https://github.com/you/my-wiki.git   # configure sync non-interactively
 
 obsidian-wiki doctor --json --pretty
@@ -34,6 +36,18 @@ obsidian-wiki doctor --strict          # exit non-zero on warnings too
 ```
 
 Commands other than `setup`, `info`, and `doctor` warn you when the install has gone stale (the package upgraded but skills weren't re-linked). Re-run `obsidian-wiki setup` to fix.
+
+`--skills-only` limits setup to skill and project bootstrap installation. It does not read or write
+the global config, Writing Profile, vault, layout marker, or Git integration. Combine it with
+`--project . --project-only` for a project-local install with no global side effects.
+
+When `--layout` is omitted for an initialized vault, setup preserves the Knowledge Pack named by
+the vault's `_meta/layout.json`; it does not fall back to `default`. Setup automatically upgrades
+the legacy same-Pack marker format from before Knowledge Profiles added `profile_sha256`.
+
+After an intentional contract update to the currently active Knowledge Pack, pass
+`--refresh-layout-marker` together with that same Pack's `--layout` name. This only refreshes the
+marker hashes; it cannot switch Pack names, which requires a content-aware migration.
 
 ## Querying & linting
 

@@ -84,3 +84,31 @@ def test_stale_knowledge_profile_fails_closed(tmp_path: Path) -> None:
 
     with pytest.raises(LayoutContractError, match="profile_sha256"):
         active_layout(vault)
+
+
+def test_scaffold_can_explicitly_refresh_same_layout_marker(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    layout = load_layout("default")
+    scaffold_vault(vault, layout)
+    marker_path = vault / "_meta" / "layout.json"
+    marker = json.loads(marker_path.read_text())
+    marker["profile_sha256"] = "sha256:stale"
+    marker_path.write_text(json.dumps(marker))
+
+    with pytest.raises(LayoutContractError, match="stale or different"):
+        scaffold_vault(vault, layout)
+
+    assert scaffold_vault(vault, layout, refresh_layout_marker=True) is False
+    assert active_layout(vault, allow_uninitialized=False).name == "default"
+
+
+def test_scaffold_marker_refresh_cannot_switch_layouts(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    scaffold_vault(vault, load_layout("default"))
+
+    with pytest.raises(LayoutContractError, match="cannot switch layouts"):
+        scaffold_vault(
+            vault,
+            load_layout("software-knowledge"),
+            refresh_layout_marker=True,
+        )

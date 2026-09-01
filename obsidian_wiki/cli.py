@@ -23,6 +23,7 @@ from typing import TypedDict
 
 from obsidian_wiki import __version__
 from obsidian_wiki.workflow_layout import (
+    LAYOUT_MARKER,
     LayoutContractError,
     WorkflowLayout,
     layouts_dir,
@@ -363,7 +364,12 @@ def ensure_global_writing_profile() -> Path:
     return target
 
 
-def scaffold_vault(vault_path: Path, layout: WorkflowLayout | None = None) -> bool:
+def scaffold_vault(
+    vault_path: Path,
+    layout: WorkflowLayout | None = None,
+    *,
+    refresh_layout_marker: bool = False,
+) -> bool:
     """Create the vault directory structure and special files if they don't exist yet.
 
     Idempotent: existing files/dirs are left untouched. Returns True if the vault
@@ -375,20 +381,23 @@ def scaffold_vault(vault_path: Path, layout: WorkflowLayout | None = None) -> bo
     created = not vault_path.is_dir()
     copier = workflows_dir() / "scripts" / "apply_wiki_layout.py"
     with tempfile.TemporaryDirectory(prefix="obsidian-wiki-layout-") as output_dir:
+        command = [
+            sys.executable,
+            str(copier),
+            "apply",
+            "--layouts-dir",
+            str(layouts_dir()),
+            "--layout",
+            layout.name,
+            "--vault",
+            str(vault_path.expanduser().resolve()),
+            "--output-dir",
+            output_dir,
+        ]
+        if refresh_layout_marker:
+            command.append("--refresh-layout-marker")
         result = subprocess.run(
-            [
-                sys.executable,
-                str(copier),
-                "apply",
-                "--layouts-dir",
-                str(layouts_dir()),
-                "--layout",
-                layout.name,
-                "--vault",
-                str(vault_path.expanduser().resolve()),
-                "--output-dir",
-                output_dir,
-            ],
+            command,
             capture_output=True,
             text=True,
         )
@@ -466,6 +475,48 @@ def scaffold_vault(vault_path: Path, layout: WorkflowLayout | None = None) -> bo
         appearance_json.write_text(json.dumps({"baseFontSize": 16}, indent=2) + "\n")
 
     return created
+
+
+def _resolve_setup_layout(
+    vault_path: str,
+    requested_layout: str | None,
+) -> tuple[WorkflowLayout, bool]:
+    """Select setup's Pack and identify the one safe automatic marker upgrade.
+
+    An initialized vault owns its Knowledge Pack selection. Setup inherits that
+    selection unless the user explicitly requests another Pack. Markers written
+    before Knowledge Profiles were introduced have no ``profile_sha256``; setup
+    may refresh those same-Pack markers because the missing field identifies the
+    exact framework migration. Other stale markers still require explicit repair.
+    """
+    marker: dict[str, object] | None = None
+    if vault_path:
+        marker_path = Path(vault_path).expanduser() / LAYOUT_MARKER
+        if marker_path.is_file():
+            try:
+                loaded = json.loads(marker_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise LayoutContractError(
+                    f"active layout marker is invalid: {marker_path}: {exc}"
+                ) from exc
+            if (
+                not isinstance(loaded, dict)
+                or loaded.get("version") != 1
+                or not isinstance(loaded.get("name"), str)
+            ):
+                raise LayoutContractError(f"active layout marker is invalid: {marker_path}")
+            marker = loaded
+
+    selected_name = requested_layout
+    if selected_name is None and marker is not None:
+        selected_name = str(marker["name"])
+    layout = load_layout(selected_name or "default")
+    legacy_profile_marker = (
+        marker is not None
+        and marker["name"] == layout.name
+        and "profile_sha256" not in marker
+    )
+    return layout, legacy_profile_marker
 
 
 def _check_stale() -> None:
@@ -813,21 +864,36 @@ def cmd_setup(args: argparse.Namespace) -> int:
             print(f"\nUse: obsidian-wiki setup --layout <name>")
         return 0
 
-    if args.layout:
-        try:
-            layout = load_layout(args.layout)
-        except LayoutContractError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
-    else:
-        layout = load_layout("default")
-
     mode = "symlink" if (not _IS_WINDOWS and not args.copy) else "copy"
+    if args.skills_only:
+        if args.project_only and args.project is None:
+            print("error: --skills-only --project-only requires --project", file=sys.stderr)
+            return 2
+        if args.vault or args.layout or args.refresh_layout_marker or args.remote:
+            print(
+                "error: --skills-only cannot be combined with --vault, --layout, "
+                "--refresh-layout-marker, or --remote",
+                file=sys.stderr,
+            )
+            return 2
+        if not args.project_only:
+            install_global_skills(mode)
+        if args.project is not None:
+            project_dir = Path(args.project or os.getcwd()).expanduser().resolve()
+            install_project(project_dir, mode)
+        print(f"\n✅  Skills installed: {len(list_skills())}  (mode: {mode})")
+        return 0
+
     print("\n╔══════════════════════════════════════════════════╗")
     print("║         obsidian-wiki — Agent Setup              ║")
     print("╚══════════════════════════════════════════════════╝\n")
 
     vault_path = resolve_vault_path(args.vault)
+    try:
+        layout, upgrade_legacy_marker = _resolve_setup_layout(vault_path, args.layout)
+    except LayoutContractError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     write_config(vault_path)
     writing_profile = ensure_global_writing_profile()
     if not vault_path:
@@ -835,7 +901,11 @@ def cmd_setup(args: argparse.Namespace) -> int:
         print("      or edit OBSIDIAN_VAULT_PATH in ~/.obsidian-wiki/config.")
     else:
         vault_dir = Path(vault_path).expanduser()
-        vault_created = scaffold_vault(vault_dir, layout=layout)
+        vault_created = scaffold_vault(
+            vault_dir,
+            layout=layout,
+            refresh_layout_marker=args.refresh_layout_marker or upgrade_legacy_marker,
+        )
         print(f"   Layout: {layout.name}")
         if vault_created:
             print(f"✅  Vault created at {vault_dir}")
@@ -3047,6 +3117,11 @@ def _add_setup_args(sp: argparse.ArgumentParser) -> None:
         help="skip the global agent install (use with --project)",
     )
     sp.add_argument(
+        "--skills-only",
+        action="store_true",
+        help="install skills without reading or modifying config, a vault, or integrations",
+    )
+    sp.add_argument(
         "--copy",
         action="store_true",
         help="copy skill files instead of symlinking (the default on Windows)",
@@ -3060,6 +3135,11 @@ def _add_setup_args(sp: argparse.ArgumentParser) -> None:
         "--list-layouts",
         action="store_true",
         help="list available Knowledge Packs and exit",
+    )
+    sp.add_argument(
+        "--refresh-layout-marker",
+        action="store_true",
+        help="refresh hashes for the same layout name; cannot switch layouts",
     )
     sp.add_argument(
         "--remote",
