@@ -62,8 +62,8 @@ def test_recoverable_and_lightweight_ingest_dispatch_differ_intentionally():
     assert "直接调用 `/wiki-source-text`" in coordinator
     assert "Job directory、一个 source_id 和当前 unit_id" in coordinator
     assert "worker 不得再派生 subagent" in coordinator
-    assert "obsidian-wiki text-document-run" in lightweight
-    assert "fresh `claude -p` session" in lightweight
+    assert "串行调用一次 `Task` subagent" in lightweight
+    assert "不得使用 `claude -p`" in lightweight
     assert "`/wiki-ingest-document` skill" in lightweight
     assert "一个 `document_id`" in lightweight
     assert "Wiki writes 严格串行" in lightweight

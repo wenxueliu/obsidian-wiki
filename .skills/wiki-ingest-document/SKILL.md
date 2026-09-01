@@ -2,8 +2,8 @@
 name: wiki-ingest-document
 description: >
   Worker-only skill that directly integrates one planned text ingest document into an Obsidian
-  wiki and commits its completion to .manifest.json. Use only when wiki-folder-ingest supplies an
-  exact document plan path, document_id, and frozen wiki-context path.
+  wiki and commits its completion to .manifest.json. Use only when a parent ingest skill supplies
+  an exact document plan path, document_id, and frozen wiki-context path.
 ---
 
 # Wiki Ingest Document

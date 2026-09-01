@@ -179,7 +179,6 @@ Available for automation, scripting, and debugging. Skills call some of these in
 | `text-chunk-read <source>` | Verify the source hash and materialize exactly one planned byte range |
 | `text-document-plan <source>` | Normalize all supported sources into manifest-backed Ingest Documents; small files produce one, large files produce several |
 | `text-document-read <plan>` | Verify and materialize exactly one planned Ingest Document |
-| `text-document-run <plan>` | Process pending documents in fresh, serialized `claude -p` sessions |
 | `text-document-commit <plan>` | Atomically record one validated Ingest Document in `.manifest.json` |
 | `text-ingest-plan <source>` | Recoverable `wiki-folder-ingest`: create or resume a metadata-only text-ingest Job |
 | `text-ingest-status <job>` | Report deterministic source/unit counts, next unit, and live completion state |
@@ -211,8 +210,6 @@ obsidian-wiki text-document-plan ~/research \
   --target-budget 48000 --min-budget 24000 --hard-budget 64000 \
   --chunk-strategy adaptive_sections --strategy-options-file /tmp/chunk-options.json \
   --output /tmp/document-plan.json --pretty
-obsidian-wiki text-document-run /tmp/document-plan.json \
-  --context /tmp/wiki-context.json --output /tmp/document-session-report.json --pretty
 obsidian-wiki text-document-read /tmp/document-plan.json --document-id doc-...
 obsidian-wiki text-document-commit /tmp/document-plan.json \
   --document-id doc-... --created-page concepts/example.md --pretty
@@ -256,13 +253,14 @@ object and `--strategy-options-file` accepts the same object from a file. Raisin
 requires the explicit `--allow-unsafe-hard-budget` override. `text-chunk-read` writes the exact
 range without adding a newline and fails if the source changed after planning.
 
-`text-document-plan` is the `wiki-ingest` planner. It applies the same deterministic
-chunker to every file, consults `.manifest.json`, and emits only metadata. Every pending document is
-processed in a fresh session; writes are serialized. `text-document-read` revalidates the whole
+`text-document-plan` is the `wiki-ingest` planner. It applies the same deterministic chunker to every
+file, consults `.manifest.json`, and emits only metadata. The parent Agent processes each pending
+document by serially dispatching one `general-purpose` subagent to `/wiki-ingest-document`; the
+subagent is a fresh context and writes are serialized. `text-document-read` revalidates the whole
 Source File hash before returning one exact range, while `text-document-commit` repeats that check
-before atomically recording completion. A failed session therefore has no manifest record and is
+before atomically recording completion. A failed subagent therefore has no manifest record and is
 retried on the next run. The lightweight path creates no Job, unit state machine, Packet, extraction
-dump, or durable worker directory.
+dump, or durable worker directory, and does not invoke `claude -p`.
 
 The `text-ingest-*` commands implement the recoverable `wiki-folder-ingest` Job/Packet path.
 `text-ingest-extract` dynamically fills a bounded worker pool (default 4, hard maximum 32), atomically

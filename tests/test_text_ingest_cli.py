@@ -124,7 +124,8 @@ def test_recoverable_folder_workflow_and_lightweight_skill_coexist() -> None:
     assert "obsidian-wiki text-ingest-report" in skill
     assert "所有 integration 均不并发" in skill
     assert "obsidian-wiki text-document-plan" in lightweight
-    assert "obsidian-wiki text-document-run" in lightweight
+    assert "Task" in lightweight
+    assert "不得使用 `claude -p`" in lightweight
     assert "text-document-commit" in lightweight
     assert "不创建 Job、unit 状态机、Packet" in lightweight
     assert "Wiki writes 严格串行" in lightweight

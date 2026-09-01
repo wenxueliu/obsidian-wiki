@@ -56,20 +56,20 @@ vault 中产生 `_meta/ingest-jobs`、Packet 或 source-body artifact。
 
 ## Process documents
 
-运行：
+对每个 pending document，父 Agent 按稳定计划顺序串行调用一次 `Task` subagent（推荐
+`subagent_type=general-purpose`），并等待其完成后再派发下一个。subagent prompt 必须直接调用
+内部 `/wiki-ingest-document` skill，并只包含 plan path、一个 `document_id` 和 frozen context
+path，例如：
 
-```bash
-obsidian-wiki text-document-run "<artifacts-dir>/document-plan.json" \
-  --context "<artifacts-dir>/wiki-context.json" \
-  --worker-timeout-seconds 3600 \
-  --output "<artifacts-dir>/document-session-report.json" \
-  --pretty
+```text
+/wiki-ingest-document {"plan_path":"<absolute document-plan.json>","document_id":"<document-id>","wiki_context_path":"<absolute wiki-context.json>"}
 ```
 
-Runner 按稳定计划顺序为每个 pending document 启动一个 fresh `claude -p` session，直接调用内部
-`/wiki-ingest-document` skill。每个 session 只收到 plan path、一个 `document_id` 和 frozen
-context path；通过 `text-document-read` 读取唯一范围，把它作为完整独立文档处理。Sessions 不共享
-source body 或模型上下文；Wiki writes 严格串行，避免相同 canonical page 的并发覆盖。
+每个 subagent 都是独立上下文，只收到一个 document binding；通过 `text-document-read` 读取唯一
+范围，把它作为完整独立文档处理。Subagents 不共享 source body 或模型上下文；Wiki writes 严格串行，
+避免相同 canonical page 的并发覆盖。subagent 返回 document id、页面变更、commit result path、
+warnings 和 status，父 Agent 将这些结果汇总为 session report artifact。不得使用 `claude -p`、
+shell worker 或嵌套 subagent；worker skill 本身也不得再派生 subagent。
 
 Worker existing-first 归并并验证页面，更新 `index.md`、`log.md`、`hot.md`，最后调用
 `text-document-commit` 原子写 manifest。失败 worker 不写 document record，下次 invocation 自然
@@ -77,7 +77,7 @@ Worker existing-first 归并并验证页面，更新 `index.md`、`log.md`、`ho
 
 ## Report
 
-依据 `document-plan.json`、`document-session-report.json` 和 permanent manifest 报告 source/document
+依据 `document-plan.json`、父 Agent 汇总的 session report 和 permanent manifest 报告 source/document
 总数、manifest skipped、complete、failed、created/updated pages 与失败 document ids。只有所有
 pending documents 均有 exact-binding complete record 才报告完成。事实一致后输出
 `<promise>done</promise>`。

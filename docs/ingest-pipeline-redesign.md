@@ -4,8 +4,8 @@ Status: **V1 implemented (`wiki-folder-ingest`)**
 
 This document remains the contract for the recoverable `wiki-folder-ingest` Job/Packet pipeline.
 The separate, workflow-free `wiki-ingest` skill provides the lightweight alternative: every Source
-File is normalized into one or more independent documents, each handled in a fresh serialized
-session and committed directly to `.manifest.json`.
+File is normalized into one or more independent documents, each handled by a parent-dispatched
+fresh `general-purpose` subagent in serialized order and committed directly to `.manifest.json`.
 
 Implementation mapping:
 
@@ -13,6 +13,7 @@ Implementation mapping:
 - minimal Job and Packet contracts: `obsidian_wiki/ingest_pipeline.py`;
 - CLI materialization boundary: `text-chunk-plan` and `text-chunk-read`;
 - orchestration and extraction: `wiki-folder-ingest` and `wiki-source-text`;
+- lightweight document dispatch: parent Agent `Task` calls to `wiki-ingest-document`;
 - serialized integration: `wiki-packet-integrate`.
 
 ## 1. Decision summary

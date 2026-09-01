@@ -99,7 +99,7 @@ def test_lightweight_wiki_ingest_is_skill_only() -> None:
     for behavior in (
         "本 skill 不依赖 workflow",
         "obsidian-wiki text-document-plan",
-        "obsidian-wiki text-document-run",
+        "Task",
         "wiki-ingest-document",
         "Wiki writes 严格串行",
         "text-document-commit",

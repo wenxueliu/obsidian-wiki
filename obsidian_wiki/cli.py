@@ -1383,23 +1383,6 @@ def cmd_text_document_commit(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_text_document_run(args: argparse.Namespace) -> int:
-    from obsidian_wiki.ingest_documents import run_document_sessions
-    from obsidian_wiki.ingest_pipeline import PipelineContractError
-
-    try:
-        result = run_document_sessions(
-            Path(args.plan), Path(args.context),
-            claude_executable=args.claude_executable,
-            timeout_seconds=args.worker_timeout_seconds,
-        )
-        _emit_workflow_json(result, pretty=args.pretty, output=args.output)
-    except (OSError, ValueError, PipelineContractError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    return 1 if result["failed"] else 0
-
-
 def _emit_workflow_json(value: dict, *, pretty: bool, output: str | None) -> None:
     rendered = json.dumps(value, ensure_ascii=False, indent=2 if pretty else None) + "\n"
     if output is None:
@@ -2681,18 +2664,6 @@ def build_parser() -> argparse.ArgumentParser:
     tdc.add_argument("--output", help="atomically write the JSON commit result")
     tdc.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
     tdc.set_defaults(func=cmd_text_document_commit)
-
-    tdx = sub.add_parser(
-        "text-document-run",
-        help="process pending ingest documents in fresh serialized Claude sessions",
-    )
-    tdx.add_argument("plan", help="document plan JSON")
-    tdx.add_argument("--context", required=True, help="frozen wiki-context.json")
-    tdx.add_argument("--worker-timeout-seconds", type=int, default=3600)
-    tdx.add_argument("--claude-executable", default="claude")
-    tdx.add_argument("--output", help="atomically write the JSON session report")
-    tdx.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
-    tdx.set_defaults(func=cmd_text_document_run)
 
     tip = sub.add_parser(
         "text-ingest-plan",

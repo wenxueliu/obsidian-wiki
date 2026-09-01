@@ -45,11 +45,11 @@ Unsupported formats remain visible and are never silently decoded as text.
 
 ### 2. Pull information
 
-Each pending Ingest Document runs in a fresh model session with only its plan binding and frozen
-wiki context. The worker materializes exactly one hash-verified range and treats it as a complete
-input document. Sessions do not share source bodies or model context, so the original file size can
-never overflow a single session. Writes remain serialized to avoid two sessions overwriting the
-same canonical page.
+Each pending Ingest Document is dispatched by the parent Agent to one fresh `general-purpose`
+subagent with only its plan binding and frozen wiki context. The worker materializes exactly one
+hash-verified range and treats it as a complete input document. Subagents do not share source bodies
+or model context, so the original file size can never overflow a single session. Writes remain
+serialized to avoid two subagents overwriting the same canonical page.
 
 In the recoverable `wiki-folder-ingest` path, small sources use inline integration while larger
 ranges are extracted through bounded isolated workers into validated Packets. The durable Job owns
@@ -85,7 +85,7 @@ retains durable Jobs and Packets for interruption-safe resume and staged review.
 3. Agent loads the active Knowledge Profile and Vault Layout from the bound Knowledge Pack
 4. Agent reads the relevant skill for instructions
 5. Agent uses its built-in tools to do the work
-6. The selected skill runs either fresh Ingest Document sessions or Job-bound range workers
+6. The selected skill runs either parent-dispatched Ingest Document subagents or Job-bound range workers
 7. The selected completion boundary commits either one validated document or one complete source
 8. Output is standard Obsidian-compatible markdown with frontmatter and `[[wikilinks]]`
 
