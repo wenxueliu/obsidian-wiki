@@ -40,7 +40,10 @@ from obsidian_wiki.verify import (
 
 HOME = Path.home()
 _IS_WINDOWS = os.name == "nt"
-GLOBAL_CONFIG_DIR = (Path(os.environ.get("LOCALAPPDATA", "")) if _IS_WINDOWS else HOME) / ".obsidian-wiki"
+# Keep the global wiki state in the user's home directory on every platform.
+# In particular, do not use %LOCALAPPDATA% on Windows: the documented config
+# and the workflow resolver both use ~/.obsidian-wiki.
+GLOBAL_CONFIG_DIR = HOME / ".obsidian-wiki"
 GLOBAL_CONFIG = GLOBAL_CONFIG_DIR / "config"
 
 # Skills usable from any project (no vault context needed beyond the global

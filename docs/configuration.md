@@ -52,8 +52,8 @@ Neither changes what the active Knowledge Profile considers durable or authorita
 
 ## Global wiki writing profile
 
-Setup creates `~/.obsidian-wiki/WRITING.md` on POSIX systems, or
-`%LOCALAPPDATA%/.obsidian-wiki/WRITING.md` on Windows. It never overwrites an existing profile.
+Setup creates `~/.obsidian-wiki/WRITING.md` on every platform. It never overwrites an existing
+profile.
 Use it for writing preferences shared across projects, for example:
 
 ```markdown

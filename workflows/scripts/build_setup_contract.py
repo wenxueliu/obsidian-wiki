@@ -155,7 +155,7 @@ def build_core(templates_dir: Path, layouts_dir: Path, output_dir: Path) -> None
         },
         "writing_profile": {
             "unix_path": "~/.obsidian-wiki/WRITING.md",
-            "windows_path": "%LOCALAPPDATA%/.obsidian-wiki/WRITING.md",
+            "windows_path": "~/.obsidian-wiki/WRITING.md",
             "create_only_when_missing": True,
             "template": "WRITING.md",
         },

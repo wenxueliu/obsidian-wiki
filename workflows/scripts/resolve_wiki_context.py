@@ -80,11 +80,7 @@ def parse_config(path: Path) -> dict[str, str]:
 
 
 def config_home() -> Path:
-    return (
-        Path(os.environ.get("LOCALAPPDATA", ""))
-        if os.name == "nt"
-        else Path.home()
-    ).resolve()
+    return Path.home().resolve()
 
 
 def available_profiles(base: Path) -> list[str]:
@@ -286,8 +282,7 @@ def main() -> int:
 
         owner_path = vault / "AGENTS.md"
         owner_rules = owner_path.read_text(encoding="utf-8") if owner_path.is_file() else None
-        base = Path(os.environ.get("LOCALAPPDATA", "")) if os.name == "nt" else Path.home()
-        writing_path = base / ".obsidian-wiki" / "WRITING.md"
+        writing_path = Path.home() / ".obsidian-wiki" / "WRITING.md"
         writing_profile = writing_path.read_text(encoding="utf-8") if writing_path.is_file() else None
         optional_targets = {
             "taxonomy": vault / "_meta" / "taxonomy.md", "index": vault / "index.md",

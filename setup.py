@@ -21,7 +21,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILLS_DIR = SCRIPT_DIR / ".skills"
 _IS_WINDOWS = os.name == "nt"
-GLOBAL_CONFIG_DIR = (Path(os.environ.get("LOCALAPPDATA", "")) if _IS_WINDOWS else Path.home()) / ".obsidian-wiki"
+GLOBAL_CONFIG_DIR = Path.home() / ".obsidian-wiki"
 GLOBAL_CONFIG = GLOBAL_CONFIG_DIR / "config"
 OBSOLETE_MANAGED_SKILLS = ("wiki-ingest",)
 
