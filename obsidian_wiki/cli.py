@@ -354,7 +354,7 @@ def _read_config() -> dict[str, str]:
 
 def resolve_vault_path(cli_vault: str | None) -> str:
     if cli_vault:
-        return os.path.expanduser(cli_vault)
+        return str(Path(cli_vault).expanduser().resolve())
     existing = _read_config_value("OBSIDIAN_VAULT_PATH")
     if existing and existing != "/path/to/your/vault":
         return existing
@@ -364,7 +364,7 @@ def resolve_vault_path(cli_vault: str | None) -> str:
         except EOFError:
             entered = ""
         if entered:
-            return os.path.expanduser(entered)
+            return str(Path(entered).expanduser().resolve())
     return existing
 
 

@@ -75,6 +75,15 @@ def test_setup_parser_accepts_skills_only_and_marker_refresh() -> None:
     assert refresh_args.refresh_layout_marker is True
 
 
+def test_vault_argument_is_resolved_to_an_absolute_path(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    resolved = cli.resolve_vault_path("~/wiki-vault")
+
+    assert resolved == str((Path.home() / "wiki-vault").resolve())
+    assert Path(resolved).is_absolute()
+
+
 def test_project_setup_copies_packaged_env_template_only_when_missing(
     tmp_path: Path,
     monkeypatch,
