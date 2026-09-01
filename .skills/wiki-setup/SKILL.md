@@ -127,7 +127,7 @@ setup-plan.md（exact paths、defaults、create/preserve/repair、optional appro
 
 展示 setup-plan.md 的精简变更清单与 exact targets，写 approval-request.md 和 approved-setup.json，绑定 plan hash、setup contract hash、vault、config path、create/preserve/repair 集合及 approved optional actions。
 
-用户运行 /ralphflow-continue 表示批准当前 binding；如修改选择，先更新 plan/binding 再重新等待。拒绝则取消 workflow。批准前不得创建目录、配置、QMD collection、hook、Git repo 或 remote。准备好后输出 <promise>done</promise>。
+展示 approval-request.md 后，等待用户在当前会话明确回复“批准/继续”表示批准当前 binding；如修改选择，先更新 plan/binding 再重新等待。拒绝则取消 workflow。批准前不得创建目录、配置、QMD collection、hook、Git repo 或 remote。准备好后输出 <promise>done</promise>。
 
 #### 输入
 
