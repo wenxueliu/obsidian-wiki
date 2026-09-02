@@ -14,19 +14,23 @@ Running `obsidian-wiki` with no subcommand defaults to `setup`.
 
 | Command | What it does |
 |---|---|
-| `setup` | Install skills into your agents and write `~/.obsidian-wiki/config` |
+| `setup` | Select agent skill targets and write `~/.obsidian-wiki/config` |
 | `info` | Show install paths, version, and resolved config |
 | `list` | List the bundled skills |
 | `doctor` | Health-check config, vault shape, bootstrap assets, and installed skills |
 
 ```bash
 obsidian-wiki setup --vault ~/brain
+obsidian-wiki setup --list-agents          # list selectable agent skill targets
+obsidian-wiki setup --vault ~/brain --layout default --agent claude --agent codex
+obsidian-wiki setup --vault ~/brain --layout software-knowledge --agent claude,codex,pi
+obsidian-wiki setup --vault ~/brain --layout default --agent all  # explicit legacy all-agent behavior
 obsidian-wiki setup --list-layouts         # list Knowledge Packs (Profile + Layout)
 obsidian-wiki setup --vault ~/brain --layout software-knowledge
-obsidian-wiki setup --project .        # also install project-local skills + bootstrap files
+obsidian-wiki setup --project .        # install only the selected agents' local skills + bootstrap files
 obsidian-wiki setup --project-only     # skip the global install (use with --project)
 obsidian-wiki setup --copy             # copy skill files instead of symlinking
-obsidian-wiki setup --project . --project-only --copy --skills-only  # local files only; do not touch a vault
+obsidian-wiki setup --project . --project-only --copy --skills-only --agent cursor  # local files only; do not touch a vault
 obsidian-wiki setup --vault ~/brain --layout default --refresh-layout-marker  # refresh one same-Pack marker
 obsidian-wiki setup --remote https://github.com/you/my-wiki.git   # configure sync non-interactively
 
@@ -37,13 +41,34 @@ obsidian-wiki doctor --strict          # exit non-zero on warnings too
 
 Commands other than `setup`, `info`, and `doctor` warn you when the install has gone stale (the package upgraded but skills weren't re-linked). Re-run `obsidian-wiki setup` to fix.
 
+When setup runs in a terminal without `--agent`, it displays a numbered agent menu with no default
+selection. Non-interactive setup requires one or more `--agent NAME` flags, a comma-separated list,
+explicit `--agent all`, or explicit `--agent none`; it never silently chooses all or none. Cursor
+and Windsurf only have project-local skill targets, so use them with `--project`.
+
+Project installation applies that selection to every generated agent-specific file, not only to
+skill directories. For example, selecting only `claude` creates `.claude/skills/`, shared
+`AGENTS.md`, and `CLAUDE.md`; it does not create Cursor, Windsurf, Kiro, Antigravity, Copilot,
+Gemini, or Hermes bootstrap files. Existing files for unselected agents are left untouched.
+
+When setup runs in a terminal without `--layout`, it displays the available Knowledge Packs and
+requires exactly one number or name. Layout selection never accepts a list. Non-interactive setup
+requires `--layout NAME`; it does not silently choose `default` or inherit an existing marker.
+
+When setup runs in a terminal without `--vault`, it prompts for the vault directory and displays
+the absolute current directory as the default. Press Enter to accept that default. In a
+non-interactive run, setup retains the configured-vault fallback; pass `--vault PATH` to override
+it explicitly.
+
 `--skills-only` limits setup to skill and project bootstrap installation. It does not read or write
 the global config, Writing Profile, vault, layout marker, or Git integration. Combine it with
-`--project . --project-only` for a project-local install with no global side effects.
+`--project . --project-only` for a project-local install with no global side effects. Because this
+mode has no other setup work, it requires an explicit agent selection.
 
-When `--layout` is omitted for an initialized vault, setup preserves the Knowledge Pack named by
-the vault's `_meta/layout.json`; it does not fall back to `default`. Setup automatically upgrades
-the legacy same-Pack marker format from before Knowledge Profiles added `profile_sha256`.
+For an initialized vault, select the same Knowledge Pack recorded in `_meta/layout.json`. Choosing
+a different Pack does not bypass migration safety: setup fails instead of switching contracts.
+Setup automatically upgrades the legacy same-Pack marker format from before Knowledge Profiles
+added `profile_sha256`.
 
 After an intentional contract update to the currently active Knowledge Pack, pass
 `--refresh-layout-marker` together with that same Pack's `--layout` name. This only refreshes the

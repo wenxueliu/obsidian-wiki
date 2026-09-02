@@ -2,12 +2,12 @@
 
 Four ways in. Pick one — they all end at the same place: your vault path in `~/.obsidian-wiki/config` and the skills discoverable by your agent.
 
-| Path | Best for | Writes global config | Installs into all agents |
+| Path | Best for | Writes global config | Agent skill targets |
 |---|---|---|---|
-| [pip](#install-via-pip-recommended) | Most people | ✅ | ✅ |
-| [Let your agent do it](#let-your-agent-set-it-up) | No terminal required | ✅ | ✅ |
-| [git clone + `python3 setup.py`](#install-via-git-clone) | Contributors, hackers | ✅ | ✅ |
-| [Skills CLI](#install-via-skills-cli-deprecated) | Deprecated — partial install | ❌ | ❌ (current agent only) |
+| [pip](#install-via-pip-recommended) | Most people | ✅ | User-selected |
+| [Let your agent do it](#let-your-agent-set-it-up) | No terminal required | ✅ | Current agent |
+| [git clone + `python3 setup.py`](#install-via-git-clone) | Contributors, hackers | ✅ | Legacy all-agent installer |
+| [Skills CLI](#install-via-skills-cli-deprecated) | Deprecated — partial install | ❌ | Current agent only |
 
 ## Install via pip (recommended)
 
@@ -16,25 +16,43 @@ pip install obsidian-wiki
 obsidian-wiki setup --vault /path/to/your/digital/brain
 ```
 
-`obsidian-wiki setup` writes the config to `~/.obsidian-wiki/config` and installs every wiki skill into all your AI agents (Claude Code, Cursor, Codex, Gemini, Hermes, Pi, and more). Skills are symlinked to the installed package, so `pip install -U obsidian-wiki` upgrades them everywhere — just re-run `obsidian-wiki setup` to pick up new skills.
+`obsidian-wiki setup` writes the config to `~/.obsidian-wiki/config` and asks which agent skill
+targets to install. It has no implicit all-agent selection. Skills are symlinked to the installed
+package, so `pip install -U obsidian-wiki` upgrades the selected targets when setup is run again.
+
+For scripts and other non-interactive environments, select targets explicitly:
+
+```bash
+obsidian-wiki setup --vault /path/to/brain --layout default --agent claude --agent codex
+obsidian-wiki setup --vault /path/to/brain --layout software-knowledge --agent claude,codex,pi
+obsidian-wiki setup --vault /path/to/brain --layout default --agent all
+```
+
+Run `obsidian-wiki setup --list-agents` to see stable target names and whether each target is global,
+project-local, or both. Non-interactive setup requires an explicit selection; use `--agent none`
+only when intentionally configuring the vault without installing agent skills.
+
+If `--layout` is omitted in a terminal, setup displays the available Knowledge Packs and requires
+one selection. Agent selection accepts multiple values; layout selection is always single-choice.
+Non-interactive setup must pass `--layout NAME` explicitly.
 
 Then open a project in your agent and say **"set up my wiki"**.
 
 Useful flags:
 
 ```bash
-obsidian-wiki setup --project .   # also drop project-local skills + AGENTS.md into the current repo
+obsidian-wiki setup --project .   # install selected-agent project files into the current repo
 obsidian-wiki setup --copy        # copy skill files instead of symlinking
 ```
 
 For a self-contained project installation using the software-knowledge layout, run:
 
 ```bash
-obsidian-wiki setup --layout software-knowledge --project . --project-only --copy
+obsidian-wiki setup --layout software-knowledge --project . --project-only --copy --agent cursor
 ```
 
 This selects the `software-knowledge` Knowledge Pack, initializes the configured vault, and
-installs project-local skills, bootstrap files, and a missing `.env` from the packaged template
+installs the selected agent's project-local skills and bootstrap files, plus a missing `.env` from the packaged template
 under the current repository. `--project-only`
 skips global agent installation; it does not skip vault/configuration setup. `--copy` stores
 independent skill files instead of symlinks, which is useful when the project must remain
@@ -44,7 +62,11 @@ The project `.env` is created only when it does not already exist; setup never o
 existing project configuration. When `--vault` is supplied, its resolved absolute path is
 written to `OBSIDIAN_VAULT_PATH` in the new `.env`.
 
-`OBSIDIAN_VAULT_PATH` is just any directory where you want your digital brain to live — a new empty folder or an existing Obsidian vault. Omit `--vault` to be prompted, or set it later in `~/.obsidian-wiki/config`.
+`OBSIDIAN_VAULT_PATH` is just any directory where you want your digital brain to live — a new empty folder or an existing Obsidian vault. In an interactive terminal, omit `--vault` to enter the folder; the displayed default is the current directory, accepted by pressing Enter. In a non-interactive run, pass `--vault` explicitly or use the existing value in `~/.obsidian-wiki/config`.
+
+The agent selection also filters generated project rules and entry files. Selecting only Claude,
+for example, creates shared `AGENTS.md`, `CLAUDE.md`, and `.claude/skills/`, without generating
+the files for other agents. Selecting several agents generates the union of their files.
 
 Run `obsidian-wiki info` to see the resolved paths and `obsidian-wiki doctor` to health-check the result. See the [CLI reference](cli.md) for everything else the package ships.
 
@@ -78,7 +100,7 @@ For local-only config, copy `.env.example` to `.env` and set `OBSIDIAN_VAULT_PAT
 
 1. **Global config** at `~/.obsidian-wiki/config` with your vault path and the repo location. This is how skills know where to read and write.
 2. **Portable skills** — `wiki-update`, `wiki-query`, and `wiki-context-pack` symlinked into `~/.claude/skills/` so they're available from any project in Claude Code.
-3. **Global symlinks** for every agent's discovery path:
+3. **Global symlinks** for every agent's discovery path (legacy `python3 setup.py` behavior):
    - `~/.gemini/skills/` — Gemini CLI (canonical)
    - `~/.gemini/antigravity/skills/` — Google Antigravity (legacy)
    - `~/.codex/skills/` — Codex
@@ -93,7 +115,9 @@ For local-only config, copy `.env.example` to `.env` and set `OBSIDIAN_VAULT_PAT
 5. **Always-on rule files** — `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, `.hermes.md`, `.cursor/rules/…`, `.windsurf/rules/…`, `.kiro/steering/…`, `.agent/rules/…`, `.agent/workflows/…`, `.github/copilot-instructions.md`
 6. **GitHub sync** (optional) — see [Configuration → Syncing your vault to GitHub](configuration.md#syncing-your-vault-to-github)
 
-`obsidian-wiki setup` and `python3 setup.py` share one implementation, so pip and source installs produce the identical result.
+The two entry points use the same packaged skills and vault contracts, but their target selection
+differs: `obsidian-wiki setup` installs only explicitly selected agents, while the legacy
+`python3 setup.py` source installer still wires every supported agent path.
 
 ## Install via Skills CLI (deprecated)
 

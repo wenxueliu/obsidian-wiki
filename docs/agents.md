@@ -1,8 +1,11 @@
 # Agent Compatibility
 
-Works with **any AI coding agent that can read files**. `python3 setup.py` and `obsidian-wiki setup` handle skill discovery for each one automatically.
+Works with **any AI coding agent that can read files**. `obsidian-wiki setup` offers explicit agent
+targets (`--list-agents`, then one or more `--agent NAME` selections); `python3 setup.py` retains the
+legacy all-agent source-install behavior.
 
-Each agent has its own convention for discovering skills. Setup symlinks the canonical `.skills/` directory into each agent's expected location — you write skills once, every agent can use them.
+Each agent has its own convention for discovering skills. Setup symlinks the canonical `.skills/`
+directory only into the selected agents' expected locations.
 
 ## Matrix
 

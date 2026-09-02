@@ -106,7 +106,11 @@ def bootstrap_dir() -> Path | None:
 
 
 def list_skills() -> list[str]:
-    return sorted(p.name for p in skills_dir().iterdir() if p.is_dir())
+    return sorted(
+        p.name
+        for p in skills_dir().iterdir()
+        if p.is_dir() and (p / "SKILL.md").is_file()
+    )
 
 
 # ── Skill installation ───────────────────────────────────────────────────────
@@ -139,15 +143,45 @@ def install_skills(
     quiet: bool = False,
 ) -> int:
     """Install bundled skills into *target_dir*. Returns the count installed."""
-    src_root = skills_dir()
+    src_root = skills_dir().resolve()
+    target_dir = target_dir.expanduser()
+    target_resolved = target_dir.resolve(strict=False)
+    skill_dirs = sorted(skill for skill in src_root.iterdir() if skill.is_dir())
+    selected_skills = [
+        skill
+        for skill in skill_dirs
+        if (skill / "SKILL.md").is_file()
+        and (subset is None or skill.name in subset)
+    ]
+
+    # Some projects intentionally link the whole agent skills directory to the
+    # canonical .skills directory. Treat that as an already-complete install.
+    # Mutating individual children in this case would replace canonical skills
+    # with self-referential links.
+    if target_resolved == src_root:
+        if not quiet:
+            print(f"✅  Already linked {len(selected_skills)} skills → {label}")
+        return len(selected_skills)
+    if src_root in target_resolved.parents:
+        raise RuntimeError(
+            f"refusing to install skills inside canonical source: {target_dir} -> {src_root}"
+        )
+
     target_dir.mkdir(parents=True, exist_ok=True)
+    # A stale, empty, or removed directory under the canonical skill root is
+    # not an installable skill. Remove only target symlinks that resolve to a
+    # direct child of that root without SKILL.md; never remove real user dirs.
+    for candidate in target_dir.iterdir():
+        if not candidate.is_symlink():
+            continue
+        linked = candidate.resolve(strict=False)
+        if linked.parent == src_root and not (linked / "SKILL.md").is_file():
+            candidate.unlink()
     if subset is None:
         _remove_obsolete_managed_skills(target_dir)
     installed = 0
-    for skill in sorted(p for p in src_root.iterdir() if p.is_dir()):
+    for skill in selected_skills:
         name = skill.name
-        if subset is not None and name not in subset:
-            continue
         link_path = target_dir / name
 
         if link_path.is_symlink() or link_path.is_file():
@@ -175,29 +209,179 @@ def install_skills(
     return installed
 
 
-# Agents whose skills directory lives under $HOME. (path-under-home, label,
-# subset). All get every skill — pip users have no cloned repo to host
-# project-scoped skills, so everything must be globally discoverable.
-GLOBAL_AGENT_DIRS: list[tuple[str, str, tuple[str, ...] | None]] = [
-    (".claude/skills", "~/.claude/skills/ (Claude Code)", None),
-    (".gemini/skills", "~/.gemini/skills/ (Gemini CLI)", None),
-    (".gemini/antigravity/skills", "~/.gemini/antigravity/skills/ (Antigravity, legacy)", None),
-    (".codex/skills", "~/.codex/skills/ (Codex)", None),
-    (".hermes/skills", "~/.hermes/skills/ (Hermes default)", None),
-    (".openclaw/skills", "~/.openclaw/skills/ (OpenClaw)", None),
-    (".copilot/skills", "~/.copilot/skills/ (GitHub Copilot CLI)", None),
-    (".trae/skills", "~/.trae/skills/ (Trae)", None),
-    (".trae-cn/skills", "~/.trae-cn/skills/ (Trae CN)", None),
-    (".kiro/skills", "~/.kiro/skills/ (Kiro CLI)", None),
-    (".pi/agent/skills", "~/.pi/agent/skills/ (Pi)", None),
-    (".agents/skills", "~/.agents/skills/ (OpenCode, Aider, Droid, generic)", None),
+# Stable CLI names, display labels, and where setup can install each agent.
+SETUP_AGENTS: tuple[tuple[str, str, str], ...] = (
+    ("claude", "Claude Code", "global + project"),
+    ("cursor", "Cursor", "project"),
+    ("windsurf", "Windsurf", "project"),
+    ("codex", "Codex", "global"),
+    ("gemini", "Gemini CLI", "global"),
+    ("antigravity", "Google Antigravity (legacy)", "global"),
+    ("hermes", "Hermes", "global"),
+    ("openclaw", "OpenClaw", "global"),
+    ("copilot", "GitHub Copilot CLI", "global"),
+    ("trae", "Trae", "global"),
+    ("trae-cn", "Trae CN", "global"),
+    ("kiro", "Kiro", "global + project"),
+    ("pi", "Pi", "global + project"),
+    ("generic", "OpenCode / Aider / Droid / generic", "global + project"),
+)
+SETUP_AGENT_NAMES = tuple(record[0] for record in SETUP_AGENTS)
+
+
+def _parse_setup_agents(raw_values: list[str] | None) -> tuple[str, ...]:
+    tokens = [
+        token.strip().lower()
+        for raw in (raw_values or [])
+        for token in raw.split(",")
+        if token.strip()
+    ]
+    if not tokens or tokens == ["none"]:
+        return ()
+    if "none" in tokens:
+        raise ValueError("agent 'none' cannot be combined with other selections")
+    if "all" in tokens:
+        if len(tokens) != 1:
+            raise ValueError("agent 'all' cannot be combined with other selections")
+        return SETUP_AGENT_NAMES
+    unknown = sorted(set(tokens) - set(SETUP_AGENT_NAMES))
+    if unknown:
+        raise ValueError(
+            "unknown agent(s): " + ", ".join(unknown)
+            + "; run 'obsidian-wiki setup --list-agents'"
+        )
+    selected = set(tokens)
+    return tuple(name for name in SETUP_AGENT_NAMES if name in selected)
+
+
+def _print_setup_agents() -> None:
+    print("\nAvailable agent skill targets:\n")
+    for index, (name, label, scope) in enumerate(SETUP_AGENTS, 1):
+        print(f"  {index:2d}. {name:12s}  {label} ({scope})")
+    print(
+        "\nUse --agent NAME more than once, a comma-separated list, --agent all, "
+        "or --agent none."
+    )
+
+
+def _select_setup_agents(raw_values: list[str] | None) -> tuple[str, ...]:
+    if raw_values:
+        return _parse_setup_agents(raw_values)
+    if not sys.stdin.isatty():
+        return ()
+
+    _print_setup_agents()
+    while True:
+        try:
+            answer = input(
+                "\n  Select agents by number/name (comma-separated; 'all' or 'none'): "
+            ).strip()
+        except EOFError:
+            return ()
+        if not answer:
+            print("  No agents selected; enter names/numbers or 'none'.")
+            continue
+        if answer.lower() in {"all", "none"}:
+            return _parse_setup_agents([answer])
+        converted: list[str] = []
+        invalid_number = False
+        for token in answer.split(","):
+            value = token.strip()
+            if value.isdigit():
+                index = int(value)
+                if not 1 <= index <= len(SETUP_AGENTS):
+                    invalid_number = True
+                    break
+                converted.append(SETUP_AGENTS[index - 1][0])
+            else:
+                converted.append(value)
+        if invalid_number:
+            print("  Invalid agent number; choose one from the displayed list.")
+            continue
+        try:
+            return _parse_setup_agents(converted)
+        except ValueError as exc:
+            print(f"  {exc}")
+
+
+def _setup_layout_choices() -> tuple[tuple[str, str], ...]:
+    return tuple(
+        (name, layout.profile["description"])
+        for name, layout in sorted(list_layouts().items())
+    )
+
+
+def _print_setup_layouts(
+    choices: tuple[tuple[str, str], ...] | None = None,
+) -> tuple[tuple[str, str], ...]:
+    available = choices if choices is not None else _setup_layout_choices()
+    print("\nAvailable Knowledge Packs (Profile + Layout):\n")
+    for index, (name, description) in enumerate(available, 1):
+        print(f"  {index:2d}. {name:20s}  {description}")
+    print("\nUse --layout NAME for non-interactive setup.")
+    return available
+
+
+def _select_setup_layout(requested_layout: str | None) -> str:
+    if requested_layout is not None:
+        return requested_layout
+    if not sys.stdin.isatty():
+        raise ValueError("non-interactive setup requires --layout NAME")
+
+    choices = _print_setup_layouts()
+    names = {name for name, _description in choices}
+    while True:
+        try:
+            answer = input("\n  Select one Knowledge Pack by number/name: ").strip()
+        except EOFError as exc:
+            raise ValueError("layout selection ended before a choice was made") from exc
+        if not answer:
+            print("  No layout selected; choose exactly one number or name.")
+            continue
+        if "," in answer:
+            print("  Layout selection is single-choice; do not use a comma-separated list.")
+            continue
+        if answer.isdigit():
+            index = int(answer)
+            if 1 <= index <= len(choices):
+                return choices[index - 1][0]
+            print("  Invalid layout number; choose one from the displayed list.")
+            continue
+        if answer in names:
+            return answer
+        print("  Unknown layout; choose one from the displayed list.")
+
+
+# Agents whose skills directory lives under $HOME. (agent, path-under-home,
+# label, subset). Selection is explicit; setup never iterates this entire list
+# unless the user chose every agent or passed --agent all.
+GLOBAL_AGENT_DIRS: list[tuple[str, str, str, tuple[str, ...] | None]] = [
+    ("claude", ".claude/skills", "~/.claude/skills/ (Claude Code)", None),
+    ("gemini", ".gemini/skills", "~/.gemini/skills/ (Gemini CLI)", None),
+    ("antigravity", ".gemini/antigravity/skills", "~/.gemini/antigravity/skills/ (Antigravity, legacy)", None),
+    ("codex", ".codex/skills", "~/.codex/skills/ (Codex)", None),
+    ("hermes", ".hermes/skills", "~/.hermes/skills/ (Hermes default)", None),
+    ("openclaw", ".openclaw/skills", "~/.openclaw/skills/ (OpenClaw)", None),
+    ("copilot", ".copilot/skills", "~/.copilot/skills/ (GitHub Copilot CLI)", None),
+    ("trae", ".trae/skills", "~/.trae/skills/ (Trae)", None),
+    ("trae-cn", ".trae-cn/skills", "~/.trae-cn/skills/ (Trae CN)", None),
+    ("kiro", ".kiro/skills", "~/.kiro/skills/ (Kiro CLI)", None),
+    ("pi", ".pi/agent/skills", "~/.pi/agent/skills/ (Pi)", None),
+    ("generic", ".agents/skills", "~/.agents/skills/ (OpenCode, Aider, Droid, generic)", None),
 ]
 
 
-def install_global_skills(mode: str) -> None:
-    for rel, label, subset in GLOBAL_AGENT_DIRS:
+def install_global_skills(mode: str, agents: tuple[str, ...]) -> set[str]:
+    selected = set(agents)
+    installed_agents: set[str] = set()
+    for agent, rel, label, subset in GLOBAL_AGENT_DIRS:
+        if agent not in selected:
+            continue
         install_skills(HOME / rel, label, subset=subset, mode=mode)
-    _install_hermes_profiles(mode)
+        installed_agents.add(agent)
+    if "hermes" in selected:
+        _install_hermes_profiles(mode)
+    return installed_agents
 
 
 def _install_hermes_profiles(mode: str) -> None:
@@ -223,12 +407,12 @@ def _install_hermes_profiles(mode: str) -> None:
 
 # ── Project-local install (opt-in) ───────────────────────────────────────────
 PROJECT_AGENT_DIRS = [
-    (".claude/skills", "Claude Code"),
-    (".cursor/skills", "Cursor"),
-    (".windsurf/skills", "Windsurf"),
-    (".agents/skills", "OpenCode / generic"),
-    (".pi/skills", "Pi"),
-    (".kiro/skills", "Kiro"),
+    ("claude", ".claude/skills", "Claude Code"),
+    ("cursor", ".cursor/skills", "Cursor"),
+    ("windsurf", ".windsurf/skills", "Windsurf"),
+    ("generic", ".agents/skills", "OpenCode / generic"),
+    ("pi", ".pi/skills", "Pi"),
+    ("kiro", ".kiro/skills", "Kiro"),
 ]
 
 # (bootstrap-relative source path, destination relative to project dir).
@@ -244,8 +428,26 @@ BOOTSTRAP_FILES = [
     ("github/copilot-instructions.md", ".github/copilot-instructions.md"),
 ]
 
-# AGENTS.md aliases created as symlinks within the project (single source).
-AGENTS_ALIASES = ("CLAUDE.md", "GEMINI.md", ".hermes.md")
+# Project bootstrap files are filtered by the same explicit agent selection as
+# skills. AGENTS.md is the shared framework context; the remaining files are
+# agent-specific entry points or rules.
+BOOTSTRAP_FILE_AGENTS: dict[str, frozenset[str]] = {
+    "AGENTS.md": frozenset(SETUP_AGENT_NAMES),
+    ".cursor/rules/obsidian-wiki.mdc": frozenset({"cursor"}),
+    ".windsurf/rules/obsidian-wiki.md": frozenset({"windsurf"}),
+    ".kiro/steering/obsidian-wiki.md": frozenset({"kiro"}),
+    ".agent/rules/obsidian-wiki.md": frozenset({"antigravity"}),
+    ".agent/workflows/obsidian-wiki.md": frozenset({"antigravity"}),
+    ".github/copilot-instructions.md": frozenset({"copilot"}),
+}
+
+# AGENTS.md aliases created only for their selected agent.
+AGENT_ALIASES = {
+    "claude": "CLAUDE.md",
+    "gemini": "GEMINI.md",
+    "hermes": ".hermes.md",
+}
+AGENTS_ALIASES = tuple(AGENT_ALIASES.values())
 
 
 def _resolve_bootstrap_src(boot_root: Path, rel: str) -> Path | None:
@@ -268,18 +470,28 @@ def _resolve_bootstrap_src(boot_root: Path, rel: str) -> Path | None:
     return None
 
 
-def install_project(project_dir: Path, mode: str) -> None:
+def install_project(project_dir: Path, mode: str, agents: tuple[str, ...]) -> set[str]:
     project_dir.mkdir(parents=True, exist_ok=True)
     print(f"\n📁  Installing project-local files → {project_dir}")
-    for rel, _label in PROJECT_AGENT_DIRS:
+    selected = set(agents)
+    installed_agents: set[str] = set()
+    for agent, rel, _label in PROJECT_AGENT_DIRS:
+        if agent not in selected:
+            continue
         install_skills(project_dir / rel, f"{rel}/", mode=mode)
+        installed_agents.add(agent)
 
     boot_root = bootstrap_dir()
     if boot_root is None:
         print("   ⚠️  Bootstrap files not found in package; skipping context files")
-        return
+        return installed_agents
 
-    for rel, dest in BOOTSTRAP_FILES:
+    selected_bootstrap = [
+        (rel, dest)
+        for rel, dest in BOOTSTRAP_FILES
+        if selected & BOOTSTRAP_FILE_AGENTS[dest]
+    ]
+    for rel, dest in selected_bootstrap:
         src = _resolve_bootstrap_src(boot_root, rel)
         if src is None:
             continue
@@ -290,10 +502,16 @@ def install_project(project_dir: Path, mode: str) -> None:
                 continue
             dst.unlink()
         shutil.copyfile(src, dst)
-    print("✅  Installed bootstrap context files (AGENTS.md, rules, workflows)")
+    print(
+        "✅  Installed selected bootstrap context files "
+        f"({', '.join(dest for _rel, dest in selected_bootstrap)})"
+    )
 
     # AGENTS.md aliases as relative symlinks (copy fallback for symlink-hostile FS).
-    for alias in AGENTS_ALIASES:
+    selected_aliases = [
+        alias for agent, alias in AGENT_ALIASES.items() if agent in selected
+    ]
+    for alias in selected_aliases:
         link = project_dir / alias
         if link.is_symlink() or link.exists():
             link.unlink()
@@ -301,7 +519,9 @@ def install_project(project_dir: Path, mode: str) -> None:
             link.symlink_to("AGENTS.md")
         except OSError:
             shutil.copyfile(project_dir / "AGENTS.md", link)
-    print(f"✅  Linked AGENTS.md aliases ({', '.join(AGENTS_ALIASES)})")
+    if selected_aliases:
+        print(f"✅  Linked AGENTS.md aliases ({', '.join(selected_aliases)})")
+    return installed_agents
 
 
 def _env_example_path() -> Path:
@@ -377,6 +597,21 @@ def resolve_vault_path(cli_vault: str | None) -> str:
         if entered:
             return str(Path(entered).expanduser().resolve())
     return existing
+
+
+def _select_setup_vault(cli_vault: str | None) -> str:
+    """Resolve setup's vault, prompting with the current directory as default."""
+    if cli_vault is not None:
+        return resolve_vault_path(cli_vault)
+    if not sys.stdin.isatty():
+        return resolve_vault_path(None)
+
+    default = Path.cwd().resolve()
+    try:
+        entered = input(f"  Vault directory [{default}]: ").strip()
+    except EOFError:
+        entered = ""
+    return str(Path(entered).expanduser().resolve()) if entered else str(default)
 
 
 def write_config(vault_path: str) -> None:
@@ -627,22 +862,36 @@ def _required_vault_paths(vault: Path) -> list[Path]:
 
 
 def _doctor_project_check(project_dir: Path) -> dict[str, str]:
-    required = [project_dir / "AGENTS.md", *[project_dir / dest for _src, dest in BOOTSTRAP_FILES[1:]]]
-    missing = [str(path.relative_to(project_dir)) for path in required if not path.exists()]
-    if missing:
+    agents_file = project_dir / "AGENTS.md"
+    if not agents_file.exists():
         return {
             "status": "warn",
-            "detail": f"missing {len(missing)} bootstrap file(s)",
+            "detail": "missing shared bootstrap file: AGENTS.md",
             "hint": f"run: obsidian-wiki setup --project {project_dir}",
         }
-    aliases_missing = [alias for alias in AGENTS_ALIASES if not (project_dir / alias).exists()]
-    if aliases_missing:
+    broken_aliases = [
+        alias
+        for alias in AGENTS_ALIASES
+        if (project_dir / alias).is_symlink() and not (project_dir / alias).exists()
+    ]
+    if broken_aliases:
         return {
             "status": "warn",
-            "detail": f"missing AGENTS aliases: {', '.join(aliases_missing)}",
+            "detail": f"broken AGENTS aliases: {', '.join(broken_aliases)}",
             "hint": f"run: obsidian-wiki setup --project {project_dir}",
         }
-    return {"status": "pass", "detail": "bootstrap files and aliases present", "hint": ""}
+    selected_files = [
+        path
+        for _source, destination in BOOTSTRAP_FILES[1:]
+        if (path := project_dir / destination).exists()
+    ]
+    selected_aliases = [
+        alias for alias in AGENTS_ALIASES if (project_dir / alias).exists()
+    ]
+    detail = "selected bootstrap files present"
+    if selected_files or selected_aliases:
+        detail += f" ({len(selected_files)} rule(s), {len(selected_aliases)} alias(es))"
+    return {"status": "pass", "detail": detail, "hint": ""}
 
 
 def run_doctor(*, vault_override: str | None = None, project_dir: str | None = None) -> dict[str, object]:
@@ -771,7 +1020,7 @@ def run_doctor(*, vault_override: str | None = None, project_dir: str | None = N
     partial_agents: list[str] = []
     full_agents = 0
     bundled_set = set(bundled)
-    for rel, label, _subset in GLOBAL_AGENT_DIRS:
+    for _agent, rel, label, _subset in GLOBAL_AGENT_DIRS:
         agent_dir = HOME / rel
         if not agent_dir.is_dir():
             continue
@@ -892,16 +1141,28 @@ def _maybe_configure_sync(vault_path: Path, remote_arg: str | None) -> bool:
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
+    if args.list_agents:
+        _print_setup_agents()
+        return 0
     if args.list_layouts:
-        layouts = list_layouts()
-        if not layouts:
+        choices = _setup_layout_choices()
+        if not choices:
             print("No workflow layouts found.")
         else:
-            print("\nAvailable Knowledge Packs (Profile + Layout):\n")
-            for name, layout in sorted(layouts.items()):
-                print(f"  {name:20s}  {layout.profile['description']} ← workflow")
-            print(f"\nUse: obsidian-wiki setup --layout <name>")
+            _print_setup_layouts(choices)
         return 0
+
+    if args.agent is None and not sys.stdin.isatty():
+        print(
+            "error: non-interactive setup requires --agent NAME, --agent all, or --agent none",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        selected_agents = _select_setup_agents(args.agent)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
     mode = "symlink" if (not _IS_WINDOWS and not args.copy) else "copy"
     if args.skills_only:
@@ -915,21 +1176,43 @@ def cmd_setup(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
+        if not selected_agents:
+            print(
+                "error: no agents selected; pass --agent NAME (repeatable) or --agent all",
+                file=sys.stderr,
+            )
+            return 2
+        installed_agents: set[str] = set()
         if not args.project_only:
-            install_global_skills(mode)
+            installed_agents.update(install_global_skills(mode, selected_agents))
         if args.project is not None:
             project_dir = Path(args.project or os.getcwd()).expanduser().resolve()
-            install_project(project_dir, mode)
-        print(f"\n✅  Skills installed: {len(list_skills())}  (mode: {mode})")
+            installed_agents.update(install_project(project_dir, mode, selected_agents))
+        unavailable = set(selected_agents) - installed_agents
+        if unavailable:
+            print(
+                "⚠️  No selected install scope for: " + ", ".join(sorted(unavailable)),
+                file=sys.stderr,
+            )
+        print(
+            f"\n✅  Skills installed for: "
+            f"{', '.join(sorted(installed_agents)) or 'none'}  (mode: {mode})"
+        )
         return 0
+
+    try:
+        selected_layout = _select_setup_layout(args.layout)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
     print("\n╔══════════════════════════════════════════════════╗")
     print("║         obsidian-wiki — Agent Setup              ║")
     print("╚══════════════════════════════════════════════════╝\n")
 
-    vault_path = resolve_vault_path(args.vault)
+    vault_path = _select_setup_vault(args.vault)
     try:
-        layout, upgrade_legacy_marker = _resolve_setup_layout(vault_path, args.layout)
+        layout, upgrade_legacy_marker = _resolve_setup_layout(vault_path, selected_layout)
     except LayoutContractError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
@@ -951,24 +1234,34 @@ def cmd_setup(args: argparse.Namespace) -> int:
         else:
             print(f"✅  Vault verified at {vault_dir}")
 
-    if not args.project_only:
+    installed_agents: set[str] = set()
+    if not args.project_only and selected_agents:
         print()
-        install_global_skills(mode)
+        installed_agents.update(install_global_skills(mode, selected_agents))
 
     if args.project is not None:
         project_dir = Path(args.project or os.getcwd()).expanduser().resolve()
         env_overrides = {"OBSIDIAN_VAULT_PATH": vault_path} if vault_path else None
         ensure_project_env(project_dir, env_overrides)
-        install_project(project_dir, mode)
+        if selected_agents:
+            installed_agents.update(install_project(project_dir, mode, selected_agents))
+
+    unavailable = set(selected_agents) - installed_agents
+    if unavailable:
+        print(
+            "⚠️  No selected install scope for: " + ", ".join(sorted(unavailable)),
+            file=sys.stderr,
+        )
+    if not selected_agents:
+        print("⚠️  No agents selected; skill installation skipped.")
 
     sync_configured = False
     if vault_path and Path(vault_path).expanduser().is_dir():
         sync_configured = _maybe_configure_sync(Path(vault_path).expanduser(), args.remote)
 
-    n = len(list_skills())
     print("\n───────────────────────────────────────────────────")
     print(" Setup complete!\n")
-    print(f" Skills installed: {n}  (mode: {mode})")
+    print(f" Agent skills:     {', '.join(sorted(installed_agents)) or 'none'}  (mode: {mode})")
     if vault_path:
         print(f" Vault:            {vault_path}")
     print(f" Writing profile:  {writing_profile.resolve()}")
@@ -2352,7 +2645,7 @@ def cmd_info(args: argparse.Namespace) -> int:
     print()
     print("Agent skill install status:")
     bundled_set = set(bundled)
-    for rel, label, _subset in GLOBAL_AGENT_DIRS:
+    for agent, rel, label, _subset in GLOBAL_AGENT_DIRS:
         agent_dir = HOME / rel
         if not agent_dir.is_dir():
             print(f"  {label}: not installed")
@@ -2363,7 +2656,7 @@ def cmd_info(args: argparse.Namespace) -> int:
         status = "✅" if not missing else "⚠️ "
         print(f"  {status} {label}: {len(wiki_installed)}/{len(bundled_set)}", end="")
         if missing:
-            print(f"  (run: obsidian-wiki setup)", end="")
+            print(f"  (run: obsidian-wiki setup --agent {agent})", end="")
         print()
     _check_stale()
     return 0
@@ -3113,14 +3406,18 @@ def cmd_verify_sections(args: argparse.Namespace) -> int:
 
 
 def _add_setup_args(sp: argparse.ArgumentParser) -> None:
-    sp.add_argument("--vault", metavar="PATH", help="absolute path to your Obsidian vault")
+    sp.add_argument(
+        "--vault",
+        metavar="PATH",
+        help="path to your Obsidian vault (interactive default: current directory)",
+    )
     sp.add_argument(
         "--project",
         nargs="?",
         const="",
         default=None,
         metavar="DIR",
-        help="also install project-local skills + bootstrap files into DIR "
+        help="also install selected-agent project skills + bootstrap files into DIR "
         "(defaults to the current directory if no DIR given)",
     )
     sp.add_argument(
@@ -3137,6 +3434,17 @@ def _add_setup_args(sp: argparse.ArgumentParser) -> None:
         "--copy",
         action="store_true",
         help="copy skill files instead of symlinking (the default on Windows)",
+    )
+    sp.add_argument(
+        "--agent",
+        action="append",
+        metavar="NAME",
+        help="install skills for this agent; repeat, use commas, or pass 'all'/'none'",
+    )
+    sp.add_argument(
+        "--list-agents",
+        action="store_true",
+        help="list selectable agent skill targets and exit",
     )
     sp.add_argument(
         "--layout",

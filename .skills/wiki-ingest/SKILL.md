@@ -18,18 +18,34 @@ existing-first 归并。
 
 ## Resolve context
 
-遵循 Config Resolution Protocol 解析 canonical vault，并读取 vault 的 `AGENTS.md`。取得 write
-mode、link format、Knowledge Profile/Layout、Writing Profile、taxonomy 和文本 chunk 配置：
+执行 `wiki-context`，遵循其 Config Resolution Protocol 解析 canonical vault。传入用户 invocation
+与 source CWD，并严格区分 config keys 和 optional reads。
 
+`requested_keys` 只包含真实配置键：
+
+- `OBSIDIAN_VAULT_PATH`
+- `WIKI_STAGED_WRITES`
+- `OBSIDIAN_LINK_FORMAT`
 - `WIKI_TEXT_CHUNK_TARGET_BYTES`
 - `WIKI_TEXT_CHUNK_HARD_MAX_BYTES`
 - `WIKI_TEXT_CHUNK_MIN_BYTES`
 - `WIKI_TEXT_CHUNK_STRATEGY`
 - `WIKI_TEXT_CHUNK_OPTIONS`
 
-将冻结结果写到临时 artifacts directory 的 `wiki-context.json`，将 chunk options 写为
-`text-chunk-options.json`。轻量模式只执行 direct writes；若 resolved write mode 是 staged，停止
-并建议改用 `wiki-folder-ingest`，不能把 staged artifact 记录为 complete document。
+`optional_reads` 包含：owner `AGENTS.md`、taxonomy、index、manifest、active layout、writing
+profile；`setup_mode` 设为 `false`。`knowledge_layout`、`link_format` 和 `taxonomy` 是 resolved
+field/optional metadata 名称，不是配置键，绝不能放进 `requested_keys`。若 warnings 出现这些名称的
+`is not configured`，说明调用契约错误；修正参数并重新 resolve，不能带着错误 context 继续 ingest。
+
+从临时 artifacts directory 的 `wiki-context.json` 读取 top-level `write_mode`、`link_format` 和
+`optional_metadata.active_layout`。开始 plan 前确认 active layout `status` 是 `matched`，并且包含
+完整 `knowledge_profile.contract`、`routing.rules`、`routing.prompt` 及 frozen hashes；缺失或 stale
+时停止并建议运行 `wiki-setup` repair。taxonomy 是可选 vault metadata：`_meta/taxonomy.md` 不存在时
+允许缺席，不能把它误报为缺少环境配置。使用同批生成的 `text-chunk-options.json` 传递 chunk
+options。
+
+轻量模式只执行 direct writes；若 resolved write mode 是 staged，停止并建议改用
+`wiki-folder-ingest`，不能把 staged artifact 记录为 complete document。
 
 ## Plan ingest documents
 

@@ -124,6 +124,16 @@ def test_recoverable_folder_workflow_and_lightweight_skill_coexist() -> None:
     assert "obsidian-wiki text-ingest-report" in skill
     assert "所有 integration 均不并发" in skill
     assert "obsidian-wiki text-document-plan" in lightweight
+    assert "`requested_keys` 只包含真实配置键" in lightweight
+    assert "`OBSIDIAN_VAULT_PATH`" in lightweight
+    assert "`WIKI_STAGED_WRITES`" in lightweight
+    assert "`OBSIDIAN_LINK_FORMAT`" in lightweight
+    assert "`optional_reads` 包含" in lightweight
+    assert "active layout" in lightweight
+    assert "绝不能放进 `requested_keys`" in lightweight
+    assert "`knowledge_profile.contract`" in lightweight
+    assert "`routing.rules`" in lightweight
+    assert "`routing.prompt`" in lightweight
     assert "Task" in lightweight
     assert "不得使用 `claude -p`" in lightweight
     assert "text-document-commit" in lightweight
@@ -138,6 +148,17 @@ def test_recoverable_folder_workflow_and_lightweight_skill_coexist() -> None:
     assert ".cac/" not in skill
     assert "`wiki/" not in skill
     assert "workflow: cross-linker" not in skill
+    document_worker = (ROOT / ".skills" / "wiki-ingest-document" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "status=matched" in document_worker
+    assert "Do not open" in document_worker
+    assert "Apply the Knowledge Profile" in document_worker
+    assert "Select a declared page type with the frozen routing prompt" in document_worker
+    assert "Expand the target with the frozen routing rules" in document_worker
+    assert "obsidian-wiki wiki-route-resolve" in document_worker
+    assert '--routing "<wiki-context.json>"' in document_worker
+    assert "never expand `routing.rules.routes` by hand" in document_worker
     assert "workflow: wiki-context" not in packet
     assert "workflow: wiki-page-contract" not in packet
     assert "workflow: wiki-finalize-sources" not in packet

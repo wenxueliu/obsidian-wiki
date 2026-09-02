@@ -411,6 +411,48 @@ def test_wiki_route_resolve_does_not_depend_on_cwd(tmp_path: Path) -> None:
     assert json.loads(result.stdout)["target"] == "concepts/alpha.md"
 
 
+def test_wiki_route_resolve_accepts_frozen_wiki_context(tmp_path: Path) -> None:
+    context = tmp_path / "wiki-context.json"
+    context.write_text(
+        json.dumps({
+            "optional_metadata": {
+                "active_layout": {
+                    "status": "matched",
+                    "routing": {
+                        "rules": {
+                            "version": 1,
+                            "allowed_placeholders": ["slug"],
+                            "content_roots": ["concepts"],
+                            "system_dirs": ["_meta"],
+                            "skip_dirs": ["_meta"],
+                            "system_paths": ["index.md", "_meta/layout.json"],
+                            "fallback": "concept",
+                            "routes": {"concept": "concepts/{slug}.md"},
+                        }
+                    },
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT)
+    result = subprocess.run(
+        [
+            sys.executable, "-m", "obsidian_wiki", "wiki-route-resolve",
+            "--routing", str(context), "--page-type", "concept", "--slug", "alpha",
+        ],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"page_type": "concept", "target": "concepts/alpha.md"}
+
+
 def test_page_contract_is_a_single_read_only_contract_compiler() -> None:
     workflow = (ROOT / "workflows" / "wiki-page-contract.yaml").read_text(encoding="utf-8")
     assert "obsidian-wiki wiki-route-resolve" in workflow
