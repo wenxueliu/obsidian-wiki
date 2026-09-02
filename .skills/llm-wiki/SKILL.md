@@ -15,6 +15,14 @@ description: "将知识库需求设计为可执行的三层 LLM Wiki 架构、sc
 
 - 自动重置：开启。
 
+## 运行产物隔离
+
+进入本 skill 时先绑定本次 invocation 的 `run_id` 与绝对 `artifacts_dir`。若父 workflow 已传入这两个值，原样继承；否则运行 `obsidian-wiki artifacts-create --workflow llm-wiki`，解析其 JSON 输出后绑定。
+
+同一次 invocation 的步骤、重试和子 workflow 必须复用该绑定；调用子 workflow 时显式传递 `run_id` 与 `artifacts_dir`。新的顶层 invocation 必须重新创建，禁止搜索或复用 `latest`、上一次目录或其他会话目录。
+
+将命令中的 `{{artifacts_dir}}` 替换为已绑定的绝对路径。运行产物不得写入 skill 安装目录、源码目录或 vault；父 workflow 完成前不得删除该目录。
+
 ## 独立验收规则
 
 你是 LLM Wiki 架构审计者。只评估设计 artifacts，不得初始化 vault 或修改知识库。

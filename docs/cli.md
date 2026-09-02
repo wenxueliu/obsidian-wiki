@@ -18,6 +18,7 @@ Running `obsidian-wiki` with no subcommand defaults to `setup`.
 | `info` | Show install paths, version, and resolved config |
 | `list` | List the bundled skills |
 | `doctor` | Health-check config, vault shape, bootstrap assets, and installed skills |
+| `artifacts-create` | Create one unique temporary artifacts directory for a skill invocation |
 
 ```bash
 obsidian-wiki setup --vault ~/brain
@@ -37,7 +38,18 @@ obsidian-wiki setup --remote https://github.com/you/my-wiki.git   # configure sy
 obsidian-wiki doctor --json --pretty
 obsidian-wiki doctor --vault /other/vault --project .
 obsidian-wiki doctor --strict          # exit non-zero on warnings too
+obsidian-wiki artifacts-create --workflow wiki-ingest --pretty
 ```
+
+`artifacts-create` returns JSON containing a unique `run_id` and an absolute `artifacts_dir` under
+the operating system's temporary directory. One invocation and its child workflows reuse that
+binding; every new top-level invocation creates another directory. Runtime artifacts therefore do
+not live in an installed skill directory and consecutive runs cannot overwrite each other.
+
+Setup compiles stable Wiki context once into the path configured by
+`OBSIDIAN_CONTEXT_SNAPSHOT` (default: `<vault>/_meta/context/wiki-context.json`). Later context
+resolution links that snapshot into the invocation artifacts directory. Use setup/repair after
+changing the Knowledge Pack, owner rules, Writing Profile, taxonomy, or stable metadata paths.
 
 Commands other than `setup`, `info`, and `doctor` warn you when the install has gone stale (the package upgraded but skills weren't re-linked). Re-run `obsidian-wiki setup` to fix.
 

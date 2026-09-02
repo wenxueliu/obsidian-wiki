@@ -15,6 +15,14 @@ Coordinator 只持有 metadata 和 artifacts，永远不读取或接收完整 so
 提取属于 `wiki-source-text` 或 `wiki-packet-integrate`；所有 shared wiki writes 由集成与
 finalization 阶段串行完成。
 
+## Runtime artifacts
+
+每次顶层 invocation 先运行 `obsidian-wiki artifacts-create --workflow wiki-folder-ingest`，从 JSON
+绑定本次唯一 `run_id` 和绝对 `artifacts_dir`。同一次执行的步骤、重试与子 workflow 复用该绑定，
+调用 `wiki-context`、page-contract 和后续子 workflow 时显式传递两者；新的 invocation 必须重新
+创建，禁止复用 `latest` 或上一次目录。所有 `<artifacts-dir>` 都替换为该绝对路径，不得把运行
+产物写进 skill 安装目录、源码目录或 vault。
+
 ## 1. 解析上下文
 
 执行 `wiki-context`，复用其 Config Resolution Protocol、write mode、owner rules、active

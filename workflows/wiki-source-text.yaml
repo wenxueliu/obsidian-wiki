@@ -1,6 +1,7 @@
 description: 兼容入口：用隔离 claude -p process 直接执行 worker-only wiki-source-text skill 处理一个 Job unit
 
 auto_reset: true
+artifacts_dir: invocation
 
 adversarial_check:
   timeout_ms: 3600000

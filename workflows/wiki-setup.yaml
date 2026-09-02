@@ -1,6 +1,7 @@
 description: 经人工确认后安全初始化或修复 Obsidian wiki 的配置、layout、核心文件与可选集成
 
 auto_reset: true
+artifacts_dir: invocation
 
 manual_step:
   - approve_setup
@@ -68,7 +69,9 @@ steps:
   - id: write_config
     desc: 生成或最小更新 Wiki 配置
     do: |
-      根据 approved-setup.json 与 setup contract 的 config binding 生成目标配置。缺失时创建；repair 时 read-modify-write，保留未知字段、注释和秘密值。使用 sibling temp 原子替换。
+      根据 approved-setup.json 与 setup contract 的 config binding 生成目标配置。缺失时从 `.env.example` 创建；repair 时 read-modify-write，保留未知字段、注释和秘密值。使用 sibling temp 原子替换。
+
+      配置必须写入 `OBSIDIAN_KNOWLEDGE_PACK`、`OBSIDIAN_OWNER_RULES_PATH`、`OBSIDIAN_WRITING_PROFILE_PATH`、`OBSIDIAN_VAULT_METADATA_DIR`、`OBSIDIAN_TAXONOMY_PATH` 与 `OBSIDIAN_CONTEXT_SNAPSHOT`。这些键只绑定稳定路径和 Pack；Profile/Layout/Routing 正文仍作为一个原子 Pack 编译，不拆成独立 env JSON。
 
       写 `config-report.md`，记录 target、created/preserved/repaired、effective non-secret values 和秘密值的 configured/unconfigured 状态。
     input: approved-setup.json + setup-contract.json/md + wiki-context.json + 现有 config（如有）
@@ -126,6 +129,30 @@ steps:
     on_fail: initialize_core
     max_fail_count: 4
 
+  - id: compile_context_snapshot
+    desc: 编译持久化 Wiki context snapshot
+    do: |
+      从已批准 config、Writing Profile、owner rules、taxonomy、当前 layout marker 与 bundled Knowledge Pack 生成一次稳定 compiled context。先在 artifacts_dir 写 `compiled-vault-input.json`，再运行：
+
+      ```bash
+      obsidian-wiki wiki-context-resolve \
+        --input "{{artifacts_dir}}/compiled-vault-input.json" \
+        --source-cwd "<approved-source-cwd>" \
+        --requested-keys "<all configured stable context keys>" \
+        --optional-reads "owner AGENTS,writing profile,taxonomy,index,hot,manifest,active layout,vault metadata,QMD collection metadata" \
+        --setup-mode false \
+        --output-dir "<OBSIDIAN_CONTEXT_SNAPSHOT parent>" \
+        --compile-snapshot
+      ```
+
+      snapshot 目录是 vault `_meta/` 下的 system area，不是 ordinary knowledge root。只在 setup/repair 时更新；普通 workflow 只读复用。
+    input: approved-setup.json + config-report.md + writing-profile-report.md + layout-apply-report.json + core-files-report.md + qmd-collection-report.md + qmd-refresh-report.md
+    output: OBSIDIAN_CONTEXT_SNAPSHOT + sibling wiki-context.md/text-chunk-options.json + compiled-context-report.md
+    check: 独立解析 snapshot，核对 compiled_context.version、canonical vault、Knowledge Pack、Profile/Layout/Routing hashes、stable path bindings 与 config 一致；确认 snapshot 不含秘密，目标位于 approved vault metadata root，普通 knowledge roots 零变化
+    on_pass: render_setup_completion
+    on_fail: compile_context_snapshot
+    max_fail_count: 4
+
   - id: configure_stop_hook
     desc: 生成已批准的 Stop hook 配置
     do: |
@@ -174,7 +201,7 @@ steps:
     input: approved-setup.json + setup-contract.json/md + qmd-collection-report.md
     output: QMD index refresh（如获批）+ qmd-refresh-report.md
     check: 核对 approval、collection guard 与 refresh report 的 command/exit status；updated 时只改变目标 QMD index/cache，skipped/failed 时未损坏 setup 已生成状态
-    on_pass: render_setup_completion
+    on_pass: compile_context_snapshot
     on_fail: refresh_qmd_index
     max_fail_count: 3
 

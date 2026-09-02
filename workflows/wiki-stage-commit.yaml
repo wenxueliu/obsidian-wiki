@@ -1,6 +1,7 @@
 description: 经人工逐项审批，将 staged Wiki 页面或 patch 安全提升为 live 内容并推进绑定 ingest Job
 
 auto_reset: true
+artifacts_dir: invocation
 
 manual_step:
   - review_queue

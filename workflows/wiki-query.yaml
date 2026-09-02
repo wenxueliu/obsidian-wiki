@@ -1,6 +1,7 @@
 description: 只读查询 compiled Obsidian wiki，按 GraphRAG、索引、QMD、局部正文与多跳 typed graph 渐进检索
 
 auto_reset: true
+artifacts_dir: invocation
 
 adversarial_check:
   timeout_ms: 3600000

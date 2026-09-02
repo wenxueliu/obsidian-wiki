@@ -1,6 +1,7 @@
 description: 可恢复地发现和规划本地文本来源；小文档 inline 提取，大文档隔离生成 Packet，并按 source/unit 顺序串行归并到 Obsidian wiki
 
 auto_reset: true
+artifacts_dir: invocation
 
 adversarial_check:
   timeout_ms: 3600000

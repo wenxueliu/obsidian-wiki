@@ -1,6 +1,7 @@
 description: 经人工审批安装或验证每日 9 点 Wiki 调度、vault-scoped 状态与可选终端提醒
 
 auto_reset: true
+artifacts_dir: invocation
 
 manual_step:
   - approve_install

@@ -1,6 +1,7 @@
 description: 将知识库需求设计为可执行的三层 LLM Wiki 架构、schema、检索与维护契约
 
 auto_reset: true
+artifacts_dir: invocation
 
 adversarial_check:
   timeout_ms: 3600000

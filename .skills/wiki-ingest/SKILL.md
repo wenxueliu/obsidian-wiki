@@ -16,6 +16,14 @@ description: >
 中间文档。document 是独立执行输入，但不是 Wiki 页面边界；页面仍按 canonical topic
 existing-first 归并。
 
+## Runtime artifacts
+
+每次顶层 invocation 先运行 `obsidian-wiki artifacts-create --workflow wiki-ingest`，从 JSON
+绑定本次唯一 `run_id` 和绝对 `artifacts_dir`。同一次执行的 context、plan、subagents 和重试复用
+该绑定，并把两个值显式传给 `wiki-context`；新的 invocation 必须重新创建，禁止复用 `latest` 或
+上一次目录。所有 `<artifacts-dir>` 都替换为该绝对路径，不得把运行产物写进 skill 安装目录、源码
+目录或 vault。
+
 ## Resolve context
 
 执行 `wiki-context`，遵循其 Config Resolution Protocol 解析 canonical vault。传入用户 invocation

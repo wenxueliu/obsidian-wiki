@@ -1,6 +1,7 @@
 description: 审计、规范化或扩展 Obsidian wiki 的受控标签词表，并安全维护 tracking 与可选 QMD 索引
 
 auto_reset: true
+artifacts_dir: invocation
 
 manual_step:
   - approve_changes

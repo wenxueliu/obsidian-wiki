@@ -135,6 +135,13 @@ def canonical_path(value: str) -> Path:
     return expanded.resolve(strict=False)
 
 
+def configured_path(config: dict[str, str], key: str, default: Path) -> Path:
+    raw = config.get(key, "").strip()
+    if not raw:
+        return default.expanduser().resolve(strict=False)
+    return canonical_path(raw)
+
+
 def write_outputs(output_dir: Path, context: dict[str, Any]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "wiki-context.json").write_text(
@@ -174,6 +181,25 @@ def write_outputs(output_dir: Path, context: dict[str, Any]) -> None:
     (output_dir / "wiki-context.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def reuse_compiled_outputs(snapshot: Path, output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    sources = {
+        "wiki-context.json": snapshot,
+        "wiki-context.md": snapshot.with_name("wiki-context.md"),
+        "text-chunk-options.json": snapshot.with_name("text-chunk-options.json"),
+    }
+    for name, source in sources.items():
+        if not source.is_file():
+            raise ValueError(f"compiled context artifact is missing: {source}")
+        target = output_dir / name
+        if target.is_symlink() or target.exists():
+            target.unlink()
+        try:
+            target.symlink_to(source)
+        except OSError:
+            target.write_bytes(source.read_bytes())
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True, type=Path)
@@ -183,6 +209,7 @@ def main() -> int:
     parser.add_argument("--setup-mode", choices=("true", "false"), default="false")
     parser.add_argument("--layouts-dir", type=Path, default=Path(__file__).resolve().parent.parent / "layouts")
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--compile-snapshot", action="store_true")
     args = parser.parse_args()
 
     try:
@@ -210,6 +237,14 @@ def main() -> int:
         profile_value = supplied.get("profile")
         profile = str(profile_value) if profile_value is not None else None
         config_path, config_values = resolve_config(args.source_cwd, profile)
+        binding_config = {
+            **config_values,
+            **{
+                str(key): str(value)
+                for key, value in overrides.items()
+                if value is not None
+            },
+        }
 
         if input_mode == "config":
             if config_path is None:
@@ -227,13 +262,77 @@ def main() -> int:
         if not setup_mode and not vault.is_dir():
             raise ValueError(f"vault does not exist or is not a directory: {vault}")
 
+        metadata_dir = configured_path(
+            binding_config, "OBSIDIAN_VAULT_METADATA_DIR", vault / "_meta"
+        )
+        snapshot_path = configured_path(
+            binding_config,
+            "OBSIDIAN_CONTEXT_SNAPSHOT",
+            metadata_dir / "context" / "wiki-context.json",
+        )
+        owner_path = configured_path(
+            binding_config, "OBSIDIAN_OWNER_RULES_PATH", vault / "AGENTS.md"
+        )
+        writing_path = configured_path(
+            binding_config,
+            "OBSIDIAN_WRITING_PROFILE_PATH",
+            Path.home() / ".obsidian-wiki" / "WRITING.md",
+        )
+        taxonomy_path = configured_path(
+            binding_config, "OBSIDIAN_TAXONOMY_PATH", metadata_dir / "taxonomy.md"
+        )
+        stable_bindings = {
+            "knowledge_pack": binding_config.get("OBSIDIAN_KNOWLEDGE_PACK", "").strip(),
+            "owner_rules_path": str(owner_path),
+            "writing_profile_path": str(writing_path),
+            "vault_metadata_dir": str(metadata_dir),
+            "taxonomy_path": str(taxonomy_path),
+            "context_snapshot": str(snapshot_path),
+        }
+        if (
+            not args.compile_snapshot
+            and not setup_mode
+            and input_mode == "config"
+            and not overrides
+            and snapshot_path.is_file()
+        ):
+            compiled = json.loads(snapshot_path.read_text(encoding="utf-8"))
+            binding = compiled.get("compiled_context", {}) if isinstance(compiled, dict) else {}
+            if (
+                not isinstance(compiled, dict)
+                or binding.get("version") != 1
+                or compiled.get("vault_path") != str(vault)
+            ):
+                raise ValueError(
+                    f"compiled context is invalid or belongs to another vault: {snapshot_path}; "
+                    "run wiki-setup repair"
+                )
+            configured_pack = binding_config.get("OBSIDIAN_KNOWLEDGE_PACK", "").strip()
+            frozen_pack = (
+                compiled.get("optional_metadata", {})
+                .get("active_layout", {})
+                .get("name")
+            )
+            if configured_pack and configured_pack != frozen_pack:
+                raise ValueError(
+                    "configured Knowledge Pack does not match compiled context; "
+                    "run wiki-setup repair"
+                )
+            if binding.get("bindings") != stable_bindings:
+                raise ValueError(
+                    "stable context paths changed after the snapshot was compiled; "
+                    "run wiki-setup repair"
+                )
+            reuse_compiled_outputs(snapshot_path, args.output_dir)
+            return 0
+
         values: dict[str, Any] = {}
         for key in requested:
             if key == "OBSIDIAN_VAULT_PATH":
                 values[key] = str(vault)
                 continue
             raw = overrides.get(key, config_values.get(key))
-            if raw is not None:
+            if raw is not None and str(raw).strip() != "":
                 if key in BOOL_KEYS:
                     values[key] = parse_bool(str(raw))
                 elif key in POSITIVE_INT_KEYS:
@@ -280,16 +379,24 @@ def main() -> int:
             "direct_extract_max_bytes": direct_extract_max,
         }
 
-        owner_path = vault / "AGENTS.md"
         owner_rules = owner_path.read_text(encoding="utf-8") if owner_path.is_file() else None
-        writing_path = Path.home() / ".obsidian-wiki" / "WRITING.md"
         writing_profile = writing_path.read_text(encoding="utf-8") if writing_path.is_file() else None
         optional_targets = {
-            "taxonomy": vault / "_meta" / "taxonomy.md", "index": vault / "index.md",
+            "taxonomy": taxonomy_path, "index": vault / "index.md",
             "hot": vault / "hot.md", "manifest": vault / ".manifest.json",
         }
         optional_metadata: dict[str, Any] = {}
         context_warnings: list[str] = []
+        if (
+            not args.compile_snapshot
+            and not setup_mode
+            and input_mode == "config"
+            and not overrides
+            and not snapshot_path.is_file()
+        ):
+            context_warnings.append(
+                "compiled context snapshot is missing; run wiki-setup repair"
+            )
         def wants(name: str) -> bool:
             return any(name in item for item in optional_reads)
 
@@ -298,7 +405,7 @@ def main() -> int:
                 stat = path.stat()
                 optional_metadata[name] = {"path": str(path), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
         if wants("active layout"):
-            marker_path = vault / "_meta" / "layout.json"
+            marker_path = metadata_dir / "layout.json"
             if not vault.is_dir() or not marker_path.is_file():
                 optional_metadata["active_layout"] = {
                     "status": "uninitialized" if setup_mode else "missing",
@@ -313,6 +420,11 @@ def main() -> int:
                 if not isinstance(marker, dict) or marker.get("version") != 1 or not isinstance(marker.get("name"), str):
                     raise ValueError("active layout marker is invalid")
                 frozen = layout_inventory(args.layouts_dir, marker["name"])
+                configured_pack = binding_config.get("OBSIDIAN_KNOWLEDGE_PACK", "").strip()
+                if configured_pack and configured_pack != frozen["name"]:
+                    raise ValueError(
+                        "OBSIDIAN_KNOWLEDGE_PACK does not match the vault layout marker"
+                    )
                 expected = {
                     "manifest_sha256": frozen["manifest_sha256"],
                     "inventory_sha256": frozen["inventory_sha256"],
@@ -366,6 +478,19 @@ def main() -> int:
             "retrieval_order": ["index/frontmatter", "summary", "anchored rg section context", "whole page last"],
             "warnings": [f"{key} is not configured" for key in requested - {"OBSIDIAN_VAULT_PATH"} if key not in values] + context_warnings,
         }
+        if args.compile_snapshot:
+            context["compiled_context"] = {
+                "version": 1,
+                "snapshot_path": str(snapshot_path),
+                "knowledge_pack": (
+                    optional_metadata.get("active_layout", {}).get("name")
+                ),
+                "bindings": stable_bindings,
+            }
+            if args.output_dir.resolve() != snapshot_path.parent.resolve():
+                raise ValueError(
+                    "compiled snapshot output directory must match OBSIDIAN_CONTEXT_SNAPSHOT parent"
+                )
         write_outputs(args.output_dir, context)
         return 0
     except (OSError, ValueError, json.JSONDecodeError) as error:

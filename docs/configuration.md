@@ -15,8 +15,9 @@ Both `~/.obsidian-wiki/config` and `.env` use the same `KEY=value` format. Start
 
 ## Knowledge Packs and vault layouts
 
-A Knowledge Pack is not an environment setting. Setup selects one bundled pack from
-`workflows/layouts/<name>/`. Each pack contains a semantic `profile.json` plus the physical
+A Knowledge Pack is selected during setup and its stable binding is recorded as
+`OBSIDIAN_KNOWLEDGE_PACK` in the resolved config. Each bundled pack under
+`workflows/layouts/<name>/` contains a semantic `profile.json` plus the physical
 `layout.json`, `routing.json`, `routing.md`, schema, terminology policy, rules, and vault template.
 
 The Knowledge Profile defines purpose, scope, knowledge types, extraction policy, evidence checks,
@@ -26,8 +27,14 @@ one-to-one in the current version so a single setup choice produces a complete d
 
 Setup records Profile, Layout, and routing integrity hashes in
 `$OBSIDIAN_VAULT_PATH/_meta/layout.json`. That marker travels with the vault and is the source of
-truth for the active Knowledge Pack. Subsequent workflows reload the named bundled contract and
-fail closed when any recorded hash is stale.
+truth for the active Knowledge Pack. Setup/repair reloads the named bundled contract and fails
+closed when any recorded hash is stale; normal runs consume the resulting verified snapshot.
+
+Setup also compiles the low-frequency context into
+`$OBSIDIAN_VAULT_PATH/_meta/context/wiki-context.json`, or the absolute path selected by
+`OBSIDIAN_CONTEXT_SNAPSHOT`. Normal workflows reuse that snapshot instead of expanding owner
+rules, Writing Profile, Profile, Layout, routing, and stable metadata on every invocation. Run
+setup/repair after intentionally changing any of those inputs.
 
 Use `obsidian-wiki setup --list-layouts` to inspect available Knowledge Packs and select one during
 setup. The `--layout` option name is retained for CLI compatibility. One vault is assumed to serve
@@ -88,6 +95,24 @@ The deterministic `lint`, `trust-record`, and `trust-check` commands use the sam
 | `OBSIDIAN_LINK_FORMAT` | `wikilink` → `[[concepts/foo]]`, or `markdown` → `` [text](path.md) ``. Affects future writes only — existing content is never migrated | `wikilink` |
 | `LINT_SCHEDULE` | Health-check frequency: `daily` \| `weekly` \| `manual` | `weekly` |
 
+### Stable compiled context
+
+These variables are present in `.env.example`. Setup fills them when it creates a project `.env`;
+empty values use the defaults below. They store names and absolute paths, not multiline rule or
+routing content.
+
+| Variable | What it does | Default |
+|---|---|---|
+| `OBSIDIAN_KNOWLEDGE_PACK` | Active atomic Profile/Layout/Routing pack | Name in `_meta/layout.json` |
+| `OBSIDIAN_OWNER_RULES_PATH` | Owner rules compiled into context | `<vault>/AGENTS.md` |
+| `OBSIDIAN_WRITING_PROFILE_PATH` | Writing Profile compiled into context | `~/.obsidian-wiki/WRITING.md` |
+| `OBSIDIAN_VAULT_METADATA_DIR` | Stable vault metadata and layout marker root | `<vault>/_meta` |
+| `OBSIDIAN_TAXONOMY_PATH` | Controlled taxonomy source | `<metadata-dir>/taxonomy.md` |
+| `OBSIDIAN_CONTEXT_SNAPSHOT` | Persistent compiled context JSON | `<metadata-dir>/context/wiki-context.json` |
+
+The manifest, index, hot cache, logs, ingest Jobs, current CWD, and inline overrides remain dynamic
+runtime state. They are not treated as immutable merely because the stable context is compiled.
+
 Local git repo clones work in `OBSIDIAN_SOURCES_DIR` (public or private, any host). Clone locally, then add the path. Repo directories are auto-detected via a `.git` folder and enumerated with `git ls-files`, so whatever the repo's own `.gitignore` excludes — `node_modules`, build output, venvs, secrets — is skipped automatically rather than relying on a hardcoded skip-list.
 
 ## History ingest
@@ -107,7 +132,7 @@ Local git repo clones work in `OBSIDIAN_SOURCES_DIR` (public or private, any hos
 
 | Variable | What it does | Default |
 |---|---|---|
-| `WIKI_STAGED_WRITES` | When `true`, LLM-written pages land in `_staging/` for human review instead of the live vault. Promote them with `/wiki-stage-commit` | *(unset — direct writes)* |
+| `WIKI_STAGED_WRITES` | When `true`, LLM-written pages land in `_staging/` for human review instead of the live vault. Promote them with `/wiki-stage-commit` | `false` — direct writes |
 | `OBSIDIAN_TRUST_STRICT` | When `1`, `obsidian-wiki lint` treats missing trust fields, ledger errors, stale reviews, and score mismatches as failures rather than warnings. Same as `lint --strict-trust` | *(unset)* |
 | `OBSIDIAN_ALLOWED_LIFECYCLES` | Comma-separated lifecycle extensions for this resolved vault | *(framework defaults only)* |
 | `OBSIDIAN_ALLOWED_RELATIONSHIP_TYPES` | Comma-separated relationship-type extensions for this resolved vault | *(framework defaults only)* |

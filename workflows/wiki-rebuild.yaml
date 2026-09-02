@@ -1,6 +1,7 @@
 description: 经人工确认先归档，再安全执行 Wiki snapshot、清空重建准备或 archive restore
 
 auto_reset: true
+artifacts_dir: invocation
 
 manual_step:
   - approve_operation

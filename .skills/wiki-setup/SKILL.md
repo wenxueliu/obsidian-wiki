@@ -15,6 +15,14 @@ description: "经人工确认后安全初始化或修复 Obsidian wiki 的配置
 
 - 自动重置：开启。
 
+## 运行产物隔离
+
+进入本 skill 时先绑定本次 invocation 的 `run_id` 与绝对 `artifacts_dir`。若父 workflow 已传入这两个值，原样继承；否则运行 `obsidian-wiki artifacts-create --workflow wiki-setup`，解析其 JSON 输出后绑定。
+
+同一次 invocation 的步骤、重试和子 workflow 必须复用该绑定；调用子 workflow 时显式传递 `run_id` 与 `artifacts_dir`。新的顶层 invocation 必须重新创建，禁止搜索或复用 `latest`、上一次目录或其他会话目录。
+
+将命令中的 `{{artifacts_dir}}` 替换为已绑定的绝对路径。运行产物不得写入 skill 安装目录、源码目录或 vault；父 workflow 完成前不得删除该目录。
+
 - 人工审批步骤：`approve_setup`。
 
 ## 独立验收规则
@@ -153,7 +161,9 @@ approval-request.md + approved-setup.json
 
 #### 执行
 
-根据 approved-setup.json 与 setup contract 的 config binding 生成目标配置。缺失时创建；repair 时 read-modify-write，保留未知字段、注释和秘密值。使用 sibling temp 原子替换。
+根据 approved-setup.json 与 setup contract 的 config binding 生成目标配置。缺失时从 `.env.example` 创建；repair 时 read-modify-write，保留未知字段、注释和秘密值。使用 sibling temp 原子替换。
+
+配置必须写入 `OBSIDIAN_KNOWLEDGE_PACK`、`OBSIDIAN_OWNER_RULES_PATH`、`OBSIDIAN_WRITING_PROFILE_PATH`、`OBSIDIAN_VAULT_METADATA_DIR`、`OBSIDIAN_TAXONOMY_PATH` 与 `OBSIDIAN_CONTEXT_SNAPSHOT`。这些键只绑定稳定路径和 Pack；Profile/Layout/Routing 正文仍作为一个原子 Pack 编译，不拆成独立 env JSON。
 
 写 `config-report.md`，记录 target、created/preserved/repaired、effective non-secret values 和秘密值的 configured/unconfigured 状态。
 
@@ -270,7 +280,46 @@ approved-setup.json + setup-contract.json/md + config-report.md + writing-profil
 
 - 最多连续失败 `4` 次；达到上限后停止并报告阻塞。
 
-### 9. 生成已批准的 Stop hook 配置 (`configure_stop_hook`)
+### 9. 编译持久化 Wiki context snapshot (`compile_context_snapshot`)
+
+#### 执行
+
+从已批准 config、Writing Profile、owner rules、taxonomy、当前 layout marker 与 bundled Knowledge Pack 生成一次稳定 compiled context。先在 artifacts_dir 写 `compiled-vault-input.json`，再运行：
+
+```bash
+obsidian-wiki wiki-context-resolve \
+  --input "{{artifacts_dir}}/compiled-vault-input.json" \
+  --source-cwd "<approved-source-cwd>" \
+  --requested-keys "<all configured stable context keys>" \
+  --optional-reads "owner AGENTS,writing profile,taxonomy,index,hot,manifest,active layout,vault metadata,QMD collection metadata" \
+  --setup-mode false \
+  --output-dir "<OBSIDIAN_CONTEXT_SNAPSHOT parent>" \
+  --compile-snapshot
+```
+
+snapshot 目录是 vault `_meta/` 下的 system area，不是 ordinary knowledge root。只在 setup/repair 时更新；普通 workflow 只读复用。
+
+#### 输入
+
+approved-setup.json + config-report.md + writing-profile-report.md + layout-apply-report.json + core-files-report.md + qmd-collection-report.md + qmd-refresh-report.md
+
+#### 产出
+
+OBSIDIAN_CONTEXT_SNAPSHOT + sibling wiki-context.md/text-chunk-options.json + compiled-context-report.md
+
+#### 验收
+
+独立解析 snapshot，核对 compiled_context.version、canonical vault、Knowledge Pack、Profile/Layout/Routing hashes、stable path bindings 与 config 一致；确认 snapshot 不含秘密，目标位于 approved vault metadata root，普通 knowledge roots 零变化
+
+#### 流程控制
+
+- 验收通过：转到 `render_setup_completion`。
+
+- 验收失败：返回 `compile_context_snapshot`。
+
+- 最多连续失败 `4` 次；达到上限后停止并报告阻塞。
+
+### 10. 生成已批准的 Stop hook 配置 (`configure_stop_hook`)
 
 #### 执行
 
@@ -298,7 +347,7 @@ Stop hook 配置（如获批）+ stop-hook-report.md
 
 - 最多连续失败 `3` 次；达到上限后停止并报告阻塞。
 
-### 10. 生成已批准的 Vault Git sync 配置 (`configure_git_sync`)
+### 11. 生成已批准的 Vault Git sync 配置 (`configure_git_sync`)
 
 #### 执行
 
@@ -326,7 +375,7 @@ Vault Git sync 配置（如获批）+ git-sync-report.md
 
 - 最多连续失败 `3` 次；达到上限后停止并报告阻塞。
 
-### 11. 生成已批准的 QMD collection 配置 (`configure_qmd_collection`)
+### 12. 生成已批准的 QMD collection 配置 (`configure_qmd_collection`)
 
 #### 执行
 
@@ -354,7 +403,7 @@ QMD collection 配置（如获批）+ qmd-collection-report.md
 
 - 最多连续失败 `3` 次；达到上限后停止并报告阻塞。
 
-### 12. 生成已批准的 QMD 索引刷新结果 (`refresh_qmd_index`)
+### 13. 生成已批准的 QMD 索引刷新结果 (`refresh_qmd_index`)
 
 #### 执行
 
@@ -376,13 +425,13 @@ QMD index refresh（如获批）+ qmd-refresh-report.md
 
 #### 流程控制
 
-- 验收通过：转到 `render_setup_completion`。
+- 验收通过：转到 `compile_context_snapshot`。
 
 - 验收失败：返回 `refresh_qmd_index`。
 
 - 最多连续失败 `3` 次；达到上限后停止并报告阻塞。
 
-### 13. 生成 setup 交付报告 (`render_setup_completion`)
+### 14. 生成 setup 交付报告 (`render_setup_completion`)
 
 #### 执行
 

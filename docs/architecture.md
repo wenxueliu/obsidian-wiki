@@ -2,6 +2,17 @@
 
 The wiki is the artifact. The agent is the maintainer. Obsidian is the viewer.
 
+Transient workflow artifacts are not part of the wiki or an installed skill. Every top-level skill
+invocation creates a unique `run_id` and absolute temporary `artifacts_dir`; its steps, retries, and
+child workflows share that binding. A later invocation creates a different directory, preventing
+context, plans, and reports from being mixed across runs.
+
+Low-frequency Wiki context is compiled separately during setup into the configured persistent
+snapshot under the vault metadata area. Runtime artifact directories link to this read-only
+snapshot; they do not repeatedly embed the Profile, Layout, routing, owner rules, or Writing
+Profile. Dynamic Job, manifest, index, hot-cache, and invocation state remains outside the compiled
+snapshot lifecycle.
+
 Skills tell an AI agent how to operate on the vault. Small dependency-free Python helpers handle
 the parts that must be deterministic, including hashing, text range planning, and exact range
 materialization; extraction and knowledge integration remain agent work.

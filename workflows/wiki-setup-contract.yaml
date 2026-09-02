@@ -1,6 +1,7 @@
 description: 从 workflow-local 模板生成带 hash 的 Wiki 核心初始化契约，再合并可选集成与验收契约
 
 auto_reset: true
+artifacts_dir: invocation
 
 adversarial_check:
   timeout_ms: 3600000

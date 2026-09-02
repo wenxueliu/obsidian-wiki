@@ -560,6 +560,37 @@ def ensure_project_env(
     return True
 
 
+def ensure_project_context_bindings(
+    project_dir: Path,
+    bindings: dict[str, str],
+) -> dict[str, str]:
+    """Fill missing/blank stable bindings while preserving non-empty owner values."""
+    target = project_dir / ".env"
+    content = target.read_text(encoding="utf-8")
+    effective: dict[str, str] = {}
+    changed = False
+    for key, default in bindings.items():
+        match = re.search(rf"^{re.escape(key)}=(.*)$", content, flags=re.MULTILINE)
+        if match is None:
+            if content and not content.endswith("\n"):
+                content += "\n"
+            content += f'{key}="{default}"\n'
+            effective[key] = default
+            changed = True
+            continue
+        current = match.group(1).strip().strip('"\'')
+        if current:
+            effective[key] = current
+            continue
+        content = content[:match.start()] + f'{key}="{default}"' + content[match.end():]
+        effective[key] = default
+        changed = True
+    if changed:
+        target.write_text(content, encoding="utf-8")
+        print(f"✅  Filled stable context bindings → {target}")
+    return effective
+
+
 # ── Config ───────────────────────────────────────────────────────────────────
 def _read_config_value(key: str) -> str:
     if not GLOBAL_CONFIG.is_file():
@@ -614,15 +645,32 @@ def _select_setup_vault(cli_vault: str | None) -> str:
     return str(Path(entered).expanduser().resolve()) if entered else str(default)
 
 
-def write_config(vault_path: str) -> None:
+def _stable_context_config(vault_path: str, knowledge_pack: str) -> dict[str, str]:
+    vault = Path(vault_path).expanduser().resolve()
+    metadata = vault / "_meta"
+    return {
+        "OBSIDIAN_KNOWLEDGE_PACK": knowledge_pack,
+        "OBSIDIAN_OWNER_RULES_PATH": str(vault / "AGENTS.md"),
+        "OBSIDIAN_WRITING_PROFILE_PATH": str(GLOBAL_CONFIG_DIR / "WRITING.md"),
+        "OBSIDIAN_VAULT_METADATA_DIR": str(metadata),
+        "OBSIDIAN_TAXONOMY_PATH": str(metadata / "taxonomy.md"),
+        "OBSIDIAN_CONTEXT_SNAPSHOT": str(metadata / "context" / "wiki-context.json"),
+    }
+
+
+def write_config(vault_path: str, knowledge_pack: str) -> None:
     GLOBAL_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     # OBSIDIAN_WIKI_REPO points at the bundled data root so skills that reference
     # framework assets (templates, references) can find them post-install.
     repo_root = skills_dir().parent
+    values = {
+        "OBSIDIAN_VAULT_PATH": vault_path,
+        **_stable_context_config(vault_path, knowledge_pack),
+        "OBSIDIAN_WIKI_REPO": str(repo_root),
+        "OBSIDIAN_WIKI_VERSION": __version__,
+    }
     GLOBAL_CONFIG.write_text(
-        f'OBSIDIAN_VAULT_PATH="{vault_path}"\n'
-        f'OBSIDIAN_WIKI_REPO="{repo_root}"\n'
-        f'OBSIDIAN_WIKI_VERSION="{__version__}"\n'
+        "".join(f'{key}="{value}"\n' for key, value in values.items())
     )
     print(f"✅  Global config written to {GLOBAL_CONFIG}")
 
@@ -751,6 +799,69 @@ def scaffold_vault(
     return created
 
 
+COMPILED_CONTEXT_KEYS = (
+    "OBSIDIAN_VAULT_PATH",
+    "WIKI_STAGED_WRITES",
+    "OBSIDIAN_LINK_FORMAT",
+    "WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS",
+    "WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES",
+    "WIKI_TEXT_CHUNK_TARGET_BYTES",
+    "WIKI_TEXT_CHUNK_MIN_BYTES",
+    "WIKI_TEXT_CHUNK_HARD_MAX_BYTES",
+    "WIKI_TEXT_CHUNK_STRATEGY",
+    "WIKI_TEXT_CHUNK_OPTIONS",
+    "QMD_TRANSPORT",
+    "QMD_WIKI_COLLECTION",
+    "QMD_PAPERS_COLLECTION",
+    "QMD_CLI_SEARCH_MODE",
+)
+
+
+def compile_context_snapshot(
+    vault_path: Path,
+    knowledge_pack: str,
+    *,
+    source_cwd: Path,
+    bindings: dict[str, str] | None = None,
+) -> Path:
+    """Compile stable vault contracts once during setup."""
+    stable = bindings or _stable_context_config(str(vault_path), knowledge_pack)
+    snapshot = Path(stable["OBSIDIAN_CONTEXT_SNAPSHOT"])
+    script = workflows_dir() / "scripts" / "resolve_wiki_context.py"
+    with tempfile.TemporaryDirectory(prefix="obsidian-wiki-context-input-") as temp_dir:
+        supplied = Path(temp_dir) / "vault-input.json"
+        supplied.write_text(
+            json.dumps({
+                "mode": "interactive",
+                "vault_path": str(vault_path.resolve()),
+                "overrides": stable,
+            }),
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                "--input", str(supplied),
+                "--source-cwd", str(source_cwd.resolve()),
+                "--requested-keys", ",".join(COMPILED_CONTEXT_KEYS),
+                "--optional-reads",
+                "owner AGENTS,writing profile,taxonomy,index,hot,manifest,active layout,vault metadata,QMD collection metadata",
+                "--setup-mode", "false",
+                "--layouts-dir", str(layouts_dir()),
+                "--output-dir", str(snapshot.parent),
+                "--compile-snapshot",
+            ],
+            capture_output=True,
+            text=True,
+        )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
+        raise LayoutContractError(f"could not compile persistent wiki context: {detail}")
+    print(f"✅  Compiled Wiki context → {snapshot}")
+    return snapshot
+
+
 def _resolve_setup_layout(
     vault_path: str,
     requested_layout: str | None,
@@ -850,6 +961,44 @@ def _doctor_status(checks: list[dict[str, str]]) -> str:
     if "warn" in statuses:
         return "warn"
     return "pass"
+
+
+def create_artifacts_run(
+    workflow: str,
+    *,
+    base_dir: Path | None = None,
+) -> dict[str, str | int]:
+    """Create one invocation-scoped artifact directory with a unique run ID."""
+    normalized = workflow.strip().lower()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", normalized):
+        raise ValueError("workflow must use 1-64 lowercase letters, digits, or hyphens")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    parent = None
+    if base_dir is not None:
+        parent = str(base_dir.expanduser().resolve())
+        Path(parent).mkdir(parents=True, exist_ok=True)
+    artifacts_dir = Path(
+        tempfile.mkdtemp(
+            prefix=f"obsidian-wiki-{normalized}-{timestamp}-",
+            dir=parent,
+        )
+    ).resolve()
+    return {
+        "schema_version": 1,
+        "run_id": artifacts_dir.name,
+        "workflow": normalized,
+        "artifacts_dir": str(artifacts_dir),
+    }
+
+
+def cmd_artifacts_create(args: argparse.Namespace) -> int:
+    try:
+        result = create_artifacts_run(args.workflow)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(result, indent=2 if args.pretty else None))
+    return 0
 
 
 def _required_vault_paths(vault: Path) -> list[Path]:
@@ -1216,7 +1365,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     except LayoutContractError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-    write_config(vault_path)
+    write_config(vault_path, layout.name)
     writing_profile = ensure_global_writing_profile()
     if not vault_path:
         print("    → Vault path not set yet. Re-run with `--vault /path/to/vault`")
@@ -1239,12 +1388,36 @@ def cmd_setup(args: argparse.Namespace) -> int:
         print()
         installed_agents.update(install_global_skills(mode, selected_agents))
 
+    context_source_cwd = Path.cwd().resolve()
+    context_bindings = _stable_context_config(vault_path, layout.name) if vault_path else {}
     if args.project is not None:
         project_dir = Path(args.project or os.getcwd()).expanduser().resolve()
-        env_overrides = {"OBSIDIAN_VAULT_PATH": vault_path} if vault_path else None
+        context_source_cwd = project_dir
+        env_overrides = (
+            {
+                "OBSIDIAN_VAULT_PATH": vault_path,
+                **_stable_context_config(vault_path, layout.name),
+            }
+            if vault_path else None
+        )
         ensure_project_env(project_dir, env_overrides)
+        context_bindings = ensure_project_context_bindings(
+            project_dir, context_bindings
+        )
         if selected_agents:
             installed_agents.update(install_project(project_dir, mode, selected_agents))
+
+    if vault_path:
+        try:
+            compile_context_snapshot(
+                Path(vault_path).expanduser().resolve(),
+                layout.name,
+                source_cwd=context_source_cwd,
+                bindings=context_bindings,
+            )
+        except LayoutContractError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
 
     unavailable = set(selected_agents) - installed_agents
     if unavailable:
@@ -2016,6 +2189,8 @@ def cmd_wiki_context_resolve(args: argparse.Namespace) -> int:
     ]
     if args.layouts_dir is not None:
         command.extend(["--layouts-dir", args.layouts_dir])
+    if args.compile_snapshot:
+        command.append("--compile-snapshot")
     return subprocess.run(command, check=False).returncode
 
 
@@ -3068,6 +3243,14 @@ def build_parser() -> argparse.ArgumentParser:
     tiia.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
     tiia.set_defaults(func=cmd_text_ingest_inline_advance)
 
+    arc = sub.add_parser(
+        "artifacts-create",
+        help="create a unique temporary artifact directory for one skill invocation",
+    )
+    arc.add_argument("--workflow", required=True, help="invoked skill/workflow name")
+    arc.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    arc.set_defaults(func=cmd_artifacts_create)
+
     wcr = sub.add_parser(
         "wiki-context-resolve",
         help="run the bundled workflow context resolver independently of the current directory",
@@ -3079,6 +3262,11 @@ def build_parser() -> argparse.ArgumentParser:
     wcr.add_argument("--setup-mode", choices=("true", "false"), default="false")
     wcr.add_argument("--layouts-dir", default=None, help="override the bundled layouts directory")
     wcr.add_argument("--output-dir", required=True, help="artifact output directory")
+    wcr.add_argument(
+        "--compile-snapshot",
+        action="store_true",
+        help="write the persistent compiled context selected by the resolved config",
+    )
     wcr.set_defaults(func=cmd_wiki_context_resolve)
 
     wsc = sub.add_parser(

@@ -1,6 +1,7 @@
 description: 只读审计 Obsidian wiki 的结构、schema、链接、来源与知识图谱健康度，并记录可复核报告
 
 auto_reset: true
+artifacts_dir: invocation
 
 adversarial_check:
   timeout_ms: 3600000

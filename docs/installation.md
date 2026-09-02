@@ -60,7 +60,11 @@ self-contained.
 
 The project `.env` is created only when it does not already exist; setup never overwrites an
 existing project configuration. When `--vault` is supplied, its resolved absolute path is
-written to `OBSIDIAN_VAULT_PATH` in the new `.env`.
+written to `OBSIDIAN_VAULT_PATH` in the new `.env`. Setup also fills the stable context bindings
+declared by `.env.example`: the Knowledge Pack, owner/Writing Profile paths, vault metadata and
+taxonomy paths, and the persistent compiled-context snapshot path. Existing `.env` files remain
+preserved except that setup fills missing or blank stable-binding keys; non-empty custom values,
+unknown fields, and comments are retained. Run setup/repair after changing these bindings.
 
 `OBSIDIAN_VAULT_PATH` is just any directory where you want your digital brain to live — a new empty folder or an existing Obsidian vault. In an interactive terminal, omit `--vault` to enter the folder; the displayed default is the current directory, accepted by pressing Enter. In a non-interactive run, pass `--vault` explicitly or use the existing value in `~/.obsidian-wiki/config`.
 

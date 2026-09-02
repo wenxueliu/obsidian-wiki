@@ -1,6 +1,7 @@
 description: 增量或全量挖掘 Claude CLI 与 Desktop 会话，按主题蒸馏为可追溯 Wiki 知识并安全提交 tracking
 
 auto_reset: true
+artifacts_dir: invocation
 
 adversarial_check:
   timeout_ms: 3600000

@@ -1,6 +1,7 @@
 description: 对 Obsidian wiki 执行完整 lint dry-run，经人工批准后安全应用可自动化的结构维护
 
 auto_reset: true
+artifacts_dir: invocation
 
 manual_step:
   - approve_actions

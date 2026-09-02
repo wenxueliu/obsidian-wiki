@@ -1,6 +1,7 @@
 description: 内部事务：使用父 Job 冻结的 context/page contract，将一个已验证文本 Packet 或短文档 inline extraction 串行归并进 Obsidian wiki
 
 auto_reset: true
+artifacts_dir: invocation
 
 adversarial_check:
   timeout_ms: 3600000

@@ -1,6 +1,7 @@
 description: 从任意项目增量蒸馏架构决策与可复用知识，并幂等同步到 Obsidian wiki
 
 auto_reset: true
+artifacts_dir: invocation
 
 adversarial_check:
   timeout_ms: 3600000

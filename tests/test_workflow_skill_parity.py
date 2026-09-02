@@ -51,6 +51,17 @@ def test_matching_skills_render_the_authoritative_workflow_as_markdown() -> None
         assert "#### 输入" in skill, workflow.name
         assert "#### 产出" in skill, workflow.name
         assert "#### 验收" in skill, workflow.name
+        assert "## 运行产物隔离" in skill, workflow.name
+        assert f"artifacts-create --workflow {workflow.stem}" in skill, workflow.name
+
+
+def test_every_workflow_declares_invocation_scoped_artifacts() -> None:
+    sync_module = load_sync_module()
+    for workflow_path in sorted(WORKFLOWS.glob("*.yaml")):
+        workflow = sync_module.parse_workflow(
+            workflow_path.read_text(encoding="utf-8"), workflow_path
+        )
+        assert workflow["artifacts_dir"] == "invocation", workflow_path.name
 
 
 def test_wiki_setup_renders_every_step_and_approval_gate() -> None:
@@ -78,6 +89,7 @@ def test_curated_folder_ingest_skill_preserves_workflow_behavior() -> None:
     assert END_MARKER not in skill
     for behavior in (
         "Coordinator 只持有 metadata 和 artifacts",
+        "artifacts-create --workflow wiki-folder-ingest",
         "obsidian-wiki text-ingest-plan",
         "wiki-page-contract",
         "text_ingest.max_extraction_workers",
@@ -98,6 +110,7 @@ def test_lightweight_wiki_ingest_is_skill_only() -> None:
     assert not (WORKFLOWS / "wiki-ingest.yaml").exists()
     for behavior in (
         "本 skill 不依赖 workflow",
+        "artifacts-create --workflow wiki-ingest",
         "obsidian-wiki text-document-plan",
         "Task",
         "wiki-ingest-document",
@@ -124,6 +137,7 @@ def test_curated_source_text_skill_is_an_isolated_worker_contract() -> None:
         "references/extraction-frame.md",
         "validate_packet",
         "Do not modify `job.json`",
+        "per-attempt worker directory",
         "never call `wiki-packet-integrate`",
     ):
         assert behavior in skill

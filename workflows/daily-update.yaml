@@ -1,6 +1,7 @@
 description: 运行 vault-scoped 的每日 Wiki 维护：source freshness、index、hot cache、状态文件、独立验证与日志
 
 auto_reset: true
+artifacts_dir: invocation
 
 adversarial_check:
   timeout_ms: 3600000

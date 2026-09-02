@@ -1,6 +1,7 @@
 description: 将共享 Wiki context 与事务范围编译为不可变的 effective page write contract
 
 auto_reset: true
+artifacts_dir: invocation
 
 adversarial_check:
   timeout_ms: 3600000

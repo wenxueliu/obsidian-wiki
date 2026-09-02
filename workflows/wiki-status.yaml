@@ -1,6 +1,7 @@
 description: 只读计算 Wiki 来源增量、健康优先级与 token footprint，并可生成知识图谱 insights
 
 auto_reset: true
+artifacts_dir: invocation
 
 adversarial_check:
   timeout_ms: 3600000

@@ -23,6 +23,14 @@ python tools/sync_workflow_skills.py --check
 
 例如，config、Writing Profile、layout、core files、Stop hook、Git sync、QMD collection 和 QMD refresh 应分别属于不同 step。为本次生成动作记录 report，与生成目标状态属于同一职责。
 
+## 运行产物隔离
+
+每个顶层 workflow 必须声明 `artifacts_dir: invocation`。该声明要求每次顶层 invocation 创建唯一
+`run_id` 和系统临时目录中的绝对 `artifacts_dir`；同一次执行的步骤、重试和子 workflow 继承同一
+绑定，新的顶层执行必须创建新绑定。禁止把运行 artifacts 写入 skill 安装目录、源码目录或 vault，
+也禁止通过 `latest` 或目录扫描复用其他 invocation。命令中的 `{{artifacts_dir}}` 是运行时绑定，
+不是相对 skill 路径。
+
 ## `do` 是 Producer
 
 `do` 只生成该 step 在 `output` 中声明的状态或 artifacts：

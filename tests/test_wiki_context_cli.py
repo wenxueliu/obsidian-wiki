@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import obsidian_wiki.cli as cli
 from obsidian_wiki.cli import scaffold_vault
 from obsidian_wiki.workflow_layout import load_layout
 
@@ -23,6 +24,7 @@ def run_context_resolver(
     profile: str | None = None,
     home: Path | None = None,
     overrides: dict[str, object] | None = None,
+    optional_reads: str = "active layout",
 ) -> subprocess.CompletedProcess[str]:
     supplied = tmp_path / f"vault-input-{setup_mode}.json"
     input_value: dict[str, object] = {"mode": mode, "overrides": overrides or {}}
@@ -44,7 +46,7 @@ def run_context_resolver(
             sys.executable, "-m", "obsidian_wiki", "wiki-context-resolve",
             "--input", str(supplied), "--source-cwd", str(tmp_path),
             "--requested-keys", requested_keys,
-            "--optional-reads", "active layout",
+            "--optional-reads", optional_reads,
             "--setup-mode", setup_mode, "--output-dir", str(output),
         ],
         cwd=tmp_path, env=env, text=True, capture_output=True, check=False,
@@ -126,6 +128,93 @@ def test_context_freezes_active_knowledge_profile(tmp_path: Path) -> None:
     assert active["knowledge_profile"]["sha256"].startswith("sha256:")
     assert active["knowledge_profile"]["contract"]["name"] == "book-knowledge"
     assert "argument" in active["knowledge_profile"]["contract"]["knowledge_types"]
+
+
+def test_setup_compiles_context_once_and_runtime_reuses_snapshot(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    vault = tmp_path / "vault"
+    scaffold_vault(vault, load_layout("default"))
+    config_home = tmp_path / "config-home"
+    monkeypatch.setattr(cli, "GLOBAL_CONFIG_DIR", config_home / ".obsidian-wiki")
+
+    snapshot = cli.compile_context_snapshot(
+        vault, "default", source_cwd=tmp_path
+    )
+    compiled = json.loads(snapshot.read_text(encoding="utf-8"))
+    assert compiled["compiled_context"]["version"] == 1
+    assert compiled["optional_metadata"]["active_layout"]["name"] == "default"
+
+    stable = cli._stable_context_config(str(vault), "default")
+    (tmp_path / ".env").write_text(
+        f'OBSIDIAN_VAULT_PATH="{vault}"\n'
+        + "".join(f'{key}="{value}"\n' for key, value in stable.items()),
+        encoding="utf-8",
+    )
+    result = run_context_resolver(
+        tmp_path, None, setup_mode="false", mode="config"
+    )
+
+    assert result.returncode == 0, result.stderr
+    runtime_context = tmp_path / "artifacts-false" / "wiki-context.json"
+    assert runtime_context.is_symlink() or runtime_context.read_bytes() == snapshot.read_bytes()
+    assert json.loads(runtime_context.read_text(encoding="utf-8"))["generated_at"] == compiled["generated_at"]
+
+    changed_owner = tmp_path / "different-owner.md"
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        env_path.read_text(encoding="utf-8").replace(
+            stable["OBSIDIAN_OWNER_RULES_PATH"], str(changed_owner)
+        ),
+        encoding="utf-8",
+    )
+    stale = run_context_resolver(
+        tmp_path, None, setup_mode="false", mode="config"
+    )
+    assert stale.returncode == 1
+    assert "stable context paths changed" in stale.stderr
+
+
+def test_context_uses_stable_paths_from_env(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    scaffold_vault(vault, load_layout("default"))
+    owner = tmp_path / "owner.md"
+    writing = tmp_path / "writing.md"
+    metadata = tmp_path / "vault-metadata"
+    taxonomy = tmp_path / "taxonomy.md"
+    metadata.mkdir()
+    (metadata / "layout.json").write_bytes((vault / "_meta/layout.json").read_bytes())
+    owner.write_text("owner rules\n", encoding="utf-8")
+    writing.write_text("writing profile\n", encoding="utf-8")
+    taxonomy.write_text("taxonomy\n", encoding="utf-8")
+    (tmp_path / ".env").write_text(
+        f'OBSIDIAN_VAULT_PATH="{vault}"\n'
+        'OBSIDIAN_KNOWLEDGE_PACK="default"\n'
+        f'OBSIDIAN_OWNER_RULES_PATH="{owner}"\n'
+        f'OBSIDIAN_WRITING_PROFILE_PATH="{writing}"\n'
+        f'OBSIDIAN_VAULT_METADATA_DIR="{metadata}"\n'
+        f'OBSIDIAN_TAXONOMY_PATH="{taxonomy}"\n',
+        encoding="utf-8",
+    )
+
+    result = run_context_resolver(
+        tmp_path,
+        None,
+        setup_mode="false",
+        mode="config",
+        optional_reads="active layout,taxonomy",
+    )
+
+    assert result.returncode == 0, result.stderr
+    context = json.loads(
+        (tmp_path / "artifacts-false/wiki-context.json").read_text(encoding="utf-8")
+    )
+    assert context["owner_rules"] == {"path": str(owner), "content": "owner rules\n"}
+    assert context["writing_profile"] == {
+        "path": str(writing), "content": "writing profile\n"
+    }
+    assert context["optional_metadata"]["taxonomy"]["path"] == str(taxonomy)
+    assert context["optional_metadata"]["active_layout"]["marker_path"] == str(metadata / "layout.json")
 
 
 def test_setup_mode_false_rejects_a_missing_vault(tmp_path: Path) -> None:

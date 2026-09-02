@@ -1,6 +1,7 @@
 description: 在 exact-hash source 完成门成立时统一更新 special files，并以 manifest-last 原子提交一个或多个来源
 
 auto_reset: true
+artifacts_dir: invocation
 
 adversarial_check:
   timeout_ms: 3600000

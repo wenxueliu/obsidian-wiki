@@ -1,6 +1,7 @@
 description: 对照明确目标逐项验证实现与产物，给出可复核的 PASS、WARN 或 FAIL 结论
 
 auto_reset: true
+artifacts_dir: invocation
 
 adversarial_check:
   timeout_ms: 3600000

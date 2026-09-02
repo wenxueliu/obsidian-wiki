@@ -28,9 +28,14 @@ def setup_args(**overrides) -> Namespace:
 
 def isolate_setup_side_effects(monkeypatch, vault: Path, tmp_path: Path) -> None:
     monkeypatch.setattr(cli, "resolve_vault_path", lambda _vault: str(vault))
-    monkeypatch.setattr(cli, "write_config", lambda _vault: None)
+    monkeypatch.setattr(cli, "write_config", lambda _vault, _pack: None)
     monkeypatch.setattr(cli, "ensure_global_writing_profile", lambda: tmp_path / "WRITING.md")
     monkeypatch.setattr(cli, "_maybe_configure_sync", lambda _vault, _remote: False)
+    monkeypatch.setattr(
+        cli,
+        "compile_context_snapshot",
+        lambda _vault, _pack, *, source_cwd, bindings: _vault / "_meta/context/wiki-context.json",
+    )
 
 
 def test_setup_skills_only_project_install_does_not_resolve_vault(
@@ -316,6 +321,24 @@ def test_vault_argument_is_resolved_to_an_absolute_path(tmp_path: Path, monkeypa
     assert Path(resolved).is_absolute()
 
 
+def test_artifacts_create_uses_unique_invocation_directories(tmp_path: Path) -> None:
+    first = cli.create_artifacts_run("wiki-ingest", base_dir=tmp_path)
+    second = cli.create_artifacts_run("wiki-ingest", base_dir=tmp_path)
+
+    assert first["run_id"] != second["run_id"]
+    assert first["artifacts_dir"] != second["artifacts_dir"]
+    for result in (first, second):
+        artifacts_dir = Path(str(result["artifacts_dir"]))
+        assert artifacts_dir.is_dir()
+        assert artifacts_dir.parent == tmp_path.resolve()
+        assert result["run_id"] == artifacts_dir.name
+
+
+def test_artifacts_create_rejects_unsafe_workflow_name(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="workflow"):
+        cli.create_artifacts_run("../wiki-ingest", base_dir=tmp_path)
+
+
 def test_interactive_setup_vault_defaults_to_current_directory(
     tmp_path: Path, monkeypatch,
 ) -> None:
@@ -371,6 +394,73 @@ def test_project_setup_applies_vault_override_to_new_env(tmp_path: Path, monkeyp
     assert (project / ".env").read_text(encoding="utf-8") == (
         '# config\nOBSIDIAN_VAULT_PATH="/tmp/my-vault"\n'
     )
+
+
+def test_env_example_declares_stable_context_bindings() -> None:
+    template = (Path(__file__).resolve().parents[1] / ".env.example").read_text(
+        encoding="utf-8"
+    )
+
+    for key in (
+        "OBSIDIAN_KNOWLEDGE_PACK",
+        "OBSIDIAN_OWNER_RULES_PATH",
+        "OBSIDIAN_WRITING_PROFILE_PATH",
+        "OBSIDIAN_VAULT_METADATA_DIR",
+        "OBSIDIAN_TAXONOMY_PATH",
+        "OBSIDIAN_CONTEXT_SNAPSHOT",
+    ):
+        assert f"{key}=" in template
+    assert "WIKI_STAGED_WRITES=false" in template
+
+
+def test_stable_context_config_uses_selected_pack_and_vault_paths(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    config_home = tmp_path / "home" / ".obsidian-wiki"
+    monkeypatch.setattr(cli, "GLOBAL_CONFIG_DIR", config_home)
+    vault = tmp_path / "vault"
+
+    values = cli._stable_context_config(str(vault), "book-knowledge")
+
+    assert values["OBSIDIAN_KNOWLEDGE_PACK"] == "book-knowledge"
+    assert values["OBSIDIAN_OWNER_RULES_PATH"] == str(vault / "AGENTS.md")
+    assert values["OBSIDIAN_WRITING_PROFILE_PATH"] == str(config_home / "WRITING.md")
+    assert values["OBSIDIAN_CONTEXT_SNAPSHOT"] == str(
+        vault / "_meta/context/wiki-context.json"
+    )
+
+
+def test_existing_project_env_fills_only_missing_or_blank_context_bindings(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    env = project / ".env"
+    env.write_text(
+        "OBSIDIAN_VAULT_PATH=/existing-vault\n"
+        "OBSIDIAN_KNOWLEDGE_PACK=\n"
+        "OBSIDIAN_OWNER_RULES_PATH=/custom/owner.md\n"
+        "UNRELATED=value\n",
+        encoding="utf-8",
+    )
+    defaults = {
+        "OBSIDIAN_KNOWLEDGE_PACK": "default",
+        "OBSIDIAN_OWNER_RULES_PATH": "/default/AGENTS.md",
+        "OBSIDIAN_CONTEXT_SNAPSHOT": "/default/context.json",
+    }
+
+    effective = cli.ensure_project_context_bindings(project, defaults)
+
+    assert effective == {
+        "OBSIDIAN_KNOWLEDGE_PACK": "default",
+        "OBSIDIAN_OWNER_RULES_PATH": "/custom/owner.md",
+        "OBSIDIAN_CONTEXT_SNAPSHOT": "/default/context.json",
+    }
+    content = env.read_text(encoding="utf-8")
+    assert 'OBSIDIAN_KNOWLEDGE_PACK="default"' in content
+    assert "OBSIDIAN_OWNER_RULES_PATH=/custom/owner.md" in content
+    assert 'OBSIDIAN_CONTEXT_SNAPSHOT="/default/context.json"' in content
+    assert "UNRELATED=value" in content
 
 
 def test_setup_with_explicit_layout_preserves_existing_custom_pack(

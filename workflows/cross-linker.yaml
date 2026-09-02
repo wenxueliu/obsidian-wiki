@@ -1,6 +1,7 @@
 description: 发现并写入高置信 Obsidian 页面链接、typed relationships 与 misc affinity，收紧知识图谱
 
 auto_reset: true
+artifacts_dir: invocation
 
 adversarial_check:
   timeout_ms: 3600000

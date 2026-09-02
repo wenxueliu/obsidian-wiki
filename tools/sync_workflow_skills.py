@@ -23,7 +23,14 @@ BEGIN_MARKER = "<!-- BEGIN GENERATED SKILL INSTRUCTIONS -->"
 END_MARKER = "<!-- END GENERATED SKILL INSTRUCTIONS -->"
 CURATED_SKILLS = {"wiki-folder-ingest", "wiki-source-text"}
 
-TOP_LEVEL_KEYS = {"description", "auto_reset", "manual_step", "adversarial_check", "steps"}
+TOP_LEVEL_KEYS = {
+    "description",
+    "auto_reset",
+    "artifacts_dir",
+    "manual_step",
+    "adversarial_check",
+    "steps",
+}
 STEP_KEYS = {
     "id",
     "desc",
@@ -144,6 +151,11 @@ def parse_workflow(workflow_text: str, path: Path) -> dict[str, Any]:
     auto_reset_match = re.search(r"^auto_reset:\s*(true|false)$", workflow_text, re.MULTILINE)
     if not auto_reset_match:
         raise ValueError(f"{path}: auto_reset must be true or false")
+    artifacts_dir_match = re.search(
+        r"^artifacts_dir:\s*(invocation)$", workflow_text, re.MULTILINE
+    )
+    if not artifacts_dir_match:
+        raise ValueError(f"{path}: artifacts_dir must be invocation")
 
     manual_steps: list[str] = []
     manual_match = re.search(
@@ -180,6 +192,7 @@ def parse_workflow(workflow_text: str, path: Path) -> dict[str, Any]:
     return {
         "description": _unquote(description_match.group(1)),
         "auto_reset": auto_reset_match.group(1) == "true",
+        "artifacts_dir": artifacts_dir_match.group(1),
         "manual_steps": manual_steps,
         "audit_timeout_ms": int(audit_match.group("timeout")),
         "audit_prompt": _dedent_block(audit_match.group("prompt").splitlines(), 4),
@@ -239,6 +252,21 @@ def render_skill(workflow_path: Path) -> str:
             "`python tools/sync_workflow_skills.py`。"
         ),
         f"- 自动重置：{'开启' if workflow['auto_reset'] else '关闭'}。",
+        "## 运行产物隔离",
+        (
+            "进入本 skill 时先绑定本次 invocation 的 `run_id` 与绝对 `artifacts_dir`。"
+            "若父 workflow 已传入这两个值，原样继承；否则运行 "
+            f"`obsidian-wiki artifacts-create --workflow {name}`，解析其 JSON 输出后绑定。"
+        ),
+        (
+            "同一次 invocation 的步骤、重试和子 workflow 必须复用该绑定；调用子 workflow 时显式传递 "
+            "`run_id` 与 `artifacts_dir`。新的顶层 invocation 必须重新创建，禁止搜索或复用 `latest`、"
+            "上一次目录或其他会话目录。"
+        ),
+        (
+            "将命令中的 `{{artifacts_dir}}` 替换为已绑定的绝对路径。运行产物不得写入 skill 安装目录、"
+            "源码目录或 vault；父 workflow 完成前不得删除该目录。"
+        ),
     ]
     if workflow["manual_steps"]:
         body.append("- 人工审批步骤：" + "、".join(f"`{item}`" for item in workflow["manual_steps"]) + "。")
