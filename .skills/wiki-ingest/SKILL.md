@@ -40,13 +40,13 @@ existing-first 归并。
 - `WIKI_TEXT_CHUNK_STRATEGY`
 - `WIKI_TEXT_CHUNK_OPTIONS`
 
-`optional_reads` 包含：owner `AGENTS.md`、taxonomy、index、manifest、active layout、writing
-profile；`setup_mode` 设为 `false`。`knowledge_layout`、`link_format` 和 `taxonomy` 是 resolved
+`optional_reads` 包含：owner `AGENTS.md`、taxonomy、index、manifest、active knowledge pack、writing
+profile；`setup_mode` 设为 `false`。`active_knowledge_pack`、`link_format` 和 `taxonomy` 是 resolved
 field/optional metadata 名称，不是配置键，绝不能放进 `requested_keys`。若 warnings 出现这些名称的
 `is not configured`，说明调用契约错误；修正参数并重新 resolve，不能带着错误 context 继续 ingest。
 
 从临时 artifacts directory 的 `wiki-context.json` 读取 top-level `write_mode`、`link_format` 和
-`optional_metadata.active_layout`。开始 plan 前确认 active layout `status` 是 `matched`，并且包含
+`optional_metadata.active_knowledge_pack`。开始 plan 前确认 active Knowledge Pack `status` 是 `matched`，并且包含
 完整 `knowledge_profile.contract`、`routing.rules`、`routing.prompt` 及 frozen hashes；缺失或 stale
 时停止并建议运行 `wiki-setup` repair。taxonomy 是可选 vault metadata：`_meta/taxonomy.md` 不存在时
 允许缺席，不能把它误报为缺少环境配置。使用同批生成的 `text-chunk-options.json` 传递 chunk

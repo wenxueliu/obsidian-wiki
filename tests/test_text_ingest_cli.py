@@ -129,7 +129,7 @@ def test_recoverable_folder_workflow_and_lightweight_skill_coexist() -> None:
     assert "`WIKI_STAGED_WRITES`" in lightweight
     assert "`OBSIDIAN_LINK_FORMAT`" in lightweight
     assert "`optional_reads` 包含" in lightweight
-    assert "active layout" in lightweight
+    assert "active Knowledge Pack" in lightweight
     assert "绝不能放进 `requested_keys`" in lightweight
     assert "`knowledge_profile.contract`" in lightweight
     assert "`routing.rules`" in lightweight

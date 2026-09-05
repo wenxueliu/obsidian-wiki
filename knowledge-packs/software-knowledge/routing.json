@@ -78,7 +78,7 @@
     "log.md",
     "hot.md",
     ".manifest.json",
-    "_meta/layout.json",
+    "_meta/knowledge-pack.json",
     "_meta/schema.json",
     "_meta/rules.md",
     "_meta/terminology-policy.md"

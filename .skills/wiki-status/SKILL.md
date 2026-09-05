@@ -46,7 +46,7 @@ status invocation 与当前 CWD
 
 - `requested_keys`: OBSIDIAN_VAULT_PATH,OBSIDIAN_SOURCES_DIR,CLAUDE_HISTORY_PATH,CODEX_HISTORY_PATH,WIKI_STAGED_WRITES,WIKI_TOKEN_WARN_THRESHOLD,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_CLI_SEARCH_MODE
 
-- `optional_reads`: owner AGENTS,index,hot,manifest,active layout
+- `optional_reads`: owner AGENTS,index,hot,manifest,active knowledge pack
 
 - `setup_mode`: false
 

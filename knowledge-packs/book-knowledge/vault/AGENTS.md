@@ -4,7 +4,7 @@ This vault compiles traceable knowledge from books and reading notes. Treat sour
 
 Before writing:
 
-1. Read the active Knowledge Profile frozen by `wiki-context`, then `_meta/schema.json`, `_meta/rules.md`, `_meta/terminology-policy.md`, `index.md`, and the active layout marker.
+1. Read the active Knowledge Profile frozen by `wiki-context`, then `_meta/schema.json`, `_meta/rules.md`, `_meta/terminology-policy.md`, `index.md`, and the active Knowledge Pack marker.
 2. Search titles, aliases, summaries, and related pages before creating a page.
 3. Check the source against the Profile scope, apply its extraction retain/omit policy, choose exactly one Profile-compatible page type through the routing contract, and produce a placement plan before writes.
 4. Keep a book as the intellectual work; record editions and translations as metadata or source locators.

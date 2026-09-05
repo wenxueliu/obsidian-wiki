@@ -17,7 +17,7 @@ steps:
     output: wiki-context.json + wiki-context.md
     inputs:
       requested_keys: OBSIDIAN_VAULT_PATH,OBSIDIAN_ALLOWED_LIFECYCLES,OBSIDIAN_ALLOWED_RELATIONSHIP_TYPES,OBSIDIAN_REQUIRED_TRUST_FIELDS,OBSIDIAN_SCHEMA_SOURCE
-      optional_reads: owner AGENTS,index,manifest,active layout
+      optional_reads: owner AGENTS,index,manifest,active knowledge pack
       setup_mode: "false"
     on_pass: build_lint_context
     on_fail: resolve_context
@@ -28,11 +28,11 @@ steps:
     do: |
       使用 wiki-context.json 建立本次审计的权威上下文。
 
-      1. 使用 context 的 canonical vault、retrieval order、owner schema、provenance、confidence/lifecycle、typed relationship allowlists 与 status=matched 的 active layout；不得重新解释配置。layout 不 matched 时停止审计并要求 repair/migration。
+      1. 使用 context 的 canonical vault、retrieval order、owner schema、provenance、confidence/lifecycle、typed relationship allowlists 与 status=matched 的 active Knowledge Pack；不得重新解释配置。layout 不 matched 时停止审计并要求 repair/migration。
       2. 形成 effective schema，记录 schema source、required/optional frontmatter、lifecycle、relationship types、trust fields 与 provenance markers；owner 扩展和放宽优先，不能强制改回 framework 默认。
       4. 清理并验证 OBSIDIAN_ALLOWED_LIFECYCLES、OBSIDIAN_ALLOWED_RELATIONSHIP_TYPES、OBSIDIAN_REQUIRED_TRUST_FIELDS、OBSIDIAN_SCHEMA_SOURCE。空白值或空列表项 fail closed。
-      5. 读取 index.md 与 log.md，并从 active layout routing.content_roots 建立页面 inventory。所有检查排除 routing.skip_dirs/system_dirs/system_paths；staging role 不算 live knowledge page。
-      6. 先在内存中形成唯一 canonical lint context result；`lint-context.json` 完整承载 canonical vault path、配置来源、effective schema、active layout name/version/hashes/完整 routing、排除项、页面数量、index/log 状态、审计时间与稳定 audit_id，Markdown 只从同一 result 渲染、不得独立推导或补充事实，并在同一批 artifact 写入中提交二者。此步骤不得修改 vault。
+      5. 读取 index.md 与 log.md，并从 active Knowledge Pack routing.content_roots 建立页面 inventory。所有检查排除 routing.skip_dirs/system_dirs/system_paths；staging role 不算 live knowledge page。
+      6. 先在内存中形成唯一 canonical lint context result；`lint-context.json` 完整承载 canonical vault path、配置来源、effective schema、active Knowledge Pack name/version/hashes/完整 routing、排除项、页面数量、index/log 状态、审计时间与稳定 audit_id，Markdown 只从同一 result 渲染、不得独立推导或补充事实，并在同一批 artifact 写入中提交二者。此步骤不得修改 vault。
     input: 用户任务（vault 由 wiki-context 交互式确认；默认等价于 wiki-lint --check）
     output: lint-context.md + lint-context.json（vault、effective schema、active routing、scope、inventory、audit_id）
     check: |
@@ -76,7 +76,7 @@ steps:
       1. 只从 shared tags、高 incoming-link、relationships 或共现候选中选相关页；先 grep section/claim context，只有不足时才读整页。
       2. 区分已通过 ^[ambiguous]、Open Questions、Debate 或 contradiction callout 明示的分歧与未标注冲突。逐条保存双方 claim、locator 与 source/provenance。
       3. 对存在 provenance block 或 markers 的页面按句子/项目符号粗算 extracted/inferred/ambiguous；应用 ambiguous>15%、无 sources 且 inferred>40%、top-10 hub inferred>20%、任一声明比例 drift>0.20。无 block 且无 marker 的页面按 fully extracted 跳过。
-      4. 从 active layout routing 声明的 concept/entity 内容根中选择 10-15 个高频链接，两两计算共同出现页面；仅报告 co-occurrence>=3 且对应 synthesis route 下不存在页面的 gap，不假定 default layout 目录名。
+      4. 从 active Knowledge Pack routing 声明的 concept/entity 内容根中选择 10-15 个高频链接，两两计算共同出现页面；仅报告 co-occurrence>=3 且对应 synthesis route 下不存在页面的 gap，不假定 default Pack 目录名。
       5. 在产出目录写 semantic-findings.json 和 semantic-audit.md。每条 finding 使用与 structural findings 相同的稳定 schema，并标明事实、推断和不确定性。不得修改 vault。
     input: lint-context.md + structural findings + 相关页面的局部正文
     output: semantic-findings.json + semantic-audit.md

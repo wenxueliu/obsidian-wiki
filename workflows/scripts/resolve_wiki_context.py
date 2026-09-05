@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 sys.dont_write_bytecode = True
-from apply_wiki_layout import inventory as layout_inventory
+from apply_knowledge_pack import inventory as knowledge_pack_inventory
 
 BOOL_KEYS = {"WIKI_STAGED_WRITES"}
 POSITIVE_INT_KEYS = {
@@ -166,10 +166,10 @@ def write_outputs(output_dir: Path, context: dict[str, Any]) -> None:
     ]
     if context.get("reason"):
         lines.append(f"- Reason: {context['reason']}")
-    active_layout = context.get("optional_metadata", {}).get("active_layout")
-    if active_layout:
-        lines.append(f"- Active layout: `{active_layout.get('name', 'unknown')}` ({active_layout.get('status', 'unknown')})")
-        knowledge_profile = active_layout.get("knowledge_profile", {}).get("contract", {})
+    active_knowledge_pack = context.get("optional_metadata", {}).get("active_knowledge_pack")
+    if active_knowledge_pack:
+        lines.append(f"- Active Knowledge Pack: `{active_knowledge_pack.get('name', 'unknown')}` ({active_knowledge_pack.get('status', 'unknown')})")
+        knowledge_profile = active_knowledge_pack.get("knowledge_profile", {}).get("contract", {})
         if knowledge_profile:
             lines.append(f"- Knowledge Profile: `{knowledge_profile.get('name', 'unknown')}`")
     warnings = context.get("warnings", [])
@@ -207,7 +207,11 @@ def main() -> int:
     parser.add_argument("--requested-keys", default="")
     parser.add_argument("--optional-reads", default="")
     parser.add_argument("--setup-mode", choices=("true", "false"), default="false")
-    parser.add_argument("--layouts-dir", type=Path, default=Path(__file__).resolve().parent.parent / "layouts")
+    parser.add_argument(
+        "--knowledge-packs-dir",
+        type=Path,
+        default=Path(__file__).resolve().parents[2] / "knowledge-packs",
+    )
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--compile-snapshot", action="store_true")
     args = parser.parse_args()
@@ -258,6 +262,11 @@ def main() -> int:
             configured_vault = config_values.get("OBSIDIAN_VAULT_PATH")
             if configured_vault is None or canonical_path(configured_vault) != vault:
                 config_path, config_values = None, {}
+                binding_config = {
+                    str(key): str(value)
+                    for key, value in overrides.items()
+                    if value is not None
+                }
 
         if not setup_mode and not vault.is_dir():
             raise ValueError(f"vault does not exist or is not a directory: {vault}")
@@ -310,7 +319,7 @@ def main() -> int:
             configured_pack = binding_config.get("OBSIDIAN_KNOWLEDGE_PACK", "").strip()
             frozen_pack = (
                 compiled.get("optional_metadata", {})
-                .get("active_layout", {})
+                .get("active_knowledge_pack", {})
                 .get("name")
             )
             if configured_pack and configured_pack != frozen_pack:
@@ -404,26 +413,26 @@ def main() -> int:
             if wants(name) and path.is_file():
                 stat = path.stat()
                 optional_metadata[name] = {"path": str(path), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
-        if wants("active layout"):
-            marker_path = metadata_dir / "layout.json"
+        if wants("active knowledge pack"):
+            marker_path = metadata_dir / "knowledge-pack.json"
             if not vault.is_dir() or not marker_path.is_file():
-                optional_metadata["active_layout"] = {
+                optional_metadata["active_knowledge_pack"] = {
                     "status": "uninitialized" if setup_mode else "missing",
                     "marker_path": str(marker_path),
                 }
                 if not setup_mode:
-                    context_warnings.append("active layout marker is missing; run wiki-setup repair before writing pages")
+                    context_warnings.append("active Knowledge Pack marker is missing; run wiki-setup repair before writing pages")
             else:
                 if marker_path.is_symlink():
-                    raise ValueError("active layout marker must not be a symlink")
+                    raise ValueError("active Knowledge Pack marker must not be a symlink")
                 marker = json.loads(marker_path.read_text(encoding="utf-8"))
                 if not isinstance(marker, dict) or marker.get("version") != 1 or not isinstance(marker.get("name"), str):
-                    raise ValueError("active layout marker is invalid")
-                frozen = layout_inventory(args.layouts_dir, marker["name"])
+                    raise ValueError("active Knowledge Pack marker is invalid")
+                frozen = knowledge_pack_inventory(args.knowledge_packs_dir, marker["name"])
                 configured_pack = binding_config.get("OBSIDIAN_KNOWLEDGE_PACK", "").strip()
                 if configured_pack and configured_pack != frozen["name"]:
                     raise ValueError(
-                        "OBSIDIAN_KNOWLEDGE_PACK does not match the vault layout marker"
+                        "OBSIDIAN_KNOWLEDGE_PACK does not match the vault Knowledge Pack marker"
                     )
                 expected = {
                     "manifest_sha256": frozen["manifest_sha256"],
@@ -436,9 +445,9 @@ def main() -> int:
                 status = "matched" if not mismatches else "stale"
                 if mismatches:
                     context_warnings.append(
-                        "active layout contract is stale (" + ", ".join(mismatches) + "); run an explicit layout repair or migration before writing pages"
+                        "active Knowledge Pack contract is stale (" + ", ".join(mismatches) + "); run an explicit Pack repair or migration before writing pages"
                     )
-                optional_metadata["active_layout"] = {
+                optional_metadata["active_knowledge_pack"] = {
                     "status": status, "name": frozen["name"], "version": frozen["version"],
                     "marker_path": str(marker_path), "marker": marker,
                     "categories": frozen["categories"], "directories": frozen["directories"],
@@ -483,7 +492,7 @@ def main() -> int:
                 "version": 1,
                 "snapshot_path": str(snapshot_path),
                 "knowledge_pack": (
-                    optional_metadata.get("active_layout", {}).get("name")
+                    optional_metadata.get("active_knowledge_pack", {}).get("name")
                 ),
                 "bindings": stable_bindings,
             }

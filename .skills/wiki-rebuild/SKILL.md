@@ -48,7 +48,7 @@ operation invocation 与当前 CWD
 
 - `requested_keys`: OBSIDIAN_VAULT_PATH,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_CLI_SEARCH_MODE
 
-- `optional_reads`: owner AGENTS,index,manifest,active layout
+- `optional_reads`: owner AGENTS,index,manifest,active knowledge pack
 
 - `setup_mode`: false
 
@@ -74,7 +74,7 @@ wiki-context.json + wiki-context.md
 
 使用 wiki-context.json 规划 rebuild/archive/restore。
 
-1. 使用 context 的 canonical vault、QMD、manifest/index 与 active layout；按需只读 log，不得重新解析 profile。
+1. 使用 context 的 canonical vault、QMD、manifest/index 与 active Knowledge Pack；按需只读 log，不得重新解析 profile。
 2. 识别且只允许 archive-only、archive+rebuild、restore 三种模式；未明确时列出选择，不猜 destructive intent。
 3. 按 routing.content_roots 统计 live pages、sources/projects 和需要归档的 index/log/manifest；列出必须保留的 archive/config 及其他 routing system/skip dirs。
 4. restore 模式扫描 _archives/*/archive-meta.json，canonicalize 候选，验证目录边界、metadata、必需内容与可读性；绑定用户选择的唯一 archive。
@@ -91,7 +91,7 @@ rebuild-plan.md + rebuild-plan.json
 
 #### 验收
 
-1. 复核 config/vault/mode、live inventory/counts、active layout 和 archive candidate metadata，所有 canonical paths 无 escape
+1. 复核 config/vault/mode、live inventory/counts、active Knowledge Pack 和 archive candidate metadata，所有 canonical paths 无 escape
 
 2. 审计 copy/clear/restore allowlists，确认 _archives/.obsidian/.env 永不在删除/覆盖集合且 rebuild 不自动 ingest
 
@@ -155,7 +155,7 @@ approved-rebuild.json + 当前 live wiki
 
 #### 验收
 
-1. 独立比较 archive 与批准时 live inventory/hash/counts，active layout content_roots/special/manifest 内容完整且 archive-meta 准确
+1. 独立比较 archive 与批准时 live inventory/hash/counts，active Knowledge Pack content_roots/special/manifest 内容完整且 archive-meta 准确
 
 2. 确认没有复制 nested _archives/.obsidian/.env，没有修改/删除 live knowledge，archive destination 唯一且在 vault/_archives 内
 
@@ -177,7 +177,7 @@ approved-rebuild.json + 当前 live wiki
 
 1. archive-only：保持 live knowledge/manifest/index 不变，只记录 no-op mutation。
 2. archive+rebuild：仅清除 allowlisted routing.content_roots 内容；保留根目录、routing system/skip dirs 与 config。将 index.md 重置为空模板，log.md 重置为 rebuild entry，删除 manifest 使后续来源均为 new。不得启动任何 ingest。
-3. restore：验证 selected archive 后仅清除 active layout routing 声明的 allowlisted live content_roots，再复制 archive content roots/index/log/manifest 回 live；system/skip dirs 来自 frozen routing，绝不从 archive 覆盖 config、layout marker 或 archive root。向恢复后的 log 追加 RESTORE。
+3. restore：验证 selected archive 后仅清除 active Knowledge Pack routing 声明的 allowlisted live content_roots，再复制 archive content roots/index/log/manifest 回 live；system/skip dirs 来自 frozen routing，绝不从 archive 覆盖 config、Knowledge Pack marker 或 archive root。向恢复后的 log 追加 RESTORE。
 4. 所有写入采用 staging/temp + atomic rename 可行处；失败时停止并在报告中给 pre-operation archive，不虚报成功。
 5. 写 live-mutation-report.md，列实际 deletes/copies/preserved、before/after counts/hash、log/manifest 状态。
 

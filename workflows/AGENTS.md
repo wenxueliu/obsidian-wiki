@@ -1,6 +1,7 @@
 # Workflow Authoring Rules
 
-本文件适用于 `workflows/` 下的 workflow、辅助脚本、模板和 layout 资源。更具体目录中的 `AGENTS.md` 可以补充规则，但不能放宽以下职责边界。
+本文件适用于 `workflows/` 下的 workflow、辅助脚本和模板。公共 Knowledge Pack 位于
+`knowledge-packs/`，不属于 workflow 资源。
 
 ## Workflow 与 Skill 同步
 

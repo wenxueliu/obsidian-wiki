@@ -17,7 +17,7 @@ steps:
     output: wiki-context.json + wiki-context.md
     inputs:
       requested_keys: OBSIDIAN_VAULT_PATH,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_PAPERS_COLLECTION,QMD_CLI_SEARCH_MODE
-      optional_reads: owner AGENTS,index,hot,manifest,active layout
+      optional_reads: owner AGENTS,index,hot,manifest,active knowledge pack
       setup_mode: "false"
     on_pass: resolve_and_classify
     on_fail: resolve_context

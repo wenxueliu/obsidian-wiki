@@ -72,6 +72,7 @@ exclude = [
 [tool.hatch.build.targets.wheel.force-include]
 ".skills" = "obsidian_wiki/_data/skills"
 "workflows" = "obsidian_wiki/_data/workflows"
+"knowledge-packs" = "obsidian_wiki/_data/knowledge-packs"
 "scripts" = "obsidian_wiki/_data/scripts"
 ".claude/hooks/wiki-stop-capture.sh" = "obsidian_wiki/_data/hooks/wiki-stop-capture.sh"
 ".claude/hooks/wiki-stop-capture.ps1" = "obsidian_wiki/_data/hooks/wiki-stop-capture.ps1"
@@ -106,5 +107,6 @@ exclude = [
 # nothing to copy and the published package ships a dangling hook reference.
 [tool.hatch.build.targets.sdist.force-include]
 ".skills" = ".skills"
+"knowledge-packs" = "knowledge-packs"
 ".claude/hooks/wiki-stop-capture.sh" = ".claude/hooks/wiki-stop-capture.sh"
 ".claude/hooks/wiki-stop-capture.ps1" = ".claude/hooks/wiki-stop-capture.ps1"

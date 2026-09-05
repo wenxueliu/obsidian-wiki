@@ -17,7 +17,7 @@ steps:
     output: wiki-context.json + wiki-context.md + text-chunk-options.json
     inputs:
       requested_keys: OBSIDIAN_VAULT_PATH,WIKI_STAGED_WRITES,OBSIDIAN_LINK_FORMAT,WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS,WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES,WIKI_TEXT_CHUNK_TARGET_BYTES,WIKI_TEXT_CHUNK_HARD_MAX_BYTES,WIKI_TEXT_CHUNK_MIN_BYTES,WIKI_TEXT_CHUNK_STRATEGY,WIKI_TEXT_CHUNK_OPTIONS,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_CLI_SEARCH_MODE
-      optional_reads: owner AGENTS,taxonomy,index,manifest,active layout,writing profile
+      optional_reads: owner AGENTS,taxonomy,index,manifest,active knowledge pack,writing profile
       setup_mode: "false"
     on_pass: plan_job
     on_fail: resolve_context

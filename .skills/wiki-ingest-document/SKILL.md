@@ -31,9 +31,9 @@ another worker or subagent.
 1. Read only plan metadata for the requested document. Confirm that the plan vault equals the
    canonical vault in `wiki-context.json` and that write mode is `direct`. Lightweight document
    ingest does not create staged artifacts.
-2. Read `optional_metadata.active_layout` from the frozen context. Require `status=matched`, a
+2. Read `optional_metadata.active_knowledge_pack` from the frozen context. Require `status=matched`, a
    complete `knowledge_profile.contract`, `routing.rules`, `routing.prompt`, and their frozen
-   hashes. Fail before any vault write if the layout is missing, stale, or incomplete. Do not open
+   hashes. Fail before any vault write if the Pack is missing, stale, or incomplete. Do not open
    the installed/source `layout.json`, `profile.json`, `routing.json`, or `routing.md` and do not
    re-resolve them: this worker must use the exact contracts frozen for the parent ingest.
 3. Read the resolved vault's `AGENTS.md` when present. Apply the frozen Writing Profile, top-level
@@ -90,7 +90,7 @@ complete:
    heading path, line range, and byte range. Mark inference and unresolved disagreement explicitly.
 7. Update pages using the owner schema. Preserve unrelated frontmatter and body content. Maintain
    required `title`, `category`, `tags`, `sources`, `created`, and `updated` fields and all stricter
-   fields required by the active layout. Keep every new internal link resolvable.
+   fields required by the active Knowledge Pack. Keep every new internal link resolvable.
 8. Validate every created or updated page. Then update and validate `index.md`, append one
    `INGEST_DOCUMENT` event to `log.md`, and refresh `hot.md`. Do not touch Job directories, Packet
    files, unit reports, or `_meta/ingest-jobs/`.

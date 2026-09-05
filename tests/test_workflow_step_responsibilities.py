@@ -62,7 +62,7 @@ def test_setup_splits_independent_mutation_responsibilities() -> None:
     assert {
         "write_config",
         "initialize_writing_profile",
-        "apply_layout",
+        "apply_knowledge_pack",
         "initialize_core",
         "configure_stop_hook",
         "configure_git_sync",

@@ -20,7 +20,7 @@ steps:
     output: wiki-context.json + wiki-context.md
     inputs:
       requested_keys: OBSIDIAN_VAULT_PATH,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_CLI_SEARCH_MODE
-      optional_reads: owner AGENTS,taxonomy,index,manifest,active layout
+      optional_reads: owner AGENTS,taxonomy,index,manifest,active knowledge pack
       setup_mode: "false"
     on_pass: audit_tags
     on_fail: resolve_context
@@ -32,7 +32,7 @@ steps:
       使用 wiki-context.json 解析后的 vault 与 canonical taxonomy。
 
       1. 使用 context 的 canonical vault、_meta/taxonomy.md 和 index.md；不得重新选择 profile。
-      2. 只扫描 active layout routing.content_roots 下的 live `.md`，排除 routing.skip_dirs/system_dirs/system_paths；从 YAML frontmatter 提取 tags，不把正文 hashtag 当标签。
+      2. 只扫描 active Knowledge Pack routing.content_roots 下的 live `.md`，排除 routing.skip_dirs/system_dirs/system_paths；从 YAML frontmatter 提取 tags，不把正文 hashtag 当标签。
       3. 建立频率表并识别 canonical、alias、unknown、>5 普通标签、untagged；visibility/public|internal|pii 单独统计，不计 5-tag 限额，不受 alias mapping，且每页最多一个。
       4. 识别用户模式：audit、normalize、tag-new-page、add-tag；所有模式先完成审计。
       5. 写 tag-audit-report.md 和 tag-inventory.json，包含逐页 locator、counts 与配置来源。不得修改 vault。

@@ -42,7 +42,7 @@ from obsidian_wiki.text_chunker import (
     DEFAULT_HARD_BUDGET,
     DEFAULT_TARGET_BUDGET,
 )
-from obsidian_wiki.workflow_layout import iter_content_pages
+from obsidian_wiki.knowledge_pack import iter_content_pages
 
 
 class SourceEntry(TypedDict, total=False):

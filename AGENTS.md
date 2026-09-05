@@ -13,7 +13,7 @@ Use the narrowest authoritative source for the work at hand:
 - `workflows/<name>.yaml` is the behavioral source of truth for workflow-backed skills.
 - `.skills/<name>/SKILL.md` is the executable Agent Skill. For workflow-backed skills it is a
   deterministic projection, not an independently editable specification.
-- `workflows/layouts/<name>/` defines each Knowledge Pack's semantic and physical contracts.
+- `knowledge-packs/<name>/` defines each Knowledge Pack's semantic and physical contracts.
 - `docs/` is the human-facing product documentation; `README.md` is only the landing page.
 - A resolved vault's `AGENTS.md` and `WRITING.md` contain owner-specific rules for that vault.
 
@@ -24,7 +24,8 @@ the active Knowledge Pack or bypass safety constraints.
 ## Repository Rules
 
 - Read any more specific `AGENTS.md` before working below its directory. In particular,
-  `workflows/AGENTS.md` governs workflow, helper-script, template, and layout changes.
+  `workflows/AGENTS.md` governs workflow, helper-script, and template changes, while
+  `knowledge-packs/AGENTS.md` governs Knowledge Pack contracts.
 - Edit canonical skill files under `.skills/`, never installed or symlinked mirrors such as
   `.claude/skills/`, `.agents/skills/`, or global agent directories.
 - For workflow-backed skills, edit `workflows/<name>.yaml`, then run
@@ -60,7 +61,7 @@ replace schema, routing, provenance, or Knowledge Profile rules.
 
 ## Knowledge Packs
 
-Each initialized vault binds one Knowledge Pack under `workflows/layouts/<name>/`:
+Each initialized vault binds one Knowledge Pack under `knowledge-packs/<name>/`:
 
 - The **Knowledge Profile** defines purpose, scope, knowledge types, extraction policy, evidence,
   freshness, and retrieval priorities.
@@ -76,7 +77,7 @@ Packs during an operation. On a scope mismatch, follow the Profile's declared `a
 `reject` action. Route through the active Layout rather than assuming the default directory names.
 
 Core special files commonly include `index.md`, `log.md`, `hot.md`, `.manifest.json`, and
-`_meta/layout.json`. System areas such as `_raw/`, `_staging/`, `_archives/`, and `_readouts/` have
+`_meta/knowledge-pack.json`. System areas such as `_raw/`, `_staging/`, `_archives/`, and `_readouts/` have
 distinct lifecycle rules and are not ordinary knowledge roots.
 
 ## Skill Routing

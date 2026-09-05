@@ -151,21 +151,21 @@ def run_owiki(*args):
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="obsidian-wiki setup")
-    parser.add_argument("--layout", metavar="NAME", help="use a workflow layout")
-    parser.add_argument("--list-layouts", action="store_true", help="list available layouts and exit")
+    parser.add_argument("--knowledge-pack", metavar="NAME", help="use a Knowledge Pack")
+    parser.add_argument("--list-knowledge-packs", action="store_true", help="list available Knowledge Packs and exit")
     args = parser.parse_args()
 
-    if args.list_layouts:
+    if args.list_knowledge_packs:
         sys.path.insert(0, str(SCRIPT_DIR))
-        from obsidian_wiki.workflow_layout import list_layouts as _list_layouts
-        layouts = _list_layouts()
-        if not layouts:
-            print("No workflow layouts found.")
+        from obsidian_wiki.knowledge_pack import list_knowledge_packs as _list_knowledge_packs
+        knowledge_packs = _list_knowledge_packs()
+        if not knowledge_packs:
+            print("No Knowledge Packs found.")
         else:
-            print("\nAvailable vault layouts:\n")
-            for name, layout in sorted(layouts.items()):
-                print(f"  {name:20s}  {layout.description} ← workflow")
-            print(f"\nUse: python3 setup.py --layout <name>")
+            print("\nAvailable Knowledge Packs:\n")
+            for name, pack in sorted(knowledge_packs.items()):
+                print(f"  {name:20s}  {pack.description}")
+            print(f"\nUse: python3 setup.py --knowledge-pack <name>")
         return
 
     print()
@@ -174,7 +174,7 @@ def main():
     print("╚══════════════════════════════════════════════════╝")
     print()
 
-    layout_args = ["--layout", args.layout] if args.layout else []
+    knowledge_pack_args = ["--knowledge-pack", args.knowledge_pack] if args.knowledge_pack else []
 
     # ── Step 1: .env ──────────────────────────────────────────────
     env_file = SCRIPT_DIR / ".env"
@@ -221,11 +221,11 @@ def main():
     print("✅  Global config written to ~/.obsidian-wiki/config")
     writing_profile = ensure_global_writing_profile()
 
-    # ── Scaffold vault with selected layout ──────────────────────
+    # ── Scaffold vault with selected Knowledge Pack ──────────────
     if vault_path and Path(vault_path).expanduser():
-        run_owiki("setup", "--vault", vault_path, *layout_args)
-    if args.layout:
-        print(f"   Layout: {args.layout}")
+        run_owiki("setup", "--vault", vault_path, *knowledge_pack_args)
+    if args.knowledge_pack:
+        print(f"   Knowledge Pack: {args.knowledge_pack}")
 
     # ── Step 1c: Bootstrap AGENTS.md aliases ──────────────────────
     hermes_bootstrap = SCRIPT_DIR / ".hermes.md"

@@ -17,7 +17,7 @@ Both `~/.obsidian-wiki/config` and `.env` use the same `KEY=value` format. Start
 
 A Knowledge Pack is selected during setup and its stable binding is recorded as
 `OBSIDIAN_KNOWLEDGE_PACK` in the resolved config. Each bundled pack under
-`workflows/layouts/<name>/` contains a semantic `profile.json` plus the physical
+`knowledge-packs/<name>/` contains a semantic `profile.json` plus the physical
 `layout.json`, `routing.json`, `routing.md`, schema, terminology policy, rules, and vault template.
 
 The Knowledge Profile defines purpose, scope, knowledge types, extraction policy, evidence checks,
@@ -26,9 +26,11 @@ path templates, and deterministic page routing. They are separate concepts but a
 one-to-one in the current version so a single setup choice produces a complete domain contract.
 
 Setup records Profile, Layout, and routing integrity hashes in
-`$OBSIDIAN_VAULT_PATH/_meta/layout.json`. That marker travels with the vault and is the source of
+`$OBSIDIAN_VAULT_PATH/_meta/knowledge-pack.json`. That marker travels with the vault and is the source of
 truth for the active Knowledge Pack. Setup/repair reloads the named bundled contract and fails
 closed when any recorded hash is stale; normal runs consume the resulting verified snapshot.
+The compiled context exposes this contract as `optional_metadata.active_knowledge_pack`; downstream
+skills do not reopen Pack files or reconstruct that value independently.
 
 Setup also compiles the low-frequency context into
 `$OBSIDIAN_VAULT_PATH/_meta/context/wiki-context.json`, or the absolute path selected by
@@ -36,8 +38,8 @@ Setup also compiles the low-frequency context into
 rules, Writing Profile, Profile, Layout, routing, and stable metadata on every invocation. Run
 setup/repair after intentionally changing any of those inputs.
 
-Use `obsidian-wiki setup --list-layouts` to inspect available Knowledge Packs and select one during
-setup. The `--layout` option name is retained for CLI compatibility. One vault is assumed to serve
+Use `obsidian-wiki setup --list-knowledge-packs` to inspect available Knowledge Packs and select one during
+setup with `--knowledge-pack`. One vault is assumed to serve
 one knowledge purpose, so ingest checks source compatibility against the fixed Profile rather than
 auto-detecting and switching domains. Changing an existing vault to another Pack requires a
 content-aware migration; editing `.env`, renaming directories, or changing the marker by hand is
@@ -103,10 +105,10 @@ routing content.
 
 | Variable | What it does | Default |
 |---|---|---|
-| `OBSIDIAN_KNOWLEDGE_PACK` | Active atomic Profile/Layout/Routing pack | Name in `_meta/layout.json` |
+| `OBSIDIAN_KNOWLEDGE_PACK` | Active atomic Profile/Layout/Routing pack | Name in `_meta/knowledge-pack.json` |
 | `OBSIDIAN_OWNER_RULES_PATH` | Owner rules compiled into context | `<vault>/AGENTS.md` |
 | `OBSIDIAN_WRITING_PROFILE_PATH` | Writing Profile compiled into context | `~/.obsidian-wiki/WRITING.md` |
-| `OBSIDIAN_VAULT_METADATA_DIR` | Stable vault metadata and layout marker root | `<vault>/_meta` |
+| `OBSIDIAN_VAULT_METADATA_DIR` | Stable vault metadata and Knowledge Pack marker root | `<vault>/_meta` |
 | `OBSIDIAN_TAXONOMY_PATH` | Controlled taxonomy source | `<metadata-dir>/taxonomy.md` |
 | `OBSIDIAN_CONTEXT_SNAPSHOT` | Persistent compiled context JSON | `<metadata-dir>/context/wiki-context.json` |
 

@@ -46,7 +46,7 @@ daily invocation 与当前 CWD
 
 - `requested_keys`: OBSIDIAN_VAULT_PATH,OBSIDIAN_WIKI_REPO,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_CLI_SEARCH_MODE
 
-- `optional_reads`: owner AGENTS,index,hot,manifest,active layout
+- `optional_reads`: owner AGENTS,index,hot,manifest,active knowledge pack
 
 - `setup_mode`: false
 
@@ -106,7 +106,7 @@ daily-context.md + source-freshness.json + freshness-report.md
 
 #### 执行
 
-1. 用 `rg --files` 或等价 find 枚举 vault live `.md` 页面；只纳入 active layout content_roots，排除其 skip/system dirs，并区分 root special files；不得硬编码 default layout 目录。
+1. 用 `rg --files` 或等价 find 枚举 vault live `.md` 页面；只纳入 active Knowledge Pack content_roots，排除其 skip/system dirs，并区分 root special files；不得硬编码 default Pack 目录。
 2. 读取 index.md 及每个 live page 的 title/category/tags/summary frontmatter，不为 index refresh 全读 page body。
 3. 比较实际 inventory 与 index links：添加缺失 live page，移除不存在/非 live/staged entry，修正重复、category、summary/tags drift；每页在 index 恰好一次。
 4. 保持 owner index conventions 与 header；没有差异时字节不变。写入使用 temporary sibling + atomic replacement。

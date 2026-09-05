@@ -1,6 +1,6 @@
 ---
 name: wiki-setup
-description: "经人工确认后安全初始化或修复 Obsidian wiki 的配置、layout、核心文件与可选集成"
+description: "经人工确认后安全初始化或修复 Obsidian wiki 的配置、Knowledge Pack、核心文件与可选集成"
 ---
 
 # wiki-setup
@@ -49,7 +49,7 @@ setup invocation、source CWD 与可能存在的 config/vault metadata
 
 - `requested_keys`: OBSIDIAN_VAULT_PATH,OBSIDIAN_SOURCES_DIR,CLAUDE_HISTORY_PATH,QMD_WIKI_COLLECTION,QMD_PAPERS_COLLECTION,QMD_TRANSPORT,QMD_CLI_SEARCH_MODE,WIKI_TOKEN_WARN_THRESHOLD,WIKI_STAGED_WRITES,WIKI_FOLDER_INGEST_MAX_EXTRACTION_WORKERS,WIKI_TEXT_DIRECT_EXTRACT_MAX_BYTES,WIKI_TEXT_CHUNK_TARGET_BYTES,WIKI_TEXT_CHUNK_MIN_BYTES,WIKI_TEXT_CHUNK_HARD_MAX_BYTES,WIKI_TEXT_CHUNK_STRATEGY,WIKI_TEXT_CHUNK_OPTIONS,OBSIDIAN_WIKI_REPO
 
-- `optional_reads`: existing config, vault metadata, AGENTS.md, active layout metadata, QMD collection metadata
+- `optional_reads`: existing config, vault metadata, AGENTS.md, active knowledge pack metadata, QMD collection metadata
 
 - `setup_mode`: true
 
@@ -105,7 +105,7 @@ setup-contract.md + setup-contract.json
 
 以 `wiki-context.json` 的磁盘事实和 `setup-contract.json/md` 的精确默认值、模板、命令与验收条款为唯一依据，形成 setup plan，不读取外部规范或示例配置。
 
-先区分新建或 repair，并盘点唯一 config path、canonical vault、active Knowledge Pack（固定配对的 Knowledge Profile + Vault Layout）、core files、Writing Profile、QMD collection、hooks 与 Git remote。只询问尚未确定或需要用户选择的项目：vault/source/history paths、Knowledge Pack/layout、QMD、token threshold、staged writes，以及是否安装 Stop hook、配置 private Git sync和准确 repo URL。采用默认值时也要在 plan 明示。
+先区分新建或 repair，并盘点唯一 config path、canonical vault、active Knowledge Pack（固定配对的 Knowledge Profile + Vault Layout）、core files、Writing Profile、QMD collection、hooks 与 Git remote。只询问尚未确定或需要用户选择的项目：vault/source/history paths、Knowledge Pack、QMD、token threshold、staged writes，以及是否安装 Stop hook、配置 private Git sync和准确 repo URL。采用默认值时也要在 plan 明示。
 
 在 `setup-plan.md` 列出 exact targets、每项 create/preserve/minimal-repair、原子写策略、required checks，以及所有需要 home/network/git/QMD 变更的 optional approvals。现有 `.env`、WRITING.md、core files、hooks、custom dirs 和 owner data 默认 preserve；此步骤零写入。
 
@@ -119,7 +119,7 @@ setup-plan.md（exact paths、defaults、create/preserve/repair、optional appro
 
 #### 验收
 
-核对 plan 的绝对 vault path、layout、必需配置、preserve/repair 策略和可选动作选择均已明确；确认零写入
+核对 plan 的绝对 vault path、Knowledge Pack、必需配置、preserve/repair 策略和可选动作选择均已明确；确认零写入
 
 #### 流程控制
 
@@ -209,28 +209,28 @@ WRITING.md（仅缺失时）+ writing-profile-report.md
 
 #### 流程控制
 
-- 验收通过：转到 `apply_layout`。
+- 验收通过：转到 `apply_knowledge_pack`。
 
 - 验收失败：返回 `initialize_writing_profile`。
 
 - 最多连续失败 `3` 次；达到上限后停止并报告阻塞。
 
-### 7. 生成选定的 Vault layout (`apply_layout`)
+### 7. 应用选定 Knowledge Pack 的 Vault Layout (`apply_knowledge_pack`)
 
 #### 执行
 
-使用 approved Knowledge Pack/layout name、canonical vault 和 artifacts 目录运行 bundled layout copier：
+使用 approved Knowledge Pack name、canonical vault 和 artifacts 目录运行 bundled Knowledge Pack copier：
 
 ```bash
-obsidian-wiki wiki-layout-apply \
-  --layout "<approved-layout>" \
+obsidian-wiki wiki-knowledge-pack-apply \
+  --knowledge-pack "<approved-knowledge-pack>" \
   --vault "<canonical-vault>" \
   --output-dir "{{artifacts_dir}}"
 ```
 
-console script 不在 PATH 时使用等价的 `python3 -m obsidian_wiki wiki-layout-apply ...`。同名 contract refresh 仅在 approved binding 含该动作时追加 `--refresh-layout-marker`。
+console script 不在 PATH 时使用等价的 `python3 -m obsidian_wiki wiki-knowledge-pack-apply ...`。同名 contract refresh 仅在 approved binding 含该动作时追加 `--refresh-knowledge-pack-marker`。
 
-copier 按 missing-only policy 生成 layout 目录、预制文件、绑定 Profile/Layout/Routing hashes 的 `_meta/layout.json` 和 `layout-apply-report.json`。Profile 与 Layout 在当前版本一对一发布；setup 不执行内容级领域识别。
+copier 按 missing-only policy 生成 Vault Layout 目录、预制文件、绑定 Profile/Layout/Routing hashes 的 `_meta/knowledge-pack.json` 和 `knowledge-pack-apply-report.json`。Profile 与 Layout 在当前版本一对一发布；setup 不执行内容级领域识别。
 
 #### 输入
 
@@ -238,17 +238,17 @@ approved-setup.json + setup-contract.json/md + config-report.md + canonical vaul
 
 #### 产出
 
-vault layout tree + _meta/layout.json + layout-apply-report.json
+vault layout tree + _meta/knowledge-pack.json + knowledge-pack-apply-report.json
 
 #### 验收
 
-解析 layout marker/report，核对 approved vault、Knowledge Profile/Layout name/version 和 profile/layout/routing contract hashes，确认 required inventory 存在、overwritten_files 为空，且无 path escape 或未批准 Knowledge Pack 切换
+解析 Knowledge Pack marker/report，核对 approved vault、Knowledge Profile/Layout name/version 和 profile/layout/routing contract hashes，确认 required inventory 存在、overwritten_files 为空，且无 path escape 或未批准 Knowledge Pack 切换
 
 #### 流程控制
 
 - 验收通过：转到 `initialize_core`。
 
-- 验收失败：返回 `apply_layout`。
+- 验收失败：返回 `apply_knowledge_pack`。
 
 - 最多连续失败 `4` 次；达到上限后停止并报告阻塞。
 
@@ -262,7 +262,7 @@ vault layout tree + _meta/layout.json + layout-apply-report.json
 
 #### 输入
 
-approved-setup.json + setup-contract.json/md + config-report.md + writing-profile-report.md + layout-apply-report.json + 现有 core files
+approved-setup.json + setup-contract.json/md + config-report.md + writing-profile-report.md + knowledge-pack-apply-report.json + 现有 core files
 
 #### 产出
 
@@ -284,14 +284,14 @@ approved-setup.json + setup-contract.json/md + config-report.md + writing-profil
 
 #### 执行
 
-从已批准 config、Writing Profile、owner rules、taxonomy、当前 layout marker 与 bundled Knowledge Pack 生成一次稳定 compiled context。先在 artifacts_dir 写 `compiled-vault-input.json`，再运行：
+从已批准 config、Writing Profile、owner rules、taxonomy、当前 Knowledge Pack marker 与 bundled Knowledge Pack 生成一次稳定 compiled context。先在 artifacts_dir 写 `compiled-vault-input.json`，再运行：
 
 ```bash
 obsidian-wiki wiki-context-resolve \
   --input "{{artifacts_dir}}/compiled-vault-input.json" \
   --source-cwd "<approved-source-cwd>" \
   --requested-keys "<all configured stable context keys>" \
-  --optional-reads "owner AGENTS,writing profile,taxonomy,index,hot,manifest,active layout,vault metadata,QMD collection metadata" \
+  --optional-reads "owner AGENTS,writing profile,taxonomy,index,hot,manifest,active knowledge pack,vault metadata,QMD collection metadata" \
   --setup-mode false \
   --output-dir "<OBSIDIAN_CONTEXT_SNAPSHOT parent>" \
   --compile-snapshot
@@ -301,7 +301,7 @@ snapshot 目录是 vault `_meta/` 下的 system area，不是 ordinary knowledge
 
 #### 输入
 
-approved-setup.json + config-report.md + writing-profile-report.md + layout-apply-report.json + core-files-report.md + qmd-collection-report.md + qmd-refresh-report.md
+approved-setup.json + config-report.md + writing-profile-report.md + knowledge-pack-apply-report.json + core-files-report.md + qmd-collection-report.md + qmd-refresh-report.md
 
 #### 产出
 

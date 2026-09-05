@@ -13,7 +13,7 @@ from obsidian_wiki.relationships import (
     parse_flat_relationships,
     parse_inline_relationships,
 )
-from obsidian_wiki.workflow_layout import iter_content_pages
+from obsidian_wiki.knowledge_pack import iter_content_pages
 from obsidian_wiki.trust import (
     ALLOWED_LIFECYCLES,
     TRUST_LEDGER_RELATIVE_PATH,

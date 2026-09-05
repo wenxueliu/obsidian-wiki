@@ -12,7 +12,7 @@ from typing import Any
 
 sys.dont_write_bytecode = True
 
-from apply_wiki_layout import validate_relative_path, validate_routing
+from apply_knowledge_pack import validate_relative_path, validate_routing
 
 
 SAFE_VALUE = re.compile(r"^[^/\\\x00]+$")
@@ -26,7 +26,7 @@ def unwrap_routing(data: Any) -> dict[str, Any]:
     candidate = data.get("routing")
     if isinstance(candidate, dict) and "rules" in candidate:
         return validate_routing(candidate["rules"])
-    active = data.get("active_layout") or data.get("optional_metadata", {}).get("active_layout")
+    active = data.get("active_knowledge_pack") or data.get("optional_metadata", {}).get("active_knowledge_pack")
     if isinstance(active, dict) and isinstance(active.get("routing"), dict):
         return validate_routing(active["routing"]["rules"])
     raise ValueError("routing input does not contain routing rules")

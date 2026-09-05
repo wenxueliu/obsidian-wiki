@@ -20,5 +20,5 @@
   "content_roots": ["concepts", "entities", "skills", "references", "synthesis", "journal", "projects"],
   "system_dirs": [".obsidian", "_archives", "_meta", "_raw", "_readouts", "_staging"],
   "skip_dirs": [".obsidian", "_archives", "_raw", "_readouts", "_staging"],
-  "system_paths": ["index.md", "log.md", "hot.md", ".manifest.json", "_meta/layout.json"]
+  "system_paths": ["index.md", "log.md", "hot.md", ".manifest.json", "_meta/knowledge-pack.json"]
 }

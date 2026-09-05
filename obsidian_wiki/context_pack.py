@@ -13,7 +13,7 @@ from typing import Any, Iterable
 DEFAULT_BUDGET = 8_000
 MIN_BUDGET = 256
 MAX_BUDGET = 100_000
-from obsidian_wiki.workflow_layout import iter_content_pages
+from obsidian_wiki.knowledge_pack import iter_content_pages
 SKIP_FILES = frozenset({"AGENTS.md", "CLAUDE.md", "GEMINI.md", "hot.md", "index.md", "log.md", "_insights.md"})
 BLOCKED_PUBLIC_TAGS = frozenset({"visibility/internal", "visibility/pii"})
 TIER_ORDER = {"core": 0, "supporting": 1, "peripheral": 2}

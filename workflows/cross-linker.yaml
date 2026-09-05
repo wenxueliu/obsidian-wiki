@@ -17,7 +17,7 @@ steps:
     output: wiki-context.json + wiki-context.md
     inputs:
       requested_keys: OBSIDIAN_VAULT_PATH,OBSIDIAN_LINK_FORMAT,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_CLI_SEARCH_MODE
-      optional_reads: owner AGENTS,index,manifest,active layout
+      optional_reads: owner AGENTS,index,manifest,active knowledge pack
       setup_mode: "false"
       run_condition: 若父调用提供 completion/reconciliation gate，则先验证该报告；false 时 context 自身也不得扫描 config/vault
     on_pass: build_registry
@@ -31,7 +31,7 @@ steps:
 
       1. 若父 workflow 传入 `run_condition`，先只读取其中指定的 completion/reconciliation report，验证条件是否成立。条件不成立时写 `linking-context.md`（mode=skipped、reason、evidence）和空 `page-registry.json`，后续步骤全部 no-op；不得扫描或修改 vault。没有 run_condition 的直接调用默认执行。
       2. 执行模式下使用 context 的 canonical vault、OBSIDIAN_LINK_FORMAT、index.md，并按需只读近期 log.md；不得重新选择 profile。
-      3. 只扫描 active layout routing.content_roots 下的 live `.md`，排除 routing.skip_dirs/system_dirs/system_paths；只 grep frontmatter/title/aliases/tags/category/summary，不盲读全 vault。
+      3. 只扫描 active Knowledge Pack routing.content_roots 下的 live `.md`，排除 routing.skip_dirs/system_dirs/system_paths；只 grep frontmatter/title/aliases/tags/category/summary，不盲读全 vault。
       4. 建立 page-name/title/alias 到 canonical target 的 registry，标记同名冲突、shortest unambiguous wikilink path、项目归属与当前 incoming/outgoing degree。
       5. 写 page-registry.json 和 linking-context.md；不得修改 vault。
     input: cross-link、连接 orphan 或补齐 wikilink 请求（vault 由 wiki-context 交互式确认）

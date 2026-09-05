@@ -39,7 +39,7 @@
   "verification": {
     "preferred": "obsidian-wiki doctor",
     "required": [
-      "canonical vault and every active-layout directory exist",
+      "canonical vault and every active Knowledge Pack directory exist",
       ".obsidian/ and _staging/ exist",
       "index.md, log.md, hot.md and .manifest.json are valid",
       "app.json and appearance.json are valid",

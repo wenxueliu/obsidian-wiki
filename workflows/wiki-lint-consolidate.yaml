@@ -70,7 +70,7 @@ steps:
       2. 按固定顺序执行：broken links、orphan cross-references、lifecycle/callout、tier demotion、tag alias、contradiction callouts。每个 orphan 最多 3 个新 incoming links。
       3. 只应用批准清单的 exact before/after；磁盘内容与 plan 前置条件不同时停止该动作并报告 stale plan，不得模糊套用。
       4. 不 merge/create knowledge pages，不更改 base_confidence 或 trust ledger，不把 stale 写成 lifecycle，不执行未批准 action。
-      5. 使用 lint-context.json 中 frozen active layout 声明的 `lint_consolidation_report` page type，并以 `--routing lint-context.json` 调用 `resolve_wiki_route.py` 生成报告 target，写入 audit_id/date/scope/actions/results/validation/remaining_findings/rollback 字段和逐类结果；同日已有报告时幂等合并本 audit_id，不能覆盖其他运行。
+      5. 使用 lint-context.json 中 frozen active Knowledge Pack 声明的 `lint_consolidation_report` page type，并以 `--routing lint-context.json` 调用 `resolve_wiki_route.py` 生成报告 target，写入 audit_id/date/scope/actions/results/validation/remaining_findings/rollback 字段和逐类结果；同日已有报告时幂等合并本 audit_id，不能覆盖其他运行。
       6. 追加一条带 audit_id 的 parseable LINT_CONSOLIDATE log；重试不得重复。写 consolidation-apply-report.md，列出 applied/skipped/failed、文件、snapshot SHA 与 diff 摘要。
     input: approved-actions.json + consolidation-plan.json + 最新 vault 状态
     output: 获批 vault 修改 + consolidation report + LINT_CONSOLIDATE log + consolidation-apply-report.md

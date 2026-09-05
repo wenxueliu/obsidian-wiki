@@ -8,7 +8,7 @@ from pathlib import Path
 
 import obsidian_wiki.cli as cli
 from obsidian_wiki.cli import scaffold_vault
-from obsidian_wiki.workflow_layout import load_layout
+from obsidian_wiki.knowledge_pack import load_knowledge_pack
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,7 +24,7 @@ def run_context_resolver(
     profile: str | None = None,
     home: Path | None = None,
     overrides: dict[str, object] | None = None,
-    optional_reads: str = "active layout",
+    optional_reads: str = "active knowledge pack",
 ) -> subprocess.CompletedProcess[str]:
     supplied = tmp_path / f"vault-input-{setup_mode}.json"
     input_value: dict[str, object] = {"mode": mode, "overrides": overrides or {}}
@@ -109,13 +109,13 @@ def test_setup_mode_true_allows_an_uninitialized_vault(tmp_path: Path) -> None:
         (tmp_path / "artifacts-true" / "wiki-context.json").read_text(encoding="utf-8")
     )
     assert context["setup_mode"] is True
-    assert context["optional_metadata"]["active_layout"]["status"] == "uninitialized"
+    assert context["optional_metadata"]["active_knowledge_pack"]["status"] == "uninitialized"
     assert context["warnings"] == []
 
 
 def test_context_freezes_active_knowledge_profile(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
-    scaffold_vault(vault, load_layout("book-knowledge"))
+    scaffold_vault(vault, load_knowledge_pack("book-knowledge"))
 
     result = run_context_resolver(tmp_path, vault, setup_mode="false")
 
@@ -123,7 +123,7 @@ def test_context_freezes_active_knowledge_profile(tmp_path: Path) -> None:
     context = json.loads(
         (tmp_path / "artifacts-false" / "wiki-context.json").read_text(encoding="utf-8")
     )
-    active = context["optional_metadata"]["active_layout"]
+    active = context["optional_metadata"]["active_knowledge_pack"]
     assert active["status"] == "matched"
     assert active["knowledge_profile"]["sha256"].startswith("sha256:")
     assert active["knowledge_profile"]["contract"]["name"] == "book-knowledge"
@@ -134,7 +134,7 @@ def test_setup_compiles_context_once_and_runtime_reuses_snapshot(
     tmp_path: Path, monkeypatch,
 ) -> None:
     vault = tmp_path / "vault"
-    scaffold_vault(vault, load_layout("default"))
+    scaffold_vault(vault, load_knowledge_pack("default"))
     config_home = tmp_path / "config-home"
     monkeypatch.setattr(cli, "GLOBAL_CONFIG_DIR", config_home / ".obsidian-wiki")
 
@@ -143,7 +143,7 @@ def test_setup_compiles_context_once_and_runtime_reuses_snapshot(
     )
     compiled = json.loads(snapshot.read_text(encoding="utf-8"))
     assert compiled["compiled_context"]["version"] == 1
-    assert compiled["optional_metadata"]["active_layout"]["name"] == "default"
+    assert compiled["optional_metadata"]["active_knowledge_pack"]["name"] == "default"
 
     stable = cli._stable_context_config(str(vault), "default")
     (tmp_path / ".env").write_text(
@@ -177,13 +177,13 @@ def test_setup_compiles_context_once_and_runtime_reuses_snapshot(
 
 def test_context_uses_stable_paths_from_env(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
-    scaffold_vault(vault, load_layout("default"))
+    scaffold_vault(vault, load_knowledge_pack("default"))
     owner = tmp_path / "owner.md"
     writing = tmp_path / "writing.md"
     metadata = tmp_path / "vault-metadata"
     taxonomy = tmp_path / "taxonomy.md"
     metadata.mkdir()
-    (metadata / "layout.json").write_bytes((vault / "_meta/layout.json").read_bytes())
+    (metadata / "knowledge-pack.json").write_bytes((vault / "_meta/knowledge-pack.json").read_bytes())
     owner.write_text("owner rules\n", encoding="utf-8")
     writing.write_text("writing profile\n", encoding="utf-8")
     taxonomy.write_text("taxonomy\n", encoding="utf-8")
@@ -202,7 +202,7 @@ def test_context_uses_stable_paths_from_env(tmp_path: Path) -> None:
         None,
         setup_mode="false",
         mode="config",
-        optional_reads="active layout,taxonomy",
+        optional_reads="active knowledge pack,taxonomy",
     )
 
     assert result.returncode == 0, result.stderr
@@ -214,7 +214,7 @@ def test_context_uses_stable_paths_from_env(tmp_path: Path) -> None:
         "path": str(writing), "content": "writing profile\n"
     }
     assert context["optional_metadata"]["taxonomy"]["path"] == str(taxonomy)
-    assert context["optional_metadata"]["active_layout"]["marker_path"] == str(metadata / "layout.json")
+    assert context["optional_metadata"]["active_knowledge_pack"]["marker_path"] == str(metadata / "knowledge-pack.json")
 
 
 def test_setup_mode_false_rejects_a_missing_vault(tmp_path: Path) -> None:
@@ -477,7 +477,7 @@ def test_wiki_route_resolve_does_not_depend_on_cwd(tmp_path: Path) -> None:
             "content_roots": ["concepts"],
             "system_dirs": ["_meta"],
             "skip_dirs": ["_meta"],
-            "system_paths": ["index.md", "_meta/layout.json"],
+            "system_paths": ["index.md", "_meta/knowledge-pack.json"],
             "fallback": "concept",
             "routes": {"concept": "concepts/{slug}.md"},
         }),
@@ -505,7 +505,7 @@ def test_wiki_route_resolve_accepts_frozen_wiki_context(tmp_path: Path) -> None:
     context.write_text(
         json.dumps({
             "optional_metadata": {
-                "active_layout": {
+                "active_knowledge_pack": {
                     "status": "matched",
                     "routing": {
                         "rules": {
@@ -514,7 +514,7 @@ def test_wiki_route_resolve_accepts_frozen_wiki_context(tmp_path: Path) -> None:
                             "content_roots": ["concepts"],
                             "system_dirs": ["_meta"],
                             "skip_dirs": ["_meta"],
-                            "system_paths": ["index.md", "_meta/layout.json"],
+                            "system_paths": ["index.md", "_meta/knowledge-pack.json"],
                             "fallback": "concept",
                             "routes": {"concept": "concepts/{slug}.md"},
                         }

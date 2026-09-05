@@ -48,7 +48,7 @@ invocation 与当前 CWD
 
 - `requested_keys`: OBSIDIAN_VAULT_PATH,WIKI_STAGED_WRITES,OBSIDIAN_LINK_FORMAT,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_CLI_SEARCH_MODE
 
-- `optional_reads`: owner AGENTS,taxonomy,index,manifest,active layout,writing profile
+- `optional_reads`: owner AGENTS,taxonomy,index,manifest,active knowledge pack,writing profile
 
 - `setup_mode`: false
 

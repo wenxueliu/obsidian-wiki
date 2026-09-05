@@ -23,16 +23,16 @@ Running `obsidian-wiki` with no subcommand defaults to `setup`.
 ```bash
 obsidian-wiki setup --vault ~/brain
 obsidian-wiki setup --list-agents          # list selectable agent skill targets
-obsidian-wiki setup --vault ~/brain --layout default --agent claude --agent codex
-obsidian-wiki setup --vault ~/brain --layout software-knowledge --agent claude,codex,pi
-obsidian-wiki setup --vault ~/brain --layout default --agent all  # explicit legacy all-agent behavior
-obsidian-wiki setup --list-layouts         # list Knowledge Packs (Profile + Layout)
-obsidian-wiki setup --vault ~/brain --layout software-knowledge
+obsidian-wiki setup --vault ~/brain --knowledge-pack default --agent claude --agent codex
+obsidian-wiki setup --vault ~/brain --knowledge-pack software-knowledge --agent claude,codex,pi
+obsidian-wiki setup --vault ~/brain --knowledge-pack default --agent all  # explicit legacy all-agent behavior
+obsidian-wiki setup --list-knowledge-packs         # list Knowledge Packs (Profile + Layout)
+obsidian-wiki setup --vault ~/brain --knowledge-pack software-knowledge
 obsidian-wiki setup --project .        # install only the selected agents' local skills + bootstrap files
 obsidian-wiki setup --project-only     # skip the global install (use with --project)
 obsidian-wiki setup --copy             # copy skill files instead of symlinking
 obsidian-wiki setup --project . --project-only --copy --skills-only --agent cursor  # local files only; do not touch a vault
-obsidian-wiki setup --vault ~/brain --layout default --refresh-layout-marker  # refresh one same-Pack marker
+obsidian-wiki setup --vault ~/brain --knowledge-pack default --refresh-knowledge-pack-marker  # refresh one same-Pack marker
 obsidian-wiki setup --remote https://github.com/you/my-wiki.git   # configure sync non-interactively
 
 obsidian-wiki doctor --json --pretty
@@ -63,9 +63,9 @@ skill directories. For example, selecting only `claude` creates `.claude/skills/
 `AGENTS.md`, and `CLAUDE.md`; it does not create Cursor, Windsurf, Kiro, Antigravity, Copilot,
 Gemini, or Hermes bootstrap files. Existing files for unselected agents are left untouched.
 
-When setup runs in a terminal without `--layout`, it displays the available Knowledge Packs and
-requires exactly one number or name. Layout selection never accepts a list. Non-interactive setup
-requires `--layout NAME`; it does not silently choose `default` or inherit an existing marker.
+When setup runs in a terminal without `--knowledge-pack`, it displays the available Knowledge Packs and
+requires exactly one number or name. Knowledge Pack selection never accepts a list. Non-interactive setup
+requires `--knowledge-pack NAME`; it does not silently choose `default` or inherit an existing marker.
 
 When setup runs in a terminal without `--vault`, it prompts for the vault directory and displays
 the absolute current directory as the default. Press Enter to accept that default. In a
@@ -73,17 +73,17 @@ non-interactive run, setup retains the configured-vault fallback; pass `--vault 
 it explicitly.
 
 `--skills-only` limits setup to skill and project bootstrap installation. It does not read or write
-the global config, Writing Profile, vault, layout marker, or Git integration. Combine it with
+the global config, Writing Profile, vault, Knowledge Pack marker, or Git integration. Combine it with
 `--project . --project-only` for a project-local install with no global side effects. Because this
 mode has no other setup work, it requires an explicit agent selection.
 
-For an initialized vault, select the same Knowledge Pack recorded in `_meta/layout.json`. Choosing
+For an initialized vault, select the same Knowledge Pack recorded in `_meta/knowledge-pack.json`. Choosing
 a different Pack does not bypass migration safety: setup fails instead of switching contracts.
-Setup automatically upgrades the legacy same-Pack marker format from before Knowledge Profiles
-added `profile_sha256`.
+Old marker shapes and the former `_meta/layout.json` path are not accepted; reinitialize or perform
+an explicit migration before using the new Pack contract.
 
 After an intentional contract update to the currently active Knowledge Pack, pass
-`--refresh-layout-marker` together with that same Pack's `--layout` name. This only refreshes the
+`--refresh-knowledge-pack-marker` together with that same Pack's `--knowledge-pack` name. This only refreshes the
 marker hashes; it cannot switch Pack names, which requires a content-aware migration.
 
 ## Querying & linting
@@ -227,7 +227,7 @@ Available for automation, scripting, and debugging. Skills call some of these in
 | `text-ingest-inline-advance <job>` | Atomically advance a revalidated inline unit after page validation |
 | `wiki-context-resolve` | Run the bundled workflow context resolver without depending on the current directory |
 | `wiki-setup-contract-build <phase>` | Build the setup contract from bundled templates and Knowledge Packs |
-| `wiki-layout-apply` | Apply a bundled Knowledge Pack without depending on the current directory; the command name is retained for compatibility |
+| `wiki-knowledge-pack-apply` | Apply a bundled Knowledge Pack without depending on the current directory |
 | `wiki-route-resolve` | Resolve a declared page type through the bundled deterministic layout router |
 | `ast-extract <path>` | Extract classes, functions, and imports from code — no LLM, no API calls |
 
@@ -268,18 +268,18 @@ obsidian-wiki text-ingest-inline-check ~/brain/_meta/ingest-jobs/<job-id> \
 obsidian-wiki text-ingest-inline-advance ~/brain/_meta/ingest-jobs/<job-id> \
   --source-id <source-id> --unit-id <unit-id> --mode direct
 obsidian-wiki wiki-setup-contract-build core --output-dir /tmp/wiki-setup
-obsidian-wiki wiki-layout-apply --layout default --vault ~/brain --output-dir /tmp/wiki-setup
+obsidian-wiki wiki-knowledge-pack-apply --knowledge-pack default --vault ~/brain --output-dir /tmp/wiki-setup
 obsidian-wiki wiki-route-resolve --routing page-contract.json \
   --page-type concept --slug example
 obsidian-wiki ast-extract ./src --pretty
 ```
 
-`wiki-layout-apply --layout <name>` selects a complete Knowledge Pack. Its `profile.json` defines
+`wiki-knowledge-pack-apply --knowledge-pack <name>` selects a complete Knowledge Pack. Its `profile.json` defines
 the semantic purpose, scope, extraction, verification, freshness, and retrieval contract; its
-layout and routing files define physical paths. `_meta/layout.json` binds hashes for both sides, so
+layout and routing files define physical paths. `_meta/knowledge-pack.json` binds hashes for both sides, so
 changing `profile.json` requires an explicit same-pack marker refresh or a content-aware migration.
 Refresh an existing vault after an intentional same-pack contract update with
-`wiki-layout-apply --refresh-layout-marker`; the flag cannot switch Pack names.
+`wiki-knowledge-pack-apply --refresh-knowledge-pack-marker`; the flag cannot switch Pack names.
 
 `text-chunk-plan` accepts `.md`, `.markdown`, `.mdx`, `.txt`, and `.rst` encoded as UTF-8 or
 UTF-8 with BOM. `--target-budget` defaults to 48,000 bytes, `--min-budget` to half the target, and
@@ -349,7 +349,7 @@ these invariants before persisting a Job. Options from `WIKI_TEXT_CHUNK_OPTIONS`
 `context.options`. Embedded callers may alternatively use `register_chunk_strategy()` before
 calling `plan_text_chunks()`.
 
-`wiki-context-resolve`, `wiki-setup-contract-build`, `wiki-layout-apply`, and
+`wiki-context-resolve`, `wiki-setup-contract-build`, `wiki-knowledge-pack-apply`, and
 `wiki-route-resolve` locate their helper scripts and bundled resources inside the installed package
 or source checkout. Workflows therefore do not depend on a `.cac/...` path or the caller's current
 working directory. A `vault-input.json` with `{"mode":"config"}` makes `wiki-context-resolve`

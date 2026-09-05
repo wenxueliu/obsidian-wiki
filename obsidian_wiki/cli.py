@@ -22,13 +22,13 @@ from pathlib import Path
 from typing import TypedDict
 
 from obsidian_wiki import __version__
-from obsidian_wiki.workflow_layout import (
-    LAYOUT_MARKER,
-    LayoutContractError,
-    WorkflowLayout,
-    layouts_dir,
-    list_layouts,
-    load_layout,
+from obsidian_wiki.knowledge_pack import (
+    KNOWLEDGE_PACK_MARKER,
+    KnowledgePackContractError,
+    KnowledgePack,
+    knowledge_packs_dir,
+    list_knowledge_packs,
+    load_knowledge_pack,
 )
 from obsidian_wiki.validate import validate_vault_pages, print_report
 from obsidian_wiki.verify import (
@@ -304,52 +304,52 @@ def _select_setup_agents(raw_values: list[str] | None) -> tuple[str, ...]:
             print(f"  {exc}")
 
 
-def _setup_layout_choices() -> tuple[tuple[str, str], ...]:
+def _setup_knowledge_pack_choices() -> tuple[tuple[str, str], ...]:
     return tuple(
-        (name, layout.profile["description"])
-        for name, layout in sorted(list_layouts().items())
+        (name, pack.profile["description"])
+        for name, pack in sorted(list_knowledge_packs().items())
     )
 
 
-def _print_setup_layouts(
+def _print_setup_knowledge_packs(
     choices: tuple[tuple[str, str], ...] | None = None,
 ) -> tuple[tuple[str, str], ...]:
-    available = choices if choices is not None else _setup_layout_choices()
+    available = choices if choices is not None else _setup_knowledge_pack_choices()
     print("\nAvailable Knowledge Packs (Profile + Layout):\n")
     for index, (name, description) in enumerate(available, 1):
         print(f"  {index:2d}. {name:20s}  {description}")
-    print("\nUse --layout NAME for non-interactive setup.")
+    print("\nUse --knowledge-pack NAME for non-interactive setup.")
     return available
 
 
-def _select_setup_layout(requested_layout: str | None) -> str:
-    if requested_layout is not None:
-        return requested_layout
+def _select_setup_knowledge_pack(requested_knowledge_pack: str | None) -> str:
+    if requested_knowledge_pack is not None:
+        return requested_knowledge_pack
     if not sys.stdin.isatty():
-        raise ValueError("non-interactive setup requires --layout NAME")
+        raise ValueError("non-interactive setup requires --knowledge-pack NAME")
 
-    choices = _print_setup_layouts()
+    choices = _print_setup_knowledge_packs()
     names = {name for name, _description in choices}
     while True:
         try:
             answer = input("\n  Select one Knowledge Pack by number/name: ").strip()
         except EOFError as exc:
-            raise ValueError("layout selection ended before a choice was made") from exc
+            raise ValueError("Knowledge Pack selection ended before a choice was made") from exc
         if not answer:
-            print("  No layout selected; choose exactly one number or name.")
+            print("  No Knowledge Pack selected; choose exactly one number or name.")
             continue
         if "," in answer:
-            print("  Layout selection is single-choice; do not use a comma-separated list.")
+            print("  Knowledge Pack selection is single-choice; do not use a comma-separated list.")
             continue
         if answer.isdigit():
             index = int(answer)
             if 1 <= index <= len(choices):
                 return choices[index - 1][0]
-            print("  Invalid layout number; choose one from the displayed list.")
+            print("  Invalid Knowledge Pack number; choose one from the displayed list.")
             continue
         if answer in names:
             return answer
-        print("  Unknown layout; choose one from the displayed list.")
+        print("  Unknown Knowledge Pack; choose one from the displayed list.")
 
 
 # Agents whose skills directory lives under $HOME. (agent, path-under-home,
@@ -688,36 +688,36 @@ def ensure_global_writing_profile() -> Path:
 
 def scaffold_vault(
     vault_path: Path,
-    layout: WorkflowLayout | None = None,
+    knowledge_pack: KnowledgePack | None = None,
     *,
-    refresh_layout_marker: bool = False,
+    refresh_knowledge_pack_marker: bool = False,
 ) -> bool:
     """Create the vault directory structure and special files if they don't exist yet.
 
     Idempotent: existing files/dirs are left untouched. Returns True if the vault
     directory itself had to be created (i.e. this is a brand new vault).
     """
-    if layout is None:
-        layout = load_layout("default")
+    if knowledge_pack is None:
+        knowledge_pack = load_knowledge_pack("default")
 
     created = not vault_path.is_dir()
-    copier = workflows_dir() / "scripts" / "apply_wiki_layout.py"
-    with tempfile.TemporaryDirectory(prefix="obsidian-wiki-layout-") as output_dir:
+    copier = workflows_dir() / "scripts" / "apply_knowledge_pack.py"
+    with tempfile.TemporaryDirectory(prefix="obsidian-wiki-pack-") as output_dir:
         command = [
             sys.executable,
             str(copier),
             "apply",
-            "--layouts-dir",
-            str(layouts_dir()),
-            "--layout",
-            layout.name,
+            "--knowledge-packs-dir",
+            str(knowledge_packs_dir()),
+            "--knowledge-pack",
+            knowledge_pack.name,
             "--vault",
             str(vault_path.expanduser().resolve()),
             "--output-dir",
             output_dir,
         ]
-        if refresh_layout_marker:
-            command.append("--refresh-layout-marker")
+        if refresh_knowledge_pack_marker:
+            command.append("--refresh-knowledge-pack-marker")
         result = subprocess.run(
             command,
             capture_output=True,
@@ -725,14 +725,14 @@ def scaffold_vault(
         )
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
-        raise LayoutContractError(f"could not apply workflow layout: {detail}")
+        raise KnowledgePackContractError(f"could not apply Knowledge Pack: {detail}")
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     index_md = vault_path / "index.md"
     if not index_md.exists():
         sections = "\n\n".join(
-            f"## {cat.title().replace('-', ' ')}" for cat in layout.categories
+            f"## {cat.title().replace('-', ' ')}" for cat in knowledge_pack.categories
         )
         index_md.write_text(
             "---\n"
@@ -751,7 +751,7 @@ def scaffold_vault(
             "---\n\n"
             "# Wiki Log\n\n"
             f'- [{timestamp}] INIT vault_path="{vault_path}" '
-            f"categories={','.join(layout.categories)}\n"
+            f"categories={','.join(knowledge_pack.categories)}\n"
         )
 
     hot_md = vault_path / "hot.md"
@@ -846,9 +846,9 @@ def compile_context_snapshot(
                 "--source-cwd", str(source_cwd.resolve()),
                 "--requested-keys", ",".join(COMPILED_CONTEXT_KEYS),
                 "--optional-reads",
-                "owner AGENTS,writing profile,taxonomy,index,hot,manifest,active layout,vault metadata,QMD collection metadata",
+                "owner AGENTS,writing profile,taxonomy,index,hot,manifest,active knowledge pack,vault metadata,QMD collection metadata",
                 "--setup-mode", "false",
-                "--layouts-dir", str(layouts_dir()),
+                "--knowledge-packs-dir", str(knowledge_packs_dir()),
                 "--output-dir", str(snapshot.parent),
                 "--compile-snapshot",
             ],
@@ -857,51 +857,42 @@ def compile_context_snapshot(
         )
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
-        raise LayoutContractError(f"could not compile persistent wiki context: {detail}")
+        raise KnowledgePackContractError(f"could not compile persistent wiki context: {detail}")
     print(f"✅  Compiled Wiki context → {snapshot}")
     return snapshot
 
 
-def _resolve_setup_layout(
+def _resolve_setup_knowledge_pack(
     vault_path: str,
-    requested_layout: str | None,
-) -> tuple[WorkflowLayout, bool]:
-    """Select setup's Pack and identify the one safe automatic marker upgrade.
+    requested_knowledge_pack: str | None,
+) -> KnowledgePack:
+    """Select setup's Pack, inheriting an initialized vault's binding.
 
     An initialized vault owns its Knowledge Pack selection. Setup inherits that
-    selection unless the user explicitly requests another Pack. Markers written
-    before Knowledge Profiles were introduced have no ``profile_sha256``; setup
-    may refresh those same-Pack markers because the missing field identifies the
-    exact framework migration. Other stale markers still require explicit repair.
+    selection unless the user explicitly requests another Pack.
     """
     marker: dict[str, object] | None = None
     if vault_path:
-        marker_path = Path(vault_path).expanduser() / LAYOUT_MARKER
+        marker_path = Path(vault_path).expanduser() / KNOWLEDGE_PACK_MARKER
         if marker_path.is_file():
             try:
                 loaded = json.loads(marker_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
-                raise LayoutContractError(
-                    f"active layout marker is invalid: {marker_path}: {exc}"
+                raise KnowledgePackContractError(
+                    f"active Knowledge Pack marker is invalid: {marker_path}: {exc}"
                 ) from exc
             if (
                 not isinstance(loaded, dict)
                 or loaded.get("version") != 1
                 or not isinstance(loaded.get("name"), str)
             ):
-                raise LayoutContractError(f"active layout marker is invalid: {marker_path}")
+                raise KnowledgePackContractError(f"active Knowledge Pack marker is invalid: {marker_path}")
             marker = loaded
 
-    selected_name = requested_layout
+    selected_name = requested_knowledge_pack
     if selected_name is None and marker is not None:
         selected_name = str(marker["name"])
-    layout = load_layout(selected_name or "default")
-    legacy_profile_marker = (
-        marker is not None
-        and marker["name"] == layout.name
-        and "profile_sha256" not in marker
-    )
-    return layout, legacy_profile_marker
+    return load_knowledge_pack(selected_name or "default")
 
 
 def _check_stale() -> None:
@@ -1293,12 +1284,12 @@ def cmd_setup(args: argparse.Namespace) -> int:
     if args.list_agents:
         _print_setup_agents()
         return 0
-    if args.list_layouts:
-        choices = _setup_layout_choices()
+    if args.list_knowledge_packs:
+        choices = _setup_knowledge_pack_choices()
         if not choices:
-            print("No workflow layouts found.")
+            print("No Knowledge Packs found.")
         else:
-            _print_setup_layouts(choices)
+            _print_setup_knowledge_packs(choices)
         return 0
 
     if args.agent is None and not sys.stdin.isatty():
@@ -1318,10 +1309,10 @@ def cmd_setup(args: argparse.Namespace) -> int:
         if args.project_only and args.project is None:
             print("error: --skills-only --project-only requires --project", file=sys.stderr)
             return 2
-        if args.vault or args.layout or args.refresh_layout_marker or args.remote:
+        if args.vault or args.knowledge_pack or args.refresh_knowledge_pack_marker or args.remote:
             print(
-                "error: --skills-only cannot be combined with --vault, --layout, "
-                "--refresh-layout-marker, or --remote",
+                "error: --skills-only cannot be combined with --vault, --knowledge-pack, "
+                "--refresh-knowledge-pack-marker, or --remote",
                 file=sys.stderr,
             )
             return 2
@@ -1350,7 +1341,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
         return 0
 
     try:
-        selected_layout = _select_setup_layout(args.layout)
+        selected_knowledge_pack = _select_setup_knowledge_pack(args.knowledge_pack)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -1361,23 +1352,27 @@ def cmd_setup(args: argparse.Namespace) -> int:
 
     vault_path = _select_setup_vault(args.vault)
     try:
-        layout, upgrade_legacy_marker = _resolve_setup_layout(vault_path, selected_layout)
-    except LayoutContractError as exc:
+        knowledge_pack = _resolve_setup_knowledge_pack(vault_path, selected_knowledge_pack)
+    except KnowledgePackContractError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-    write_config(vault_path, layout.name)
+    write_config(vault_path, knowledge_pack.name)
     writing_profile = ensure_global_writing_profile()
     if not vault_path:
         print("    → Vault path not set yet. Re-run with `--vault /path/to/vault`")
         print("      or edit OBSIDIAN_VAULT_PATH in ~/.obsidian-wiki/config.")
     else:
         vault_dir = Path(vault_path).expanduser()
-        vault_created = scaffold_vault(
-            vault_dir,
-            layout=layout,
-            refresh_layout_marker=args.refresh_layout_marker or upgrade_legacy_marker,
-        )
-        print(f"   Layout: {layout.name}")
+        try:
+            vault_created = scaffold_vault(
+                vault_dir,
+                knowledge_pack=knowledge_pack,
+                refresh_knowledge_pack_marker=args.refresh_knowledge_pack_marker,
+            )
+        except KnowledgePackContractError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        print(f"   Knowledge Pack: {knowledge_pack.name}")
         if vault_created:
             print(f"✅  Vault created at {vault_dir}")
         else:
@@ -1389,14 +1384,14 @@ def cmd_setup(args: argparse.Namespace) -> int:
         installed_agents.update(install_global_skills(mode, selected_agents))
 
     context_source_cwd = Path.cwd().resolve()
-    context_bindings = _stable_context_config(vault_path, layout.name) if vault_path else {}
+    context_bindings = _stable_context_config(vault_path, knowledge_pack.name) if vault_path else {}
     if args.project is not None:
         project_dir = Path(args.project or os.getcwd()).expanduser().resolve()
         context_source_cwd = project_dir
         env_overrides = (
             {
                 "OBSIDIAN_VAULT_PATH": vault_path,
-                **_stable_context_config(vault_path, layout.name),
+                **_stable_context_config(vault_path, knowledge_pack.name),
             }
             if vault_path else None
         )
@@ -1411,11 +1406,11 @@ def cmd_setup(args: argparse.Namespace) -> int:
         try:
             compile_context_snapshot(
                 Path(vault_path).expanduser().resolve(),
-                layout.name,
+                knowledge_pack.name,
                 source_cwd=context_source_cwd,
                 bindings=context_bindings,
             )
-        except LayoutContractError as exc:
+        except KnowledgePackContractError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
 
@@ -2187,8 +2182,8 @@ def cmd_wiki_context_resolve(args: argparse.Namespace) -> int:
         "--setup-mode", args.setup_mode,
         "--output-dir", args.output_dir,
     ]
-    if args.layouts_dir is not None:
-        command.extend(["--layouts-dir", args.layouts_dir])
+    if args.knowledge_packs_dir is not None:
+        command.extend(["--knowledge-packs-dir", args.knowledge_packs_dir])
     if args.compile_snapshot:
         command.append("--compile-snapshot")
     return subprocess.run(command, check=False).returncode
@@ -2200,13 +2195,13 @@ def cmd_wiki_setup_contract_build(args: argparse.Namespace) -> int:
         root = workflows_dir()
         script = root / "scripts" / "build_setup_contract.py"
         templates = root / "templates" / "wiki-setup"
-        layouts = root / "layouts"
+        packs = knowledge_packs_dir()
         if not script.is_file():
             raise FileNotFoundError(f"bundled setup contract builder is missing: {script}")
         if not templates.is_dir():
             raise FileNotFoundError(f"bundled setup templates are missing: {templates}")
-        if not layouts.is_dir():
-            raise FileNotFoundError(f"bundled workflow layouts are missing: {layouts}")
+        if not packs.is_dir():
+            raise FileNotFoundError(f"bundled Knowledge Packs are missing: {packs}")
     except FileNotFoundError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -2217,24 +2212,24 @@ def cmd_wiki_setup_contract_build(args: argparse.Namespace) -> int:
         args.phase,
         "--templates-dir",
         str(templates),
-        "--layouts-dir",
-        str(layouts),
+        "--knowledge-packs-dir",
+        str(packs),
         "--output-dir",
         args.output_dir,
     ]
     return subprocess.run(command, check=False).returncode
 
 
-def cmd_wiki_layout_apply(args: argparse.Namespace) -> int:
+def cmd_wiki_knowledge_pack_apply(args: argparse.Namespace) -> int:
     """Apply one bundled Knowledge Pack without depending on the caller's CWD."""
     try:
         root = workflows_dir()
-        script = root / "scripts" / "apply_wiki_layout.py"
-        layouts = root / "layouts"
+        script = root / "scripts" / "apply_knowledge_pack.py"
+        packs = knowledge_packs_dir()
         if not script.is_file():
-            raise FileNotFoundError(f"bundled layout copier is missing: {script}")
-        if not layouts.is_dir():
-            raise FileNotFoundError(f"bundled workflow layouts are missing: {layouts}")
+            raise FileNotFoundError(f"bundled Knowledge Pack copier is missing: {script}")
+        if not packs.is_dir():
+            raise FileNotFoundError(f"bundled Knowledge Packs are missing: {packs}")
     except FileNotFoundError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -2243,17 +2238,17 @@ def cmd_wiki_layout_apply(args: argparse.Namespace) -> int:
         sys.executable,
         str(script),
         "apply",
-        "--layouts-dir",
-        str(layouts),
-        "--layout",
-        args.layout,
+        "--knowledge-packs-dir",
+        str(packs),
+        "--knowledge-pack",
+        args.knowledge_pack,
         "--vault",
         args.vault,
         "--output-dir",
         args.output_dir,
     ]
-    if args.refresh_layout_marker:
-        command.append("--refresh-layout-marker")
+    if args.refresh_knowledge_pack_marker:
+        command.append("--refresh-knowledge-pack-marker")
     return subprocess.run(command, check=False).returncode
 
 
@@ -3260,7 +3255,7 @@ def build_parser() -> argparse.ArgumentParser:
     wcr.add_argument("--requested-keys", default="", help="comma-separated configuration keys")
     wcr.add_argument("--optional-reads", default="", help="comma-separated optional metadata reads")
     wcr.add_argument("--setup-mode", choices=("true", "false"), default="false")
-    wcr.add_argument("--layouts-dir", default=None, help="override the bundled layouts directory")
+    wcr.add_argument("--knowledge-packs-dir", default=None, help="override the bundled Knowledge Pack directory")
     wcr.add_argument("--output-dir", required=True, help="artifact output directory")
     wcr.add_argument(
         "--compile-snapshot",
@@ -3278,18 +3273,18 @@ def build_parser() -> argparse.ArgumentParser:
     wsc.set_defaults(func=cmd_wiki_setup_contract_build)
 
     wla = sub.add_parser(
-        "wiki-layout-apply",
+        "wiki-knowledge-pack-apply",
         help="apply a bundled Knowledge Pack independently of the current directory",
     )
-    wla.add_argument("--layout", required=True, help="bundled Knowledge Pack name")
+    wla.add_argument("--knowledge-pack", required=True, help="bundled Knowledge Pack name")
     wla.add_argument("--vault", required=True, help="absolute target vault path")
     wla.add_argument("--output-dir", required=True, help="artifact output directory")
     wla.add_argument(
-        "--refresh-layout-marker",
+        "--refresh-knowledge-pack-marker",
         action="store_true",
-        help="refresh hashes for the same layout name; cannot switch layouts",
+        help="refresh hashes for the same Knowledge Pack name; cannot switch Packs",
     )
-    wla.set_defaults(func=cmd_wiki_layout_apply)
+    wla.set_defaults(func=cmd_wiki_knowledge_pack_apply)
 
     wrr = sub.add_parser(
         "wiki-route-resolve",
@@ -3635,19 +3630,19 @@ def _add_setup_args(sp: argparse.ArgumentParser) -> None:
         help="list selectable agent skill targets and exit",
     )
     sp.add_argument(
-        "--layout",
+        "--knowledge-pack",
         metavar="NAME",
-        help="use a Knowledge Pack (Profile + Layout; run with --list-layouts to see options)",
+        help="use a Knowledge Pack (Profile + Layout; run with --list-knowledge-packs to see options)",
     )
     sp.add_argument(
-        "--list-layouts",
+        "--list-knowledge-packs",
         action="store_true",
         help="list available Knowledge Packs and exit",
     )
     sp.add_argument(
-        "--refresh-layout-marker",
+        "--refresh-knowledge-pack-marker",
         action="store_true",
-        help="refresh hashes for the same layout name; cannot switch layouts",
+        help="refresh hashes for the same Knowledge Pack name; cannot switch Packs",
     )
     sp.add_argument(
         "--remote",

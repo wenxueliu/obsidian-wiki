@@ -24,7 +24,7 @@ RESERVED_TARGETS = {
     "index.md", "log.md", "hot.md", ".manifest.json",
     ".obsidian/app.json", ".obsidian/appearance.json",
 }
-LAYOUT_MARKER = "_meta/layout.json"
+KNOWLEDGE_PACK_MARKER = "_meta/knowledge-pack.json"
 SAFE_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 SAFE_ROUTE_KEY = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -97,8 +97,8 @@ def validate_routing(data: Any) -> dict[str, Any]:
         raise ValueError("routing content_roots and system_dirs must be disjoint")
     if not set(data["skip_dirs"]).issubset(system_dirs):
         raise ValueError("routing skip_dirs must be a subset of system_dirs")
-    if LAYOUT_MARKER not in data["system_paths"]:
-        raise ValueError(f"routing system_paths must reserve {LAYOUT_MARKER}")
+    if KNOWLEDGE_PACK_MARKER not in data["system_paths"]:
+        raise ValueError(f"routing system_paths must reserve {KNOWLEDGE_PACK_MARKER}")
     for route_name, template in routes.items():
         first = template.split("/", 1)[0]
         if first not in roots:
@@ -150,10 +150,10 @@ def validate_profile(data: Any, name: str, routing: dict[str, Any]) -> dict[str,
     return data
 
 
-def load_layout(layouts_dir: Path, name: str) -> tuple[Path, Path, dict[str, Any]]:
+def load_knowledge_pack(knowledge_packs_dir: Path, name: str) -> tuple[Path, Path, dict[str, Any]]:
     if not name or not SAFE_NAME.fullmatch(name):
-        raise ValueError("layout name must match [A-Za-z0-9_-]+")
-    root = layouts_dir.resolve() / name
+        raise ValueError("Knowledge Pack name must match [A-Za-z0-9_-]+")
+    root = knowledge_packs_dir.resolve() / name
     manifest_path = root / "layout.json"
     profile_path = root / "profile.json"
     vault_source = root / "vault"
@@ -163,9 +163,9 @@ def load_layout(layouts_dir: Path, name: str) -> tuple[Path, Path, dict[str, Any
         or profile_path.is_symlink()
         or vault_source.is_symlink()
     ):
-        raise ValueError("layout root, manifest, profile, and vault source must not be symlinks")
+        raise ValueError("Knowledge Pack root and contracts must not be symlinks")
     if not manifest_path.is_file() or not profile_path.is_file() or not vault_source.is_dir():
-        raise ValueError(f"layout {name!r} must contain layout.json, profile.json, and vault/")
+        raise ValueError(f"Knowledge Pack {name!r} must contain layout.json, profile.json, and vault/")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("version") != 1 or manifest.get("name") != name:
         raise ValueError("layout manifest version/name mismatch")
@@ -207,8 +207,8 @@ def load_profile(root: Path, name: str, routing: dict[str, Any]) -> dict[str, An
     return validate_profile(json.loads(profile_path.read_text(encoding="utf-8")), name, routing)
 
 
-def inventory(layouts_dir: Path, name: str) -> dict[str, Any]:
-    root, vault_source, manifest = load_layout(layouts_dir, name)
+def inventory(knowledge_packs_dir: Path, name: str) -> dict[str, Any]:
+    root, vault_source, manifest = load_knowledge_pack(knowledge_packs_dir, name)
     routing_rules, routing_prompt = load_routing(root)
     profile = load_profile(root, name, routing_rules)
     ignored = set(manifest.get("ignore", []))
@@ -216,7 +216,7 @@ def inventory(layouts_dir: Path, name: str) -> dict[str, Any]:
     files: list[dict[str, Any]] = []
     for candidate in sorted(vault_source.rglob("*")):
         if candidate.is_symlink():
-            raise ValueError(f"layout contains symlink: {candidate}")
+            raise ValueError(f"Knowledge Pack contains symlink: {candidate}")
         relative = candidate.relative_to(vault_source).as_posix()
         if candidate.is_dir():
             directories.append(relative + "/")
@@ -224,13 +224,13 @@ def inventory(layouts_dir: Path, name: str) -> dict[str, Any]:
         if not candidate.is_file() or candidate.name in ignored:
             continue
         if relative in RESERVED_TARGETS:
-            raise ValueError(f"layout contains reserved core target: {relative}")
+            raise ValueError(f"Knowledge Pack contains reserved core target: {relative}")
         size = candidate.stat().st_size
         if size > MAX_FILE_SIZE:
-            raise ValueError(f"layout file exceeds {MAX_FILE_SIZE} bytes: {relative}")
+            raise ValueError(f"Knowledge Pack file exceeds {MAX_FILE_SIZE} bytes: {relative}")
         files.append({"path": relative, "size": size, "sha256": digest(candidate)})
     if len(files) > MAX_FILES:
-        raise ValueError(f"layout contains more than {MAX_FILES} files")
+        raise ValueError(f"Knowledge Pack contains more than {MAX_FILES} files")
     manifest_bytes = (root / "layout.json").read_bytes()
     frozen = {
         "version": 1, "name": name, "description": manifest.get("description", ""),
@@ -294,11 +294,11 @@ def copy_missing(source: Path, target: Path) -> None:
 
 
 def plan_or_apply(
-    layouts_dir: Path, name: str, vault: Path, output_dir: Path, apply: bool,
-    refresh_layout_marker: bool = False,
+    knowledge_packs_dir: Path, name: str, vault: Path, output_dir: Path, apply: bool,
+    refresh_knowledge_pack_marker: bool = False,
 ) -> None:
-    frozen = inventory(layouts_dir, name)
-    _, source_root, _ = load_layout(layouts_dir, name)
+    frozen = inventory(knowledge_packs_dir, name)
+    _, source_root, _ = load_knowledge_pack(knowledge_packs_dir, name)
     vault = vault.expanduser()
     if not vault.is_absolute():
         raise ValueError("vault path must be absolute")
@@ -309,7 +309,7 @@ def plan_or_apply(
     created_files: list[str] = []
     preserved_files: list[str] = []
     refreshed_files: list[str] = []
-    marker_target = safe_target(vault, LAYOUT_MARKER)
+    marker_target = safe_target(vault, KNOWLEDGE_PACK_MARKER)
 
     if apply:
         vault.mkdir(parents=True, exist_ok=True)
@@ -322,7 +322,7 @@ def plan_or_apply(
             if apply:
                 target.mkdir(parents=True, exist_ok=False)
         elif not target.is_dir():
-            raise ValueError(f"layout directory conflicts with file: {relative}")
+            raise ValueError(f"Knowledge Pack directory conflicts with file: {relative}")
 
     for record in frozen["files"]:
         relative = record["path"]
@@ -331,7 +331,7 @@ def plan_or_apply(
             raise ValueError(f"target file is a symlink: {relative}")
         if target.exists():
             if not target.is_file():
-                raise ValueError(f"layout file conflicts with non-file: {relative}")
+                raise ValueError(f"Knowledge Pack file conflicts with non-file: {relative}")
             preserved_files.append(relative)
         else:
             created_files.append(relative)
@@ -347,59 +347,59 @@ def plan_or_apply(
         "profile_sha256": frozen["profile"]["sha256"],
     }
     if marker_target.is_symlink():
-        raise ValueError("active layout marker must not be a symlink")
+        raise ValueError("active Knowledge Pack marker must not be a symlink")
     if marker_target.exists():
         if not marker_target.is_file():
-            raise ValueError("active layout marker conflicts with a non-file")
+            raise ValueError("active Knowledge Pack marker conflicts with a non-file")
         existing_marker = json.loads(marker_target.read_text(encoding="utf-8"))
         if existing_marker != marker:
-            if not refresh_layout_marker:
-                raise ValueError("vault has a stale or different active layout marker; explicit marker refresh or layout migration is required")
+            if not refresh_knowledge_pack_marker:
+                raise ValueError("vault has a stale or different active Knowledge Pack marker; explicit marker refresh or Pack migration is required")
             if existing_marker.get("version") != 1 or existing_marker.get("name") != name:
-                raise ValueError("marker refresh cannot switch layouts; use a content-aware layout migration")
-            refreshed_files.append(LAYOUT_MARKER)
+                raise ValueError("marker refresh cannot switch Knowledge Packs; use a content-aware Pack migration")
+            refreshed_files.append(KNOWLEDGE_PACK_MARKER)
             if apply:
                 atomic_json(marker_target, marker)
         else:
-            preserved_files.append(LAYOUT_MARKER)
+            preserved_files.append(KNOWLEDGE_PACK_MARKER)
     else:
-        created_files.append(LAYOUT_MARKER)
+        created_files.append(KNOWLEDGE_PACK_MARKER)
         if apply:
             atomic_json(marker_target, marker)
 
     report = {
-        "mode": "apply" if apply else "plan", "layout": frozen,
+        "mode": "apply" if apply else "plan", "knowledge_pack": frozen,
         "vault": str(vault), "created_dirs": created_dirs,
         "created_files": created_files, "preserved_files": preserved_files,
         "refreshed_files": refreshed_files, "overwritten_files": [],
-        "layout_marker": marker,
+        "knowledge_pack_marker": marker,
     }
-    atomic_json(output_dir / ("layout-apply-report.json" if apply else "layout-plan.json"), report)
+    atomic_json(output_dir / ("knowledge-pack-apply-report.json" if apply else "knowledge-pack-plan.json"), report)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("action", choices=("list", "plan", "apply"))
-    parser.add_argument("--layouts-dir", required=True, type=Path)
-    parser.add_argument("--layout")
+    parser.add_argument("--knowledge-packs-dir", required=True, type=Path)
+    parser.add_argument("--knowledge-pack")
     parser.add_argument("--vault", type=Path)
     parser.add_argument("--output-dir", type=Path)
-    parser.add_argument("--refresh-layout-marker", action="store_true")
+    parser.add_argument("--refresh-knowledge-pack-marker", action="store_true")
     args = parser.parse_args()
     try:
         if args.action == "list":
-            result = [inventory(args.layouts_dir, path.name) for path in sorted(args.layouts_dir.iterdir()) if path.is_dir()]
+            result = [inventory(args.knowledge_packs_dir, path.name) for path in sorted(args.knowledge_packs_dir.iterdir()) if path.is_dir()]
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
-        if not args.layout or args.vault is None or args.output_dir is None:
-            raise ValueError("plan/apply require --layout, --vault, and --output-dir")
+        if not args.knowledge_pack or args.vault is None or args.output_dir is None:
+            raise ValueError("plan/apply require --knowledge-pack, --vault, and --output-dir")
         plan_or_apply(
-            args.layouts_dir, args.layout, args.vault, args.output_dir,
-            args.action == "apply", args.refresh_layout_marker,
+            args.knowledge_packs_dir, args.knowledge_pack, args.vault, args.output_dir,
+            args.action == "apply", args.refresh_knowledge_pack_marker,
         )
         return 0
     except (OSError, ValueError, json.JSONDecodeError) as error:
-        parser.exit(1, f"apply_wiki_layout.py: error: {error}\n")
+        parser.exit(1, f"apply_knowledge_pack.py: error: {error}\n")
 
 
 if __name__ == "__main__":

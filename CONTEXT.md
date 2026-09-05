@@ -21,7 +21,7 @@ The effective allowlist of relationship types for a vault, consisting of the fra
 _Avoid_: Link types
 
 **Knowledge Pack**:
-A bundled, versioned knowledge-domain contract that combines one Knowledge Profile with one Vault Layout and their supporting schema and workflow guidance.
+A bundled, versioned knowledge-domain contract that combines one Knowledge Profile with one Vault Layout and their supporting schema and routing guidance. Packs are public product resources, independent of any workflow that consumes them.
 _Avoid_: Layout, Domain
 
 **Knowledge Profile**:

@@ -17,7 +17,7 @@ When you add a skill, also add it to the [skills reference](skills.md) and the r
 
 ## Adding a Knowledge Pack
 
-A directory under `workflows/layouts/<name>/` is a complete Knowledge Pack, not only a folder
+A directory under `knowledge-packs/<name>/` is a complete Knowledge Pack, not only a folder
 template. It must contain:
 
 ```text

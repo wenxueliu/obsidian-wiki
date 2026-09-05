@@ -23,18 +23,18 @@ package, so `pip install -U obsidian-wiki` upgrades the selected targets when se
 For scripts and other non-interactive environments, select targets explicitly:
 
 ```bash
-obsidian-wiki setup --vault /path/to/brain --layout default --agent claude --agent codex
-obsidian-wiki setup --vault /path/to/brain --layout software-knowledge --agent claude,codex,pi
-obsidian-wiki setup --vault /path/to/brain --layout default --agent all
+obsidian-wiki setup --vault /path/to/brain --knowledge-pack default --agent claude --agent codex
+obsidian-wiki setup --vault /path/to/brain --knowledge-pack software-knowledge --agent claude,codex,pi
+obsidian-wiki setup --vault /path/to/brain --knowledge-pack default --agent all
 ```
 
 Run `obsidian-wiki setup --list-agents` to see stable target names and whether each target is global,
 project-local, or both. Non-interactive setup requires an explicit selection; use `--agent none`
 only when intentionally configuring the vault without installing agent skills.
 
-If `--layout` is omitted in a terminal, setup displays the available Knowledge Packs and requires
-one selection. Agent selection accepts multiple values; layout selection is always single-choice.
-Non-interactive setup must pass `--layout NAME` explicitly.
+If `--knowledge-pack` is omitted in a terminal, setup displays the available Knowledge Packs and requires
+one selection. Agent selection accepts multiple values; Knowledge Pack selection is always single-choice.
+Non-interactive setup must pass `--knowledge-pack NAME` explicitly.
 
 Then open a project in your agent and say **"set up my wiki"**.
 
@@ -45,10 +45,10 @@ obsidian-wiki setup --project .   # install selected-agent project files into th
 obsidian-wiki setup --copy        # copy skill files instead of symlinking
 ```
 
-For a self-contained project installation using the software-knowledge layout, run:
+For a self-contained project installation using the `software-knowledge` Pack, run:
 
 ```bash
-obsidian-wiki setup --layout software-knowledge --project . --project-only --copy --agent cursor
+obsidian-wiki setup --knowledge-pack software-knowledge --project . --project-only --copy --agent cursor
 ```
 
 This selects the `software-knowledge` Knowledge Pack, initializes the configured vault, and

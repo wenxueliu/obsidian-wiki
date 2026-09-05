@@ -34,13 +34,15 @@ Decision keeps the same meaning and evidence requirements whether it is stored f
 agent whether it is compiling scientific evidence, historical interpretation, or software design.
 
 One vault is assumed to serve one knowledge purpose. Setup therefore selects the pack once and
-binds the Profile, Layout, and routing hashes in `_meta/layout.json`. Ingest does **not** guess a new
+binds the Profile, Layout, and routing hashes in `_meta/knowledge-pack.json`. Ingest does **not** guess a new
 domain for every source. It checks the source against the active Profile and follows the Profile's
 `ask`, `stage`, or `reject` mismatch action. A source adapter answers only how to read a format; it
 does not decide what the vault should remember.
 
-The bundled packs are `default`, `software-knowledge`, and `book-knowledge`. The CLI option remains
-named `--layout` for compatibility, but it selects the whole Knowledge Pack.
+The bundled packs are `default`, `software-knowledge`, and `book-knowledge`. They live in the
+top-level `knowledge-packs/` product directory and are installed into the Python package as
+`obsidian_wiki/_data/knowledge-packs/`. Workflows consume them through the shared Pack loader; they
+do not own or embed Pack definitions.
 
 ## The four stages
 
@@ -112,6 +114,7 @@ $OBSIDIAN_VAULT_PATH/
 ├── hot.md                  # ~500-word semantic snapshot of recent activity
 ├── .manifest.json          # Ingest ledger: path, timestamps, pages produced
 ├── _meta/
+│   ├── knowledge-pack.json # Active Pack identity and contract hashes
 │   ├── taxonomy.md         # Controlled tag vocabulary
 │   ├── ingest-jobs/        # Durable wiki-folder-ingest Jobs and bounded Packets
 │   └── *.base              # Obsidian Bases dashboard definitions

@@ -10,7 +10,7 @@ import pytest
 
 def setup_args(**overrides) -> Namespace:
     values = {
-        "list_layouts": False,
+        "list_knowledge_packs": False,
         "list_agents": False,
         "project_only": True,
         "project": None,
@@ -18,8 +18,8 @@ def setup_args(**overrides) -> Namespace:
         "skills_only": False,
         "agent": ["claude"],
         "vault": None,
-        "layout": "default",
-        "refresh_layout_marker": False,
+        "knowledge_pack": "default",
+        "refresh_knowledge_pack_marker": False,
         "remote": None,
     }
     values.update(overrides)
@@ -56,7 +56,7 @@ def test_setup_skills_only_project_install_does_not_resolve_vault(
     monkeypatch.setattr(cli, "list_skills", lambda: ["wiki-setup"])
 
     result = cli.cmd_setup(
-        setup_args(project=str(tmp_path), skills_only=True, layout=None)
+        setup_args(project=str(tmp_path), skills_only=True, knowledge_pack=None)
     )
 
     assert result == 0
@@ -72,7 +72,7 @@ def test_setup_skills_only_requires_agent_selection(monkeypatch, tmp_path: Path)
     )
 
     result = cli.cmd_setup(
-        setup_args(project=str(tmp_path), skills_only=True, agent=None, layout=None)
+        setup_args(project=str(tmp_path), skills_only=True, agent=None, knowledge_pack=None)
     )
 
     assert result == 2
@@ -98,9 +98,17 @@ def test_setup_parser_accepts_skills_only_and_marker_refresh() -> None:
     assert args.agent == ["claude,codex"]
 
     refresh_args = cli.build_parser().parse_args(
-        ["setup", "--vault", "/tmp/vault", "--refresh-layout-marker"]
+        [
+            "setup",
+            "--vault",
+            "/tmp/vault",
+            "--knowledge-pack",
+            "default",
+            "--refresh-knowledge-pack-marker",
+        ]
     )
-    assert refresh_args.refresh_layout_marker is True
+    assert refresh_args.knowledge_pack == "default"
+    assert refresh_args.refresh_knowledge_pack_marker is True
 
 
 def test_setup_agent_selection_has_no_noninteractive_default(monkeypatch) -> None:
@@ -129,17 +137,17 @@ def test_noninteractive_setup_requires_explicit_agent_choice(monkeypatch) -> Non
 def test_noninteractive_setup_requires_explicit_layout_choice(monkeypatch) -> None:
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
 
-    result = cli.cmd_setup(setup_args(layout=None, skills_only=False))
+    result = cli.cmd_setup(setup_args(knowledge_pack=None, skills_only=False))
 
     assert result == 2
 
 
-def test_interactive_layout_selection_is_single_choice(monkeypatch, capsys) -> None:
+def test_interactive_knowledge_pack_selection_is_single_choice(monkeypatch, capsys) -> None:
     answers = iter(("default,book-knowledge", "2"))
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
 
-    selected = cli._select_setup_layout(None)
+    selected = cli._select_setup_knowledge_pack(None)
 
     assert selected == "default"
     assert "single-choice" in capsys.readouterr().out
@@ -463,36 +471,36 @@ def test_existing_project_env_fills_only_missing_or_blank_context_bindings(
     assert "UNRELATED=value" in content
 
 
-def test_setup_with_explicit_layout_preserves_existing_custom_pack(
+def test_setup_with_explicit_pack_preserves_existing_pack(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     vault = tmp_path / "vault"
-    cli.scaffold_vault(vault, cli.load_layout("software-knowledge"))
+    cli.scaffold_vault(vault, cli.load_knowledge_pack("software-knowledge"))
     isolate_setup_side_effects(monkeypatch, vault, tmp_path)
 
-    result = cli.cmd_setup(setup_args(layout="software-knowledge"))
+    result = cli.cmd_setup(setup_args(knowledge_pack="software-knowledge"))
 
     assert result == 0
-    marker = json.loads((vault / "_meta" / "layout.json").read_text())
+    marker = json.loads((vault / "_meta" / "knowledge-pack.json").read_text())
     assert marker["name"] == "software-knowledge"
 
 
-def test_setup_upgrades_pre_profile_marker_for_same_pack(
+def test_setup_rejects_incomplete_knowledge_pack_marker_without_refresh(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     vault = tmp_path / "vault"
-    cli.scaffold_vault(vault, cli.load_layout("software-knowledge"))
-    marker_path = vault / "_meta" / "layout.json"
+    cli.scaffold_vault(vault, cli.load_knowledge_pack("software-knowledge"))
+    marker_path = vault / "_meta" / "knowledge-pack.json"
     marker = json.loads(marker_path.read_text())
     marker.pop("profile_sha256")
     marker_path.write_text(json.dumps(marker))
     isolate_setup_side_effects(monkeypatch, vault, tmp_path)
 
-    result = cli.cmd_setup(setup_args(layout="software-knowledge"))
+    result = cli.cmd_setup(setup_args(knowledge_pack="software-knowledge"))
 
-    assert result == 0
-    upgraded = json.loads(marker_path.read_text())
-    assert upgraded["name"] == "software-knowledge"
-    assert upgraded["profile_sha256"].startswith("sha256:")
+    assert result == 1
+    unchanged = json.loads(marker_path.read_text())
+    assert unchanged["name"] == "software-knowledge"
+    assert "profile_sha256" not in unchanged

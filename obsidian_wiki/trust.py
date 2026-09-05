@@ -21,9 +21,9 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from obsidian_wiki.workflow_layout import LAYOUT_MARKER, iter_content_pages
+from obsidian_wiki.knowledge_pack import KNOWLEDGE_PACK_MARKER, iter_content_pages
 
-TRUST_LEDGER_RELATIVE_PATH = LAYOUT_MARKER.parent / "trust-ledger.json"
+TRUST_LEDGER_RELATIVE_PATH = KNOWLEDGE_PACK_MARKER.parent / "trust-ledger.json"
 TRUST_LEDGER_SCHEMA_VERSION = 1
 TRUST_REVIEW_METHOD = "manual-lineage-and-claim-coverage-v1"
 TRUST_RESERVED_STEMS = frozenset({"index", "log", "hot", "_insights"})

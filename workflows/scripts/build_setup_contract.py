@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 sys.dont_write_bytecode = True
-from apply_wiki_layout import inventory as layout_inventory
+from apply_knowledge_pack import inventory as knowledge_pack_inventory
 
 
 TEMPLATE_RULES = {
@@ -102,7 +102,7 @@ def render(text: str, values: dict[str, str]) -> str:
     return result
 
 
-def build_core(templates_dir: Path, layouts_dir: Path, output_dir: Path) -> None:
+def build_core(templates_dir: Path, knowledge_packs_dir: Path, output_dir: Path) -> None:
     templates: dict[str, Any] = {}
     for name, allowed in TEMPLATE_RULES.items():
         path = templates_dir / name
@@ -131,12 +131,12 @@ def build_core(templates_dir: Path, layouts_dir: Path, output_dir: Path) -> None
         name: render(record["content"], default_values)
         for name, record in templates.items()
     }
-    layouts = {
-        path.name: layout_inventory(layouts_dir, path.name)
-        for path in sorted(layouts_dir.iterdir()) if path.is_dir()
+    knowledge_packs = {
+        path.name: knowledge_pack_inventory(knowledge_packs_dir, path.name)
+        for path in sorted(knowledge_packs_dir.iterdir()) if path.is_dir()
     }
-    if "default" not in layouts:
-        raise ValueError("layouts directory must contain a default layout")
+    if "default" not in knowledge_packs:
+        raise ValueError("Knowledge Pack directory must contain the default Pack")
 
     core = {
         "version": 1,
@@ -164,11 +164,11 @@ def build_core(templates_dir: Path, layouts_dir: Path, output_dir: Path) -> None
             "create_only_when_missing": True,
             "template": "WRITING.md",
         },
-        "layout": {
-            "implementation": "load one bundled Knowledge Pack; recursively copy layouts/<name>/vault with missing-only semantics; bind profile.json and routing.json/routing.md hashes in _meta/layout.json",
+        "knowledge_pack": {
+            "implementation": "load one bundled Knowledge Pack; recursively copy knowledge-packs/<name>/vault with missing-only semantics; bind layout.json, profile.json, and routing.json/routing.md hashes in _meta/knowledge-pack.json",
             "default": "default",
-            "available": layouts,
-            "default_dirs": layouts["default"]["directories"],
+            "available": knowledge_packs,
+            "default_dirs": knowledge_packs["default"]["directories"],
             "always_create": [".obsidian/", "_staging/"],
             "preserve_custom_dirs": True,
             "profile_policy": "profile.json defines the vault purpose, scope, knowledge types, extraction policy, evidence checks, freshness triggers, and retrieval priorities; scope mismatch follows the profile action instead of switching domains",
@@ -199,7 +199,7 @@ def build_core(templates_dir: Path, layouts_dir: Path, output_dir: Path) -> None
     atomic_write(output_dir / "setup-core-contract.md", "\n".join(lines))
 
 
-def finalize(templates_dir: Path, layouts_dir: Path, output_dir: Path) -> None:
+def finalize(templates_dir: Path, knowledge_packs_dir: Path, output_dir: Path) -> None:
     core_path = output_dir / "setup-core-contract.json"
     core = load_json(core_path)
     integration_path = templates_dir / "integrations.json"
@@ -221,14 +221,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("phase", choices=("core", "finalize"))
     parser.add_argument("--templates-dir", required=True, type=Path)
-    parser.add_argument("--layouts-dir", required=True, type=Path)
+    parser.add_argument("--knowledge-packs-dir", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
     try:
         if args.phase == "core":
-            build_core(args.templates_dir, args.layouts_dir, args.output_dir)
+            build_core(args.templates_dir, args.knowledge_packs_dir, args.output_dir)
         else:
-            finalize(args.templates_dir, args.layouts_dir, args.output_dir)
+            finalize(args.templates_dir, args.knowledge_packs_dir, args.output_dir)
         return 0
     except (OSError, ValueError, json.JSONDecodeError) as error:
         parser.exit(1, f"build_setup_contract.py: error: {error}\n")

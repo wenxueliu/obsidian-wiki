@@ -46,7 +46,7 @@ description: "只读查询 compiled Obsidian wiki，按 GraphRAG、索引、QMD�
 
 - `requested_keys`: OBSIDIAN_VAULT_PATH,QMD_TRANSPORT,QMD_WIKI_COLLECTION,QMD_PAPERS_COLLECTION,QMD_CLI_SEARCH_MODE
 
-- `optional_reads`: owner AGENTS,index,hot,manifest,active layout
+- `optional_reads`: owner AGENTS,index,hot,manifest,active knowledge pack
 
 - `setup_mode`: false
 
