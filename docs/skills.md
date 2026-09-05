@@ -91,6 +91,13 @@ These two build a retrieval index over your raw agent sessions. They write a sid
 | `vault-skill-factory` | Turn a cluster of mature vault pages into a portable "digital expert" skill | `/vault-skill-factory` |
 | `impl-validator` | Validate an implementation against its stated goal | `/impl-validator` |
 
+## Example skill sets
+
+[`example/design/`](../example/design/) contains a self-contained single-product design example
+with a project `AGENTS.md` and five sample Agent Skills for requirements, design, implementation
+planning, test design, and issue diagnosis. These examples consume the `software-knowledge` Pack
+but are not installed as framework skills.
+
 ## Recommended companion: Obsidian Skills by Kepano
 
 This framework handles the knowledge-management workflow — ingest, query, lint, rebuild. For Obsidian format mastery, install [**kepano/obsidian-skills**](https://github.com/kepano/obsidian-skills) alongside it. Optional, but it improves output quality:
