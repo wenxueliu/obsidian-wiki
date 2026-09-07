@@ -404,6 +404,25 @@ def test_project_setup_applies_vault_override_to_new_env(tmp_path: Path, monkeyp
     )
 
 
+def test_project_setup_applies_windows_vault_override_to_new_env(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    template = tmp_path / "packaged.env.example"
+    template.write_text("OBSIDIAN_VAULT_PATH=\n", encoding="utf-8")
+    project = tmp_path / "project"
+    monkeypatch.setattr(cli, "_env_example_path", lambda: template)
+
+    cli.ensure_project_env(
+        project,
+        {"OBSIDIAN_VAULT_PATH": r"C:\Users\alice\vault"},
+    )
+
+    assert (project / ".env").read_text(encoding="utf-8") == (
+        'OBSIDIAN_VAULT_PATH="C:\\Users\\alice\\vault"\n'
+    )
+
+
 def test_env_example_declares_stable_context_bindings() -> None:
     template = (Path(__file__).resolve().parents[1] / ".env.example").read_text(
         encoding="utf-8"

@@ -550,7 +550,13 @@ def ensure_project_env(
     content = _env_example_path().read_text(encoding="utf-8")
     for key, value in (overrides or {}).items():
         replacement = f'{key}="{value}"'
-        content, count = re.subn(rf"^{re.escape(key)}=.*$", replacement, content, count=1, flags=re.MULTILINE)
+        content, count = re.subn(
+            rf"^{re.escape(key)}=.*$",
+            lambda _match: replacement,
+            content,
+            count=1,
+            flags=re.MULTILINE,
+        )
         if count == 0:
             if content and not content.endswith("\n"):
                 content += "\n"
