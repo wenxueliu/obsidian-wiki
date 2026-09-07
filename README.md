@@ -36,10 +36,11 @@ Every skill here is a markdown file that any agent — Claude Code, Cursor, Code
 
 ```bash
 pip install obsidian-wiki
+cd /path/to/your/project
 obsidian-wiki setup --vault ~/brain
 ```
 
-Then open any project in your agent and say **"set up my wiki"**.
+Setup installs skills only in the current project. Open that project in your agent and say **"set up my wiki"**.
 
 Prefer not to touch a terminal? Give your agent this and it'll do the whole thing:
 
@@ -104,7 +105,7 @@ Or export the whole graph to `graph.json`, GraphML (Gephi/yEd), Neo4j Cypher, or
 - **You can tell knowledge from guessing.** Every claim is tagged `extracted`, `^[inferred]`, or `^[ambiguous]`, and lint flags pages drifting into speculation.
 - **Queries stay cheap as it grows.** Titles, tags, and summaries get read before page bodies. 20 pages or 2000, roughly the same cost.
 - **It's yours.** Plain markdown in a folder. Push it to a private repo, open it in Obsidian, grep it, delete it. No service, no lock-in, nothing leaves your machine.
-- **Works where you already work.** One `.skills/` directory, symlinked into every agent you use.
+- **Works where you already work.** One bundled `.skills/` directory, linked into each selected agent under your project.
 
 More → **[Architecture](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/architecture.md)**
 

@@ -63,6 +63,32 @@ def test_setup_skills_only_project_install_does_not_resolve_vault(
     assert installed == [(tmp_path.resolve(), "copy", ("claude",))]
 
 
+def test_setup_skills_only_defaults_to_command_directory_without_global_install(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    installed: list[tuple[Path, str, tuple[str, ...]]] = []
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "install_project",
+        lambda path, mode, agents: installed.append((path, mode, agents)) or set(agents),
+    )
+
+    result = cli.cmd_setup(
+        setup_args(
+            project=None,
+            project_only=False,
+            skills_only=True,
+            knowledge_pack=None,
+            agent=["codex,gemini"],
+        )
+    )
+
+    assert result == 0
+    assert installed == [(tmp_path.resolve(), "copy", ("codex", "gemini"))]
+
+
 def test_setup_skills_only_requires_agent_selection(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
     monkeypatch.setattr(
@@ -119,6 +145,10 @@ def test_setup_agent_selection_has_no_noninteractive_default(monkeypatch) -> Non
     assert cli._parse_setup_agents(["all"]) == cli.SETUP_AGENT_NAMES
 
 
+def test_all_setup_agents_are_project_scoped() -> None:
+    assert {scope for _name, _label, scope in cli.SETUP_AGENTS} == {"project"}
+
+
 def test_interactive_agent_selection_supports_multiple_choices(monkeypatch) -> None:
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda _prompt: "1,4,13")
@@ -160,21 +190,6 @@ def test_setup_agent_selection_rejects_unknown_or_mixed_sentinels() -> None:
         cli._parse_setup_agents(["all", "claude"])
     with pytest.raises(ValueError, match="cannot be combined"):
         cli._parse_setup_agents(["none", "claude"])
-
-
-def test_global_skill_install_only_targets_selected_agents(monkeypatch, tmp_path: Path) -> None:
-    installed: list[Path] = []
-    monkeypatch.setattr(cli, "HOME", tmp_path)
-    monkeypatch.setattr(
-        cli,
-        "install_skills",
-        lambda target, _label, **_kwargs: installed.append(target) or 1,
-    )
-
-    result = cli.install_global_skills("copy", ("codex", "pi"))
-
-    assert result == {"codex", "pi"}
-    assert installed == [tmp_path / ".codex/skills", tmp_path / ".pi/agent/skills"]
 
 
 def test_install_skills_preserves_directory_level_link_to_canonical_source(
@@ -275,6 +290,31 @@ def test_project_skill_install_only_targets_selected_agents(
 
     assert result == {"cursor", "kiro"}
     assert installed == [tmp_path / ".cursor/skills", tmp_path / ".kiro/skills"]
+
+
+def test_project_skill_install_supports_all_agents_and_deduplicates_shared_dir(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    installed: list[Path] = []
+    monkeypatch.setattr(
+        cli,
+        "install_skills",
+        lambda target, _label, **_kwargs: installed.append(target) or 1,
+    )
+    monkeypatch.setattr(cli, "bootstrap_dir", lambda: None)
+
+    result = cli.install_project(tmp_path, "copy", cli.SETUP_AGENT_NAMES)
+
+    assert result == set(cli.SETUP_AGENT_NAMES)
+    assert installed == [
+        tmp_path / ".claude/skills",
+        tmp_path / ".cursor/skills",
+        tmp_path / ".windsurf/skills",
+        tmp_path / ".agents/skills",
+        tmp_path / ".pi/skills",
+        tmp_path / ".kiro/skills",
+    ]
 
 
 def test_project_bootstrap_only_targets_selected_agents(
@@ -498,7 +538,9 @@ def test_setup_with_explicit_pack_preserves_existing_pack(
     cli.scaffold_vault(vault, cli.load_knowledge_pack("software-knowledge"))
     isolate_setup_side_effects(monkeypatch, vault, tmp_path)
 
-    result = cli.cmd_setup(setup_args(knowledge_pack="software-knowledge"))
+    result = cli.cmd_setup(
+        setup_args(project=str(tmp_path / "project"), knowledge_pack="software-knowledge")
+    )
 
     assert result == 0
     marker = json.loads((vault / "_meta" / "knowledge-pack.json").read_text())
@@ -517,7 +559,9 @@ def test_setup_rejects_incomplete_knowledge_pack_marker_without_refresh(
     marker_path.write_text(json.dumps(marker))
     isolate_setup_side_effects(monkeypatch, vault, tmp_path)
 
-    result = cli.cmd_setup(setup_args(knowledge_pack="software-knowledge"))
+    result = cli.cmd_setup(
+        setup_args(project=str(tmp_path / "project"), knowledge_pack="software-knowledge")
+    )
 
     assert result == 1
     unchanged = json.loads(marker_path.read_text())

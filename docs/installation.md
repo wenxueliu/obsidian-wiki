@@ -4,7 +4,7 @@ Four ways in. Pick one — they all end at the same place: your vault path in `~
 
 | Path | Best for | Writes global config | Agent skill targets |
 |---|---|---|---|
-| [pip](#install-via-pip-recommended) | Most people | ✅ | User-selected |
+| [pip](#install-via-pip-recommended) | Most people | ✅ | User-selected, command-directory only |
 | [Let your agent do it](#let-your-agent-set-it-up) | No terminal required | ✅ | Current agent |
 | [git clone + `python3 setup.py`](#install-via-git-clone) | Contributors, hackers | ✅ | Legacy all-agent installer |
 | [Skills CLI](#install-via-skills-cli-deprecated) | Deprecated — partial install | ❌ | Current agent only |
@@ -17,8 +17,10 @@ obsidian-wiki setup --vault /path/to/your/digital/brain
 ```
 
 `obsidian-wiki setup` writes the config to `~/.obsidian-wiki/config` and asks which agent skill
-targets to install. It has no implicit all-agent selection. Skills are symlinked to the installed
-package, so `pip install -U obsidian-wiki` upgrades the selected targets when setup is run again.
+targets to install. It has no implicit all-agent selection and never installs skills globally.
+Skills and bootstrap files are written only under the directory where the command runs (or the
+explicit `--project DIR` override). Skills are symlinked to the installed package, so
+`pip install -U obsidian-wiki` upgrades the selected targets when setup is run again.
 
 For scripts and other non-interactive environments, select targets explicitly:
 
@@ -28,33 +30,32 @@ obsidian-wiki setup --vault /path/to/brain --knowledge-pack software-knowledge -
 obsidian-wiki setup --vault /path/to/brain --knowledge-pack default --agent all
 ```
 
-Run `obsidian-wiki setup --list-agents` to see stable target names and whether each target is global,
-project-local, or both. Non-interactive setup requires an explicit selection; use `--agent none`
+Run `obsidian-wiki setup --list-agents` to see the stable project-local target names. Non-interactive setup requires an explicit selection; use `--agent none`
 only when intentionally configuring the vault without installing agent skills.
 
 If `--knowledge-pack` is omitted in a terminal, setup displays the available Knowledge Packs and requires
 one selection. Agent selection accepts multiple values; Knowledge Pack selection is always single-choice.
 Non-interactive setup must pass `--knowledge-pack NAME` explicitly.
 
-Then open a project in your agent and say **"set up my wiki"**.
+Then open that directory in your agent and say **"set up my wiki"**.
 
 Useful flags:
 
 ```bash
-obsidian-wiki setup --project .   # install selected-agent project files into the current repo
+obsidian-wiki setup --project /work/app  # override the command-directory target
 obsidian-wiki setup --copy        # copy skill files instead of symlinking
 ```
 
 For a self-contained project installation using the `software-knowledge` Pack, run:
 
 ```bash
-obsidian-wiki setup --knowledge-pack software-knowledge --project . --project-only --copy --agent cursor
+obsidian-wiki setup --knowledge-pack software-knowledge --copy --agent cursor
 ```
 
 This selects the `software-knowledge` Knowledge Pack, initializes the configured vault, and
 installs the selected agent's project-local skills and bootstrap files, plus a missing `.env` from the packaged template
-under the current repository. `--project-only`
-skips global agent installation; it does not skip vault/configuration setup. `--copy` stores
+under the command directory. The deprecated `--project-only` flag is retained as a no-op for compatibility because
+CLI setup no longer has any global skill-install phase. `--copy` stores
 independent skill files instead of symlinks, which is useful when the project must remain
 self-contained.
 
@@ -129,7 +130,7 @@ differs: `obsidian-wiki setup` installs only explicitly selected agents, while t
 npx skills add Ar9av/obsidian-wiki
 ```
 
-This only installs the markdown skills into the current agent. It does **not** write `~/.obsidian-wiki/config`, configure GitHub sync, or wire the global multi-agent bootstrap that `obsidian-wiki setup` / `python3 setup.py` performs.
+This only installs the markdown skills into the current agent. It does **not** write `~/.obsidian-wiki/config`, configure GitHub sync, or wire the project bootstrap that `obsidian-wiki setup` performs. The legacy `python3 setup.py` source installer additionally wires global agent directories.
 
 Use this path only if you intentionally want a partial, agent-local install and are prepared to manage config yourself. For a complete setup, use pip or git clone instead.
 

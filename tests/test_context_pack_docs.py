@@ -41,9 +41,9 @@ def test_setup_py_installs_context_pack_as_portable() -> None:
     assert "wiki-update" in setup_py and "wiki-query" in setup_py and "wiki-context-pack" in setup_py
 
 
-def test_python_installer_lists_context_pack_as_portable() -> None:
+def test_cli_setup_does_not_declare_global_portable_skills() -> None:
     cli = read("obsidian_wiki/cli.py")
-    assert 'PORTABLE_SKILLS = ("wiki-update", "wiki-query", "wiki-context-pack")' in cli
+    assert "PORTABLE_SKILLS" not in cli
 
 
 def test_all_bootstraps_route_context_pack() -> None:

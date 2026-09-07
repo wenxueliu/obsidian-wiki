@@ -36,10 +36,11 @@
 
 ```bash
 pip install obsidian-wiki
+cd /path/to/your/project
 obsidian-wiki setup --vault ~/brain
 ```
 
-然後在你的 agent 裡打開任何專案，說 **「set up my wiki」**。
+Setup 只會把 skills 安裝到目前專案。接著在你的 agent 裡打開該專案，說 **「set up my wiki」**。
 
 不想碰終端機？把下面這行交給你的 agent，它會全部處理好：
 
@@ -104,7 +105,7 @@ obsidian-wiki sessions-query "the auth bug with the weird retry loop"
 - **你分得出哪些是知識、哪些是猜測。** 每個陳述都會標記為 `extracted`、`^[inferred]` 或 `^[ambiguous]`，lint 會標出開始偏向臆測的頁面。
 - **查詢成本不隨規模爆炸。** 先讀標題、tag 和 summary，需要時才打開頁面內容。20 頁或 2000 頁，成本差不多。
 - **它是你的。** 就是資料夾裡的純 markdown。推到私人 repo、用 Obsidian 打開、用 grep 搜、直接刪掉都行。沒有服務、沒有鎖定，什麼都不會離開你的機器。
-- **在你原本工作的地方就能用。** 一個 `.skills/` 目錄，symlink 到你使用的每一個 agent。
+- **在你原本工作的地方就能用。** 一個 bundled `.skills/` 目錄，連結到專案內每個選定的 agent。
 
 更多細節請見 **[Architecture](https://github.com/Ar9av/obsidian-wiki/blob/main/docs/architecture.md)**（英文）
 

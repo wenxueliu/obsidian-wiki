@@ -69,7 +69,7 @@ The `docs/` pages are English-only for now.
 
 ## Repo conventions
 
-- `.skills/` is the source of truth. Everything else — `.claude/skills/`, `~/.codex/skills/`, and so on — is symlinks created by setup. Never edit a symlinked copy.
+- `.skills/` is the source of truth. Project targets such as `.claude/skills/` and `.agents/skills/` are links created by `obsidian-wiki setup`; legacy global targets such as `~/.codex/skills/` may be created by `python3 setup.py`. Never edit a linked copy.
 - `CLAUDE.md`, `GEMINI.md`, and `.hermes.md` are symlinks to `AGENTS.md`. Edit `AGENTS.md`.
 - New config variables belong in three places: `.env.example`, [`docs/configuration.md`](configuration.md), and the skill that reads them.
 - New CLI subcommands belong in [`docs/cli.md`](cli.md).

@@ -14,7 +14,7 @@ Running `obsidian-wiki` with no subcommand defaults to `setup`.
 
 | Command | What it does |
 |---|---|
-| `setup` | Select agent skill targets and write `~/.obsidian-wiki/config` |
+| `setup` | Install selected agent skills in the command directory and write `~/.obsidian-wiki/config` |
 | `info` | Show install paths, version, and resolved config |
 | `list` | List the bundled skills |
 | `doctor` | Health-check config, vault shape, bootstrap assets, and installed skills |
@@ -25,13 +25,13 @@ obsidian-wiki setup --vault ~/brain
 obsidian-wiki setup --list-agents          # list selectable agent skill targets
 obsidian-wiki setup --vault ~/brain --knowledge-pack default --agent claude --agent codex
 obsidian-wiki setup --vault ~/brain --knowledge-pack software-knowledge --agent claude,codex,pi
-obsidian-wiki setup --vault ~/brain --knowledge-pack default --agent all  # explicit legacy all-agent behavior
+obsidian-wiki setup --vault ~/brain --knowledge-pack default --agent all  # all local agent targets
 obsidian-wiki setup --list-knowledge-packs         # list Knowledge Packs (Profile + Layout)
 obsidian-wiki setup --vault ~/brain --knowledge-pack software-knowledge
-obsidian-wiki setup --project .        # install only the selected agents' local skills + bootstrap files
-obsidian-wiki setup --project-only     # skip the global install (use with --project)
+obsidian-wiki setup --project /work/app  # override the command-directory install target
+obsidian-wiki setup --project-only       # deprecated no-op; setup is always project-local
 obsidian-wiki setup --copy             # copy skill files instead of symlinking
-obsidian-wiki setup --project . --project-only --copy --skills-only --agent cursor  # local files only; do not touch a vault
+obsidian-wiki setup --copy --skills-only --agent cursor  # command-directory files only; do not touch a vault
 obsidian-wiki setup --vault ~/brain --knowledge-pack default --refresh-knowledge-pack-marker  # refresh one same-Pack marker
 obsidian-wiki setup --remote https://github.com/you/my-wiki.git   # configure sync non-interactively
 
@@ -51,12 +51,12 @@ Setup compiles stable Wiki context once into the path configured by
 resolution links that snapshot into the invocation artifacts directory. Use setup/repair after
 changing the Knowledge Pack, owner rules, Writing Profile, taxonomy, or stable metadata paths.
 
-Commands other than `setup`, `info`, and `doctor` warn you when the install has gone stale (the package upgraded but skills weren't re-linked). Re-run `obsidian-wiki setup` to fix.
+Commands other than `setup`, `info`, and `doctor` warn you when the command-directory install has gone stale (the package upgraded but skills weren't re-linked). Re-run `obsidian-wiki setup` in that directory to fix.
 
 When setup runs in a terminal without `--agent`, it displays a numbered agent menu with no default
 selection. Non-interactive setup requires one or more `--agent NAME` flags, a comma-separated list,
-explicit `--agent all`, or explicit `--agent none`; it never silently chooses all or none. Cursor
-and Windsurf only have project-local skill targets, so use them with `--project`.
+explicit `--agent all`, or explicit `--agent none`; it never silently chooses all or none. Every
+agent target is project-local and defaults to the directory where setup is run.
 
 Project installation applies that selection to every generated agent-specific file, not only to
 skill directories. For example, selecting only `claude` creates `.claude/skills/`, shared
@@ -72,9 +72,8 @@ the absolute current directory as the default. Press Enter to accept that defaul
 non-interactive run, setup retains the configured-vault fallback; pass `--vault PATH` to override
 it explicitly.
 
-`--skills-only` limits setup to skill and project bootstrap installation. It does not read or write
-the global config, Writing Profile, vault, Knowledge Pack marker, or Git integration. Combine it with
-`--project . --project-only` for a project-local install with no global side effects. Because this
+`--skills-only` limits setup to command-directory skill and bootstrap installation. It does not read or write
+the global config, Writing Profile, vault, Knowledge Pack marker, or Git integration. Because this
 mode has no other setup work, it requires an explicit agent selection.
 
 For an initialized vault, select the same Knowledge Pack recorded in `_meta/knowledge-pack.json`. Choosing

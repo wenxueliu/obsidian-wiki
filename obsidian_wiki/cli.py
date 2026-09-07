@@ -2,9 +2,8 @@
 
 Python CLI for the pip-installed package. The standalone ``setup.py`` covers source checkouts. Skill content
 lives inside the installed package (``obsidian_wiki/_data/skills``) instead of a
-cloned repo, so this wires the bundled skills into every supported AI agent's
-skills directory and writes ``~/.obsidian-wiki/config`` so the skills resolve
-the vault from any project.
+cloned repo, so this wires bundled skills into project-local AI agent directories
+and writes ``~/.obsidian-wiki/config`` so the skills resolve the vault.
 """
 
 from __future__ import annotations
@@ -46,10 +45,6 @@ _IS_WINDOWS = os.name == "nt"
 GLOBAL_CONFIG_DIR = HOME / ".obsidian-wiki"
 GLOBAL_CONFIG = GLOBAL_CONFIG_DIR / "config"
 
-# Skills usable from any project (no vault context needed beyond the global
-# config). These are also installed globally for agents that only scope skills
-# per-project, so cross-project sync/query/context work everywhere.
-PORTABLE_SKILLS = ("wiki-update", "wiki-query", "wiki-context-pack")
 OBSOLETE_MANAGED_SKILLS = ("wiki-ingest",)
 
 
@@ -184,6 +179,9 @@ def install_skills(
         name = skill.name
         link_path = target_dir / name
 
+        if link_path.is_symlink() and link_path.resolve(strict=False) == skill.resolve():
+            installed += 1
+            continue
         if link_path.is_symlink() or link_path.is_file():
             link_path.unlink()
         elif link_path.is_dir():
@@ -211,20 +209,20 @@ def install_skills(
 
 # Stable CLI names, display labels, and where setup can install each agent.
 SETUP_AGENTS: tuple[tuple[str, str, str], ...] = (
-    ("claude", "Claude Code", "global + project"),
+    ("claude", "Claude Code", "project"),
     ("cursor", "Cursor", "project"),
     ("windsurf", "Windsurf", "project"),
-    ("codex", "Codex", "global"),
-    ("gemini", "Gemini CLI", "global"),
-    ("antigravity", "Google Antigravity (legacy)", "global"),
-    ("hermes", "Hermes", "global"),
-    ("openclaw", "OpenClaw", "global"),
-    ("copilot", "GitHub Copilot CLI", "global"),
-    ("trae", "Trae", "global"),
-    ("trae-cn", "Trae CN", "global"),
-    ("kiro", "Kiro", "global + project"),
-    ("pi", "Pi", "global + project"),
-    ("generic", "OpenCode / Aider / Droid / generic", "global + project"),
+    ("codex", "Codex", "project"),
+    ("gemini", "Gemini CLI", "project"),
+    ("antigravity", "Google Antigravity (legacy)", "project"),
+    ("hermes", "Hermes", "project"),
+    ("openclaw", "OpenClaw", "project"),
+    ("copilot", "GitHub Copilot CLI", "project"),
+    ("trae", "Trae", "project"),
+    ("trae-cn", "Trae CN", "project"),
+    ("kiro", "Kiro", "project"),
+    ("pi", "Pi", "project"),
+    ("generic", "OpenCode / Aider / Droid / generic", "project"),
 )
 SETUP_AGENT_NAMES = tuple(record[0] for record in SETUP_AGENTS)
 
@@ -352,64 +350,19 @@ def _select_setup_knowledge_pack(requested_knowledge_pack: str | None) -> str:
         print("  Unknown Knowledge Pack; choose one from the displayed list.")
 
 
-# Agents whose skills directory lives under $HOME. (agent, path-under-home,
-# label, subset). Selection is explicit; setup never iterates this entire list
-# unless the user chose every agent or passed --agent all.
-GLOBAL_AGENT_DIRS: list[tuple[str, str, str, tuple[str, ...] | None]] = [
-    ("claude", ".claude/skills", "~/.claude/skills/ (Claude Code)", None),
-    ("gemini", ".gemini/skills", "~/.gemini/skills/ (Gemini CLI)", None),
-    ("antigravity", ".gemini/antigravity/skills", "~/.gemini/antigravity/skills/ (Antigravity, legacy)", None),
-    ("codex", ".codex/skills", "~/.codex/skills/ (Codex)", None),
-    ("hermes", ".hermes/skills", "~/.hermes/skills/ (Hermes default)", None),
-    ("openclaw", ".openclaw/skills", "~/.openclaw/skills/ (OpenClaw)", None),
-    ("copilot", ".copilot/skills", "~/.copilot/skills/ (GitHub Copilot CLI)", None),
-    ("trae", ".trae/skills", "~/.trae/skills/ (Trae)", None),
-    ("trae-cn", ".trae-cn/skills", "~/.trae-cn/skills/ (Trae CN)", None),
-    ("kiro", ".kiro/skills", "~/.kiro/skills/ (Kiro CLI)", None),
-    ("pi", ".pi/agent/skills", "~/.pi/agent/skills/ (Pi)", None),
-    ("generic", ".agents/skills", "~/.agents/skills/ (OpenCode, Aider, Droid, generic)", None),
-]
-
-
-def install_global_skills(mode: str, agents: tuple[str, ...]) -> set[str]:
-    selected = set(agents)
-    installed_agents: set[str] = set()
-    for agent, rel, label, subset in GLOBAL_AGENT_DIRS:
-        if agent not in selected:
-            continue
-        install_skills(HOME / rel, label, subset=subset, mode=mode)
-        installed_agents.add(agent)
-    if "hermes" in selected:
-        _install_hermes_profiles(mode)
-    return installed_agents
-
-
-def _install_hermes_profiles(mode: str) -> None:
-    """Install into the active and all named Hermes profiles."""
-    hermes_home = os.environ.get("HERMES_HOME")
-    handled: set[Path] = set()
-    if hermes_home:
-        hp = Path(hermes_home).expanduser()
-        if hp != HOME / ".hermes":
-            install_skills(hp / "skills", f"{hp}/skills/ (Hermes active profile)", mode=mode)
-            handled.add(hp)
-    profiles = HOME / ".hermes" / "profiles"
-    if profiles.is_dir():
-        for prof in sorted(p for p in profiles.iterdir() if p.is_dir()):
-            if prof in handled:
-                continue
-            install_skills(
-                prof / "skills",
-                f"~/.hermes/profiles/{prof.name}/skills/ (Hermes profile: {prof.name})",
-                mode=mode,
-            )
-
-
-# ── Project-local install (opt-in) ───────────────────────────────────────────
+# ── Command-directory install ────────────────────────────────────────────────
 PROJECT_AGENT_DIRS = [
     ("claude", ".claude/skills", "Claude Code"),
     ("cursor", ".cursor/skills", "Cursor"),
     ("windsurf", ".windsurf/skills", "Windsurf"),
+    ("codex", ".agents/skills", "Codex"),
+    ("gemini", ".agents/skills", "Gemini CLI"),
+    ("antigravity", ".agents/skills", "Google Antigravity"),
+    ("hermes", ".agents/skills", "Hermes"),
+    ("openclaw", ".agents/skills", "OpenClaw"),
+    ("copilot", ".agents/skills", "GitHub Copilot CLI"),
+    ("trae", ".agents/skills", "Trae"),
+    ("trae-cn", ".agents/skills", "Trae CN"),
     ("generic", ".agents/skills", "OpenCode / generic"),
     ("pi", ".pi/skills", "Pi"),
     ("kiro", ".kiro/skills", "Kiro"),
@@ -475,10 +428,13 @@ def install_project(project_dir: Path, mode: str, agents: tuple[str, ...]) -> se
     print(f"\n📁  Installing project-local files → {project_dir}")
     selected = set(agents)
     installed_agents: set[str] = set()
+    installed_dirs: set[str] = set()
     for agent, rel, _label in PROJECT_AGENT_DIRS:
         if agent not in selected:
             continue
-        install_skills(project_dir / rel, f"{rel}/", mode=mode)
+        if rel not in installed_dirs:
+            install_skills(project_dir / rel, f"{rel}/", mode=mode)
+            installed_dirs.add(rel)
         installed_agents.add(agent)
 
     boot_root = bootstrap_dir()
@@ -496,6 +452,8 @@ def install_project(project_dir: Path, mode: str, agents: tuple[str, ...]) -> se
         if src is None:
             continue
         dst = project_dir / dest
+        if src.resolve() == dst.resolve(strict=False):
+            continue
         dst.parent.mkdir(parents=True, exist_ok=True)
         if dst.is_symlink() or dst.exists():
             if dst.is_dir() and not dst.is_symlink():
@@ -920,19 +878,22 @@ def _check_stale() -> None:
         )
         return
 
-    # Even if the version matches, check that ~/.claude/skills has the full set.
-    claude_skills_dir = HOME / ".claude" / "skills"
-    if claude_skills_dir.is_dir():
+    # Even if the version matches, check command-directory installs that exist.
+    for rel in dict.fromkeys(rel for _agent, rel, _label in PROJECT_AGENT_DIRS):
+        project_skills_dir = Path.cwd() / rel
+        if not project_skills_dir.is_dir():
+            continue
         bundled = set(list_skills())
-        installed = {p.name for p in claude_skills_dir.iterdir() if p.is_dir()}
+        installed = {p.name for p in project_skills_dir.iterdir() if p.is_dir()}
         missing = bundled - installed
         if missing:
             print(
-                f"⚠️  {len(missing)} skill(s) missing from ~/.claude/skills/ "
+                f"⚠️  {len(missing)} skill(s) missing from {project_skills_dir} "
                 f"(e.g. {', '.join(sorted(missing)[:3])}{', ...' if len(missing) > 3 else ''}).\n"
                 f"   Run: obsidian-wiki setup",
                 file=sys.stderr,
             )
+            return
 
 
 def _doctor_add(
@@ -1163,31 +1124,27 @@ def run_doctor(*, vault_override: str | None = None, project_dir: str | None = N
             )
 
     agent_summaries: list[str] = []
-    partial_agents: list[str] = []
-    full_agents = 0
+    partial_installs = False
     bundled_set = set(bundled)
-    for _agent, rel, label, _subset in GLOBAL_AGENT_DIRS:
-        agent_dir = HOME / rel
+    project = Path(project_dir or os.getcwd()).expanduser().resolve()
+    for rel in dict.fromkeys(rel for _agent, rel, _label in PROJECT_AGENT_DIRS):
+        agent_dir = project / rel
         if not agent_dir.is_dir():
             continue
         installed = {p.name for p in agent_dir.iterdir() if (p.is_dir() or p.is_symlink())}
-        missing = bundled_set - installed
         count = len(installed & bundled_set)
-        agent_summaries.append(f"{label}: {count}/{len(bundled_set)}")
-        if missing:
-            partial_agents.append(label)
-        else:
-            full_agents += 1
+        agent_summaries.append(f"{rel}: {count}/{len(bundled_set)}")
+        partial_installs = partial_installs or count != len(bundled_set)
 
     if not agent_summaries:
         _doctor_add(
             checks,
             name="agent-installs",
             status="warn",
-            detail="no global agent skill installs found",
+            detail=f"no agent skill installs found under {project}",
             hint="run: obsidian-wiki setup",
         )
-    elif partial_agents:
+    elif partial_installs:
         _doctor_add(
             checks,
             name="agent-installs",
@@ -1200,29 +1157,27 @@ def run_doctor(*, vault_override: str | None = None, project_dir: str | None = N
             checks,
             name="agent-installs",
             status="pass",
-            detail=f"{full_agents} agent install(s) fully provisioned",
+            detail=f"command-directory installs complete: {'; '.join(agent_summaries)}",
             hint="",
         )
 
-    if project_dir:
-        project = Path(project_dir).expanduser().resolve()
-        if project.is_dir():
-            project_check = _doctor_project_check(project)
-            _doctor_add(
-                checks,
-                name="project-bootstrap",
-                status=project_check["status"],
-                detail=project_check["detail"],
-                hint=project_check["hint"],
-            )
-        else:
-            _doctor_add(
-                checks,
-                name="project-bootstrap",
-                status="fail",
-                detail=f"project directory not found: {project}",
-                hint="pass an existing directory",
-            )
+    if project.is_dir():
+        project_check = _doctor_project_check(project)
+        _doctor_add(
+            checks,
+            name="project-bootstrap",
+            status=project_check["status"],
+            detail=project_check["detail"],
+            hint=project_check["hint"],
+        )
+    else:
+        _doctor_add(
+            checks,
+            name="project-bootstrap",
+            status="fail",
+            detail=f"project directory not found: {project}",
+            hint="pass an existing directory",
+        )
 
     return {
         "status": _doctor_status(checks),
@@ -1311,10 +1266,8 @@ def cmd_setup(args: argparse.Namespace) -> int:
         return 2
 
     mode = "symlink" if (not _IS_WINDOWS and not args.copy) else "copy"
+    project_dir = Path(args.project or os.getcwd()).expanduser().resolve()
     if args.skills_only:
-        if args.project_only and args.project is None:
-            print("error: --skills-only --project-only requires --project", file=sys.stderr)
-            return 2
         if args.vault or args.knowledge_pack or args.refresh_knowledge_pack_marker or args.remote:
             print(
                 "error: --skills-only cannot be combined with --vault, --knowledge-pack, "
@@ -1328,12 +1281,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
-        installed_agents: set[str] = set()
-        if not args.project_only:
-            installed_agents.update(install_global_skills(mode, selected_agents))
-        if args.project is not None:
-            project_dir = Path(args.project or os.getcwd()).expanduser().resolve()
-            installed_agents.update(install_project(project_dir, mode, selected_agents))
+        installed_agents = install_project(project_dir, mode, selected_agents)
         unavailable = set(selected_agents) - installed_agents
         if unavailable:
             print(
@@ -1385,28 +1333,21 @@ def cmd_setup(args: argparse.Namespace) -> int:
             print(f"✅  Vault verified at {vault_dir}")
 
     installed_agents: set[str] = set()
-    if not args.project_only and selected_agents:
-        print()
-        installed_agents.update(install_global_skills(mode, selected_agents))
-
-    context_source_cwd = Path.cwd().resolve()
+    context_source_cwd = project_dir
     context_bindings = _stable_context_config(vault_path, knowledge_pack.name) if vault_path else {}
-    if args.project is not None:
-        project_dir = Path(args.project or os.getcwd()).expanduser().resolve()
-        context_source_cwd = project_dir
-        env_overrides = (
-            {
-                "OBSIDIAN_VAULT_PATH": vault_path,
-                **_stable_context_config(vault_path, knowledge_pack.name),
-            }
-            if vault_path else None
-        )
-        ensure_project_env(project_dir, env_overrides)
-        context_bindings = ensure_project_context_bindings(
-            project_dir, context_bindings
-        )
-        if selected_agents:
-            installed_agents.update(install_project(project_dir, mode, selected_agents))
+    env_overrides = (
+        {
+            "OBSIDIAN_VAULT_PATH": vault_path,
+            **_stable_context_config(vault_path, knowledge_pack.name),
+        }
+        if vault_path else None
+    )
+    ensure_project_env(project_dir, env_overrides)
+    context_bindings = ensure_project_context_bindings(
+        project_dir, context_bindings
+    )
+    if selected_agents:
+        installed_agents.update(install_project(project_dir, mode, selected_agents))
 
     if vault_path:
         try:
@@ -1444,7 +1385,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     print("\n Next steps:")
     print("   1. Open a project in your agent")
     print('   2. Say: "set up my wiki"\n')
-    print(" From any project:")
+    print(" In this project:")
     print("   /wiki-update    → sync knowledge into your vault")
     print("   /wiki-query     → ask questions against your wiki")
     print("   /wiki-context-pack → compile bounded context for another agent")
@@ -2819,21 +2760,24 @@ def cmd_info(args: argparse.Namespace) -> int:
             print(f"sync:      {remote if remote else '(not configured — run: obsidian-wiki sync-setup <url>)'}")
     print(f"bundled skills: {len(bundled)}")
     print()
-    print("Agent skill install status:")
+    print(f"Command-directory skill status ({Path.cwd().resolve()}):")
     bundled_set = set(bundled)
-    for agent, rel, label, _subset in GLOBAL_AGENT_DIRS:
-        agent_dir = HOME / rel
+    found_install = False
+    for rel in dict.fromkeys(rel for _agent, rel, _label in PROJECT_AGENT_DIRS):
+        agent_dir = Path.cwd() / rel
         if not agent_dir.is_dir():
-            print(f"  {label}: not installed")
             continue
+        found_install = True
         installed = {p.name for p in agent_dir.iterdir() if p.is_dir()}
         wiki_installed = installed & bundled_set
         missing = bundled_set - installed
         status = "✅" if not missing else "⚠️ "
-        print(f"  {status} {label}: {len(wiki_installed)}/{len(bundled_set)}", end="")
+        print(f"  {status} {rel}: {len(wiki_installed)}/{len(bundled_set)}", end="")
         if missing:
-            print(f"  (run: obsidian-wiki setup --agent {agent})", end="")
+            print("  (run: obsidian-wiki setup)", end="")
         print()
+    if not found_install:
+        print("  not installed (run: obsidian-wiki setup)")
     _check_stale()
     return 0
 
@@ -3606,13 +3550,13 @@ def _add_setup_args(sp: argparse.ArgumentParser) -> None:
         const="",
         default=None,
         metavar="DIR",
-        help="also install selected-agent project skills + bootstrap files into DIR "
-        "(defaults to the current directory if no DIR given)",
+        help="install selected-agent skills + bootstrap files into DIR "
+        "(default: current directory)",
     )
     sp.add_argument(
         "--project-only",
         action="store_true",
-        help="skip the global agent install (use with --project)",
+        help="deprecated compatibility flag; setup is always project-local",
     )
     sp.add_argument(
         "--skills-only",
